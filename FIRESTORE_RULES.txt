@@ -1,0 +1,27 @@
+// Firestore Security Rules - للاختبار فقط
+// انسخ هذا الكود والصقه في Firebase Console → Firestore Database → Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // قاعدة بيانات الطلاب - السماح بالقراءة والكتابة للجميع (للاختبار)
+    match /students/{userId} {
+      allow read, write: if true;
+    }
+    
+    // قاعدة بيانات طلبات الخدمات - السماح بالقراءة والكتابة للجميع (للاختبار)
+    match /serviceRequests/{requestId} {
+      allow read, write: if true;
+    }
+    
+    // السماح بالوصول لجميع المجموعات الأخرى (للاختبار)
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+
+// ⚠️ تحذير: هذه القواعد تسمح للجميع بالوصول
+// استخدمها فقط للاختبار والتطوير
+// للإنتاج، استخدم قواعد أكثر أماناً
+

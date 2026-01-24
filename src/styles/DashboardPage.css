@@ -1,0 +1,167 @@
+.dashboard-page {
+  min-height: 100vh;
+  background: #f7fafc;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.dashboard-header {
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-circle {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.header-center {
+  flex: 1;
+  text-align: center;
+}
+
+.welcome-message {
+  font-size: 24px;
+  color: #1a202c;
+  margin: 0;
+  font-weight: 600;
+}
+
+.header-left {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-button,
+.all-users-button,
+.profile-button,
+.logout-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #4a5568;
+  padding: 8px;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-button:hover {
+  background: #fff5e6;
+  color: #f59e0b;
+}
+
+.all-users-button:hover {
+  background: #e6fffa;
+  color: #38b2ac;
+}
+
+.profile-button:hover {
+  background: #edf2f7;
+  color: #667eea;
+}
+
+.logout-button:hover {
+  background: #fed7d7;
+  color: #c53030;
+}
+
+.dashboard-main {
+  padding: 40px 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.services-title {
+  font-size: 28px;
+  color: #1a202c;
+  margin: 0 0 30px 0;
+  font-weight: 700;
+  text-align: center;
+}
+
+.services-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+@media (max-width: 1024px) {
+  .services-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .services-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dashboard-header {
+    flex-wrap: wrap;
+    padding: 15px 20px;
+  }
+
+  .welcome-message {
+    font-size: 18px;
+  }
+
+  .header-center {
+    width: 100%;
+    order: 3;
+  }
+
+  .dashboard-main {
+    padding: 20px 10px;
+  }
+
+  .services-title {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .services-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-header {
+    padding: 10px;
+  }
+
+  .logo-circle {
+    width: 35px;
+    height: 35px;
+    font-size: 16px;
+  }
+
+  .welcome-message {
+    font-size: 16px;
+  }
+}
