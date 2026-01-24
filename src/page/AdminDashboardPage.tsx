@@ -11,13 +11,15 @@ import {
   updateAssignmentsServiceConfig,
   getCertificatesServiceConfig,
   updateCertificatesServiceConfig,
+  getDigitalTransformationConfig,
+  updateDigitalTransformationConfig,
   checkIsAdmin,
   getStudentData,
   subscribeToAllStudents,
   searchStudent,
   updateStudentData
 } from '../services/firebaseService';
-import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem } from '../types';
+import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType } from '../types';
 import { 
   LogOut, 
   Package, 
@@ -39,6 +41,7 @@ import {
   Users,
   Search,
   Pencil,
+  Zap,
   Image
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
@@ -54,11 +57,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [students, setStudents] = useState<Record<string, StudentData>>({});
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'assignments' | 'certificates' | 'users'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'assignments' | 'certificates' | 'digitalTransformation' | 'users'>('requests');
   const [bookConfig, setBookConfig] = useState<BookServiceConfig | null>(null);
   const [feesConfig, setFeesConfig] = useState<FeesServiceConfig | null>(null);
   const [assignmentsConfig, setAssignmentsConfig] = useState<AssignmentsServiceConfig | null>(null);
   const [certificatesConfig, setCertificatesConfig] = useState<CertificatesServiceConfig | null>(null);
+  const [digitalTransformationConfig, setDigitalTransformationConfig] = useState<DigitalTransformationConfig | null>(null);
   const [isEditingBooks, setIsEditingBooks] = useState(false);
   const [isEditingFees, setIsEditingFees] = useState(false);
   const [newAssignmentName, setNewAssignmentName] = useState<string>('');
@@ -67,6 +71,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newCertificatePrice, setNewCertificatePrice] = useState<string>('');
   const [newCertificateDescription, setNewCertificateDescription] = useState<string>('');
   const [editingCertificate, setEditingCertificate] = useState<CertificateItem | null>(null);
+  
+  // Digital Transformation states
+  const [newTransformationTypeName, setNewTransformationTypeName] = useState<string>('');
+  const [newTransformationTypePrice, setNewTransformationTypePrice] = useState<string>('');
+  const [newExamLanguage, setNewExamLanguage] = useState<string>('');
+  
   const [isLoading, setIsLoading] = useState(true);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
@@ -279,6 +289,40 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadCertificatesConfig();
 
+    // Load digital transformation config
+    const loadDigitalTransformationConfig = async () => {
+      try {
+        console.log('Loading digital transformation config in AdminDashboard...');
+        const config = await getDigitalTransformationConfig();
+        if (config) {
+          console.log('Setting digital transformation config in AdminDashboard:', config.transformationTypes?.length || 0, 'types');
+          setDigitalTransformationConfig(config);
+        } else {
+          console.log('No config found, using default digital transformation config');
+          const defaultConfig: DigitalTransformationConfig = {
+            transformationTypes: [],
+            examLanguage: ['اللغة العربية'],
+            paymentMethods: {
+              instaPay: '01017180923',
+              cashWallet: '01050889591'
+            }
+          };
+
+          try {
+            await updateDigitalTransformationConfig(defaultConfig);
+            console.log('Default digital transformation config saved to Firebase');
+          } catch (saveError) {
+            console.error('Error saving default config:', saveError);
+          }
+
+          setDigitalTransformationConfig(defaultConfig);
+        }
+      } catch (error) {
+        console.error('Error loading digital transformation config:', error);
+      }
+    };
+    loadDigitalTransformationConfig();
+
     return () => unsubscribe();
   }, [isLoading]);
 
@@ -412,6 +456,71 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       setCertificatesConfig({
         ...certificatesConfig,
         certificates: certificatesConfig.certificates.filter(c => c.id !== id)
+      });
+    }
+  };
+
+  // Digital Transformation handlers
+  const handleSaveDigitalTransformationConfig = async () => {
+    if (!digitalTransformationConfig) return;
+    try {
+      await updateDigitalTransformationConfig(digitalTransformationConfig);
+      alert('تم حفظ الإعدادات بنجاح!');
+    } catch (error: any) {
+      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    }
+  };
+
+  const handleAddTransformationType = () => {
+    if (!newTransformationTypeName || !newTransformationTypePrice || !digitalTransformationConfig) return;
+    const price = parseFloat(newTransformationTypePrice);
+    if (isNaN(price) || price <= 0) {
+      alert('يرجى إدخال سعر صحيح');
+      return;
+    }
+
+    const newType: DigitalTransformationType = {
+      id: Date.now().toString(),
+      name: newTransformationTypeName,
+      price: price
+    };
+
+    setDigitalTransformationConfig({
+      ...digitalTransformationConfig,
+      transformationTypes: [...digitalTransformationConfig.transformationTypes, newType]
+    });
+
+    setNewTransformationTypeName('');
+    setNewTransformationTypePrice('');
+  };
+
+  const handleRemoveTransformationType = (id: string) => {
+    if (!digitalTransformationConfig) return;
+    if (confirm('هل أنت متأكد من حذف هذا النوع؟')) {
+      setDigitalTransformationConfig({
+        ...digitalTransformationConfig,
+        transformationTypes: digitalTransformationConfig.transformationTypes.filter(t => t.id !== id)
+      });
+    }
+  };
+
+  const handleAddExamLanguage = () => {
+    if (!newExamLanguage.trim() || !digitalTransformationConfig) return;
+    
+    setDigitalTransformationConfig({
+      ...digitalTransformationConfig,
+      examLanguage: [...digitalTransformationConfig.examLanguage, newExamLanguage.trim()]
+    });
+    
+    setNewExamLanguage('');
+  };
+
+  const handleRemoveExamLanguage = (index: number) => {
+    if (!digitalTransformationConfig) return;
+    if (confirm('هل أنت متأكد من حذف هذه اللغة؟')) {
+      setDigitalTransformationConfig({
+        ...digitalTransformationConfig,
+        examLanguage: digitalTransformationConfig.examLanguage.filter((_, i) => i !== index)
       });
     }
   };
@@ -644,6 +753,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         >
           <Award size={18} />
           إدارة الشهادات
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'digitalTransformation' ? 'active' : ''}`}
+          onClick={() => setActiveTab('digitalTransformation')}
+        >
+          <Zap size={18} />
+          التحول الرقمي
         </button>
         <button
           className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
@@ -1864,6 +1980,160 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'digitalTransformation' && (
+        <div className="admin-content">
+          <div className="books-section">
+            <div className="section-header">
+              <h2>إعدادات خدمة التحول الرقمي</h2>
+              <button onClick={handleSaveDigitalTransformationConfig} className="save-button">
+                <Save size={18} />
+                حفظ
+              </button>
+            </div>
+
+            {digitalTransformationConfig && (
+              <div className="book-config-form">
+                <div className="form-group">
+                  <label>أنواع التحول الرقمي</label>
+                  <div className="transformation-types-list">
+                    {digitalTransformationConfig.transformationTypes.length > 0 ? (
+                      digitalTransformationConfig.transformationTypes.map((type) => (
+                        <div key={type.id} className="transformation-type-item">
+                          <div className="type-info">
+                            <div className="type-name">{type.name}</div>
+                            <div className="type-price">{type.price} جنيه</div>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveTransformationType(type.id)}
+                            className="remove-assignment-button"
+                            title="حذف"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="no-items-message">لا توجد أنواع مضافة</div>
+                    )}
+                  </div>
+
+                  <div className="add-transformation-type-section">
+                    <div className="add-transformation-type-form">
+                      <div className="input-group">
+                        <label>اسم المدينة أو النص المخصص</label>
+                        <input
+                          type="text"
+                          placeholder="أدخل اسم المدينة أو النص المخصص"
+                          value={newTransformationTypeName}
+                          onChange={(e) => setNewTransformationTypeName(e.target.value)}
+                          className="config-input-enhanced"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>السعر بالجنيه</label>
+                        <input
+                          type="number"
+                          placeholder="أدخل السعر"
+                          value={newTransformationTypePrice}
+                          onChange={(e) => setNewTransformationTypePrice(e.target.value)}
+                          className="config-input-enhanced"
+                          min="0"
+                          step="0.01"
+                        />
+                      </div>
+                      <button onClick={handleAddTransformationType} className="add-price-button-enhanced">
+                        <span>إضافة نوع</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>لغات الامتحان</label>
+                  <div className="exam-languages-list">
+                    {digitalTransformationConfig.examLanguage.length > 0 ? (
+                      digitalTransformationConfig.examLanguage.map((language, index) => (
+                        <div key={index} className="exam-language-item">
+                          <div className="language-name">{language}</div>
+                          <button
+                            onClick={() => handleRemoveExamLanguage(index)}
+                            className="remove-assignment-button"
+                            title="حذف"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="no-items-message">لا توجد لغات مضافة</div>
+                    )}
+                  </div>
+
+                  <div className="add-exam-language-section">
+                    <div className="add-exam-language-form">
+                      <div className="input-group">
+                        <label>إضافة لغة جديدة</label>
+                        <input
+                          type="text"
+                          placeholder="أدخل اسم اللغة"
+                          value={newExamLanguage}
+                          onChange={(e) => setNewExamLanguage(e.target.value)}
+                          className="config-input-enhanced"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              handleAddExamLanguage();
+                            }
+                          }}
+                        />
+                      </div>
+                      <button onClick={handleAddExamLanguage} className="add-price-button-enhanced">
+                        <span>إضافة لغة</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>أرقام الدفع</label>
+                  <div className="payment-numbers">
+                    <div className="payment-item">
+                      <label>instaPay</label>
+                      <input
+                        type="text"
+                        value={digitalTransformationConfig.paymentMethods.instaPay}
+                        onChange={(e) => setDigitalTransformationConfig({
+                          ...digitalTransformationConfig,
+                          paymentMethods: {
+                            ...digitalTransformationConfig.paymentMethods,
+                            instaPay: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                      />
+                    </div>
+                    <div className="payment-item">
+                      <label>محفظة الكاش</label>
+                      <input
+                        type="text"
+                        value={digitalTransformationConfig.paymentMethods.cashWallet}
+                        onChange={(e) => setDigitalTransformationConfig({
+                          ...digitalTransformationConfig,
+                          paymentMethods: {
+                            ...digitalTransformationConfig.paymentMethods,
+                            cashWallet: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1096,3 +1096,48 @@
     gap: 12px;
   }
 }
+
+/* Exam Languages Display */
+.exam-language-section {
+  margin-top: 16px;
+}
+
+.exam-languages-display {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.exam-languages-display li {
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #f7fafc 0%, #f1f5f9 100%);
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a202c;
+  transition: all 0.3s ease;
+  position: relative;
+  padding-right: 40px;
+}
+
+.exam-languages-display li::before {
+  content: '✓';
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #10b981;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.exam-languages-display li:hover {
+  border-color: #cbd5e0;
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  transform: translateX(-4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}

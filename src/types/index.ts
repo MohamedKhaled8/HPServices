@@ -133,3 +133,18 @@ export interface CertificatesServiceConfig {
     cashWallet: string;
   };
 }
+
+export interface DigitalTransformationType {
+  id: string;
+  name: string; // اسم المدينة أو النص المخصص
+  price: number;
+}
+
+export interface DigitalTransformationConfig {
+  transformationTypes: DigitalTransformationType[];
+  examLanguage: string[]; // قائمة لغات الامتحان
+  paymentMethods: {
+    instaPay: string;
+    cashWallet: string;
+  };
+}

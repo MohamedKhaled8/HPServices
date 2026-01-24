@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
-import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig } from '../types';
+import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig } from '../types';
 
 // Auth Functions
 export const registerUser = async (email: string, password: string, studentData: StudentData): Promise<FirebaseUser> => {
@@ -773,6 +773,73 @@ export const updateCertificatesServiceConfig = async (config: CertificatesServic
   } catch (error: any) {
     console.error('Error saving certificates config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات الشهادات');
+  }
+};
+
+// Digital Transformation Service Configuration
+export const getDigitalTransformationConfig = async (): Promise<DigitalTransformationConfig | null> => {
+  try {
+    console.log('Fetching digital transformation config from Firebase...');
+    const docRef = doc(db, 'config', 'digitalTransformationService');
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data() as any;
+      // Handle backward compatibility: convert string examLanguage to array
+      const config: DigitalTransformationConfig = {
+        ...data,
+        examLanguage: Array.isArray(data.examLanguage) 
+          ? data.examLanguage 
+          : (data.examLanguage ? [data.examLanguage] : [])
+      };
+      console.log('Digital transformation config loaded:', {
+        hasTypes: !!config.transformationTypes,
+        typesCount: config.transformationTypes?.length || 0,
+        languagesCount: config.examLanguage?.length || 0
+      });
+      return config;
+    } else {
+      console.log('Digital transformation config document does not exist');
+      return null;
+    }
+  } catch (error: any) {
+    console.error('Error fetching digital transformation config:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء جلب إعدادات التحول الرقمي');
+  }
+};
+
+export const updateDigitalTransformationConfig = async (config: DigitalTransformationConfig): Promise<void> => {
+  try {
+    // Clean the config to remove undefined values
+    const cleanConfig = {
+      transformationTypes: config.transformationTypes.map(t => ({
+        id: t.id,
+        name: t.name || '',
+        price: t.price || 0
+      })),
+      examLanguage: Array.isArray(config.examLanguage) ? config.examLanguage : (config.examLanguage ? [config.examLanguage] : []),
+      paymentMethods: config.paymentMethods
+    };
+
+    console.log('Saving digital transformation config to Firebase:', {
+      hasTypes: !!cleanConfig.transformationTypes,
+      typesCount: cleanConfig.transformationTypes?.length || 0,
+      languagesCount: cleanConfig.examLanguage?.length || 0
+    });
+
+    await setDoc(
+      doc(db, 'config', 'digitalTransformationService'),
+      {
+        ...cleanConfig,
+        updatedAt: serverTimestamp()
+      },
+      { merge: false }
+    );
+
+    console.log('Digital transformation config saved to Firebase successfully');
+  } catch (error: any) {
+    console.error('Error saving digital transformation config:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات التحول الرقمي');
   }
 };
 

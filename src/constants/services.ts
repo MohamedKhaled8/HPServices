@@ -201,10 +201,14 @@ export const SERVICES: Service[] = [
     icon: 'zap',
     color: '#14B8A6',
     fields: [
-      { name: 'service_type', label: 'نوع الخدمة', type: 'select', required: true, options: ['تحويل وثائق', 'خدمات إلكترونية', 'تدريب رقمي'] },
-      { name: 'description', label: 'الوصف', type: 'textarea', required: true }
+      { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
+      { name: 'full_name_english', label: 'الاسم رباعي باللغة الإنجليزية', type: 'editable', required: true },
+      { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true },
+      { name: 'whatsapp_number', label: 'رقم واتساب', type: 'editable', required: true },
+      { name: 'email', label: 'الجيميل', type: 'editable', required: true },
+      { name: 'transformation_type', label: 'اختر نوع التحول الرقمي', type: 'select', required: true }
     ],
-    paymentMethods: ['Credit Card', 'Bank Transfer']
+    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
   },
   {
     id: '8',

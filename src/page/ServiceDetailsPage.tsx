@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
 import { ServiceRequest, UploadedFile } from '../types';
-import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig } from '../services/firebaseService';
-import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem } from '../types';
+import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig } from '../services/firebaseService';
+import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig } from '../types';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import '../styles/ServiceDetailsPage.css';
@@ -35,6 +35,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
   const [certificatesConfig, setCertificatesConfig] = useState<CertificatesServiceConfig | null>(null);
   const [selectedCertificate, setSelectedCertificate] = useState<CertificateItem | null>(null);
+  const [digitalTransformationConfig, setDigitalTransformationConfig] = useState<DigitalTransformationConfig | null>(null);
 
   // Load book config for service 3
   useEffect(() => {
@@ -131,13 +132,33 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       };
       loadCertificatesConfig();
     }
+
+    if (service.id === '7') {
+      const loadDigitalTransformationConfig = async () => {
+        try {
+          console.log('Loading digital transformation config in ServiceDetailsPage...');
+          const config = await getDigitalTransformationConfig();
+          if (config) {
+            console.log('Setting digital transformation config in ServiceDetailsPage:', config.transformationTypes?.length || 0, 'types');
+            setDigitalTransformationConfig(config);
+          } else {
+            console.log('No digital transformation config found in ServiceDetailsPage');
+            setDigitalTransformationConfig(null);
+          }
+        } catch (error) {
+          console.error('Error loading digital transformation config in ServiceDetailsPage:', error);
+          setDigitalTransformationConfig(null);
+        }
+      };
+      loadDigitalTransformationConfig();
+    }
   }, [service?.id]);
 
   // ملء البيانات الشخصية تلقائياً من بيانات المستخدم للخدمة الأولى و VIP و دفع المصروفات
   useEffect(() => {
     if (!service || !student) return;
 
-    if (service.id === '1' || service.id === '2' || service.id === '4' || service.id === '5' || service.id === '6') {
+    if (service.id === '1' || service.id === '2' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') {
       const initialData: Record<string, any> = {};
       const addressString = student.address 
         ? `${student.address.governorate || ''}, ${student.address.city || ''}, ${student.address.street || ''}, ${student.address.building || ''}, ${student.address.siteNumber || ''}${student.address.landmark ? `, ${student.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
@@ -246,7 +267,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     }
 
     // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات، يجب رفع صورة الإيصال
-    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6') && receiptFiles.length === 0) {
+    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') && receiptFiles.length === 0) {
       setSubmitMessage({
         type: 'error',
         text: 'يرجى رفع صورة الإيصال أولاً'
@@ -275,6 +296,24 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       return;
     }
 
+    if (service.id === '7' && !serviceData.transformation_type) {
+      setSubmitMessage({
+        type: 'error',
+        text: 'يرجى اختيار نوع التحول الرقمي'
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (service.id === '7' && digitalTransformationConfig && (!serviceData.exam_language || serviceData.exam_language === '')) {
+      setSubmitMessage({
+        type: 'error',
+        text: 'يرجى اختيار لغة الامتحان'
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       // Show upload progress for all services
       setUploadProgress({ uploading: true, progress: 0 });
@@ -291,11 +330,22 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         requestData.totalPrice = selectedCertificate.price;
       }
 
+      if (service.id === '7' && digitalTransformationConfig) {
+        const selectedType = digitalTransformationConfig.transformationTypes.find(t => t.id === serviceData.transformation_type);
+        if (selectedType) {
+          requestData.selectedTransformationType = selectedType;
+          requestData.totalPrice = selectedType.price;
+        }
+        if (serviceData.exam_language) {
+          requestData.selectedExamLanguage = serviceData.exam_language;
+        }
+      }
+
       const request: ServiceRequest = {
         studentId: student.id || '',
         serviceId: service.id,
         data: requestData,
-        documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6') ? receiptFiles : [],
+        documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') ? receiptFiles : [],
         paymentMethod: selectedPaymentMethod,
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -496,6 +546,20 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                               />
                             )}
                           </>
+                        ) : field.name === 'transformation_type' && service.id === '7' && digitalTransformationConfig ? (
+                          <select
+                            id={field.name}
+                            value={serviceData[field.name] || ''}
+                            onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
+                            required={field.required}
+                          >
+                            <option value="">اختر نوع التحول الرقمي</option>
+                            {digitalTransformationConfig.transformationTypes.map(type => (
+                              <option key={type.id} value={type.id}>
+                                {type.name} - {type.price} جنيه
+                              </option>
+                            ))}
+                          </select>
                         ) : (
                           <>
                             <select
@@ -778,6 +842,35 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </section>
           )}
 
+          {service.id === '7' && digitalTransformationConfig && (
+            <section className="form-section">
+              <h2>لغة الامتحان</h2>
+              <div className="exam-language-section">
+                {digitalTransformationConfig.examLanguage && digitalTransformationConfig.examLanguage.length > 0 ? (
+                  <div className="field-wrapper">
+                    <label htmlFor="exam_language" className="field-label-clean">
+                      اختر لغة الامتحان <span className="field-required">*</span>
+                    </label>
+                    <select
+                      id="exam_language"
+                      value={serviceData['exam_language'] || ''}
+                      onChange={(e) => handleServiceDataChange('exam_language', e.target.value)}
+                      required
+                      className="field-select-clean"
+                    >
+                      <option value="">اختر لغة الامتحان...</option>
+                      {digitalTransformationConfig.examLanguage.map((language, index) => (
+                        <option key={index} value={language}>{language}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <p>لا توجد لغات محددة</p>
+                )}
+              </div>
+            </section>
+          )}
+
           {service.paymentMethods.length > 0 && (
             <section className="form-section section-payment">
               <h2>خدمات الدفع</h2>
@@ -830,10 +923,21 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </div>
                 </div>
               )}
+              {service.id === '7' && digitalTransformationConfig && serviceData.transformation_type && (
+                <div className="payment-amount">
+                  <div className="selected-price">
+                    <strong>
+                      المبلغ المستحق للدفع: {
+                        digitalTransformationConfig.transformationTypes.find(t => t.id === serviceData.transformation_type)?.price || 0
+                      } جنيه
+                    </strong>
+                  </div>
+                </div>
+              )}
               <div className="payment-methods">
                 {service.paymentMethods && service.paymentMethods.length > 0 && service.paymentMethods.map(method => {
                   let phoneNumber = '';
-                  if (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6') {
+                  if (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') {
                     if (service.id === '6' && certificatesConfig) {
                       switch (method) {
                         case 'Vodafone':
@@ -856,6 +960,19 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                           break;
                         case 'instaPay':
                           phoneNumber = assignmentsConfig.paymentMethods.instaPay;
+                          break;
+                        default:
+                          phoneNumber = '';
+                      }
+                    } else if (service.id === '7' && digitalTransformationConfig) {
+                      switch (method) {
+                        case 'Vodafone':
+                        case 'Etisalat':
+                        case 'Orange':
+                          phoneNumber = digitalTransformationConfig.paymentMethods.cashWallet;
+                          break;
+                        case 'instaPay':
+                          phoneNumber = digitalTransformationConfig.paymentMethods.instaPay;
                           break;
                         default:
                           phoneNumber = '';
@@ -898,7 +1015,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </section>
           )}
 
-          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6') && (
+          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') && (
             <section className="form-section section-receipt">
               <h2>رفع صورة الإيصال</h2>
               <p className="receipt-note">يرجى رفع صورة إيصال الدفع قبل تقديم الطلب</p>
