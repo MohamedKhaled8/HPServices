@@ -15,6 +15,7 @@ const AppContent: React.FC = () => {
   const { isLoggedIn, logout } = useStudent();
   const [currentPage, setCurrentPage] = useState<Page>(isLoggedIn ? 'dashboard' : 'login');
   const [selectedServiceId, setSelectedServiceId] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
 
   const handleLoginSuccess = () => {
     setCurrentPage('dashboard');
@@ -62,11 +63,31 @@ const AppContent: React.FC = () => {
     setCurrentPage('login');
   };
 
+  React.useEffect(() => {
+    // Simulate loading time on refresh/initial load
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 1500); // 1.5 seconds loading screen
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="loading-container" style={{ position: 'fixed', zIndex: 9999 }}>
+        <div className="modern-loader">
+          <div className="loader-spinner"></div>
+          <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       {currentPage === 'login' && !isLoggedIn && (
-        <LoginPage 
-          onLoginSuccess={handleLoginSuccess} 
+        <LoginPage
+          onLoginSuccess={handleLoginSuccess}
           onGoToRegister={goToRegister}
           onAdminLogin={handleAdminLogin}
         />

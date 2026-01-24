@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStudent } from '../context';
-import { 
+import {
   subscribeToAllServiceRequests,
   updateServiceRequestStatus,
   getBookServiceConfig,
@@ -20,12 +20,12 @@ import {
   updateStudentData
 } from '../services/firebaseService';
 import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType } from '../types';
-import { 
-  LogOut, 
-  Package, 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
+import {
+  LogOut,
+  Package,
+  CheckCircle,
+  XCircle,
+  Clock,
   Eye,
   Edit2,
   Save,
@@ -71,12 +71,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newCertificatePrice, setNewCertificatePrice] = useState<string>('');
   const [newCertificateDescription, setNewCertificateDescription] = useState<string>('');
   const [editingCertificate, setEditingCertificate] = useState<CertificateItem | null>(null);
-  
+
   // Digital Transformation states
   const [newTransformationTypeName, setNewTransformationTypeName] = useState<string>('');
   const [newTransformationTypePrice, setNewTransformationTypePrice] = useState<string>('');
   const [newExamLanguage, setNewExamLanguage] = useState<string>('');
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
@@ -107,7 +107,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     // Subscribe to all service requests
     const unsubscribe = subscribeToAllServiceRequests((requests) => {
       setServiceRequests(requests);
-      
+
       // Fetch student data for each request
       const fetchStudents = async () => {
         const studentsMap: Record<string, StudentData> = {};
@@ -506,12 +506,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const handleAddExamLanguage = () => {
     if (!newExamLanguage.trim() || !digitalTransformationConfig) return;
-    
+
     setDigitalTransformationConfig({
       ...digitalTransformationConfig,
       examLanguage: [...digitalTransformationConfig.examLanguage, newExamLanguage.trim()]
     });
-    
+
     setNewExamLanguage('');
   };
 
@@ -537,7 +537,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (!editingCertificate || !certificatesConfig) return;
     setCertificatesConfig({
       ...certificatesConfig,
-      certificates: certificatesConfig.certificates.map(c => 
+      certificates: certificatesConfig.certificates.map(c =>
         c.id === editingCertificate.id ? editingCertificate : c
       )
     });
@@ -549,19 +549,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       console.error('Certificate ID mismatch or editingCertificate is null');
       return;
     }
-    
+
     // Validate file type
     if (!file.type.startsWith('image/')) {
       alert('يرجى اختيار ملف صورة صحيح');
       return;
     }
-    
+
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       alert('حجم الصورة كبير جداً. الحد الأقصى 5 ميجابايت');
       return;
     }
-    
+
     const reader = new FileReader();
     reader.onloadend = () => {
       const imageUrl = reader.result as string;
@@ -610,7 +610,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       setAllStudents([]);
       return;
     }
-    
+
     try {
       const results = await searchStudent(searchTerm);
       console.log('Search results:', results.length);
@@ -696,7 +696,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return (
       <div className="admin-dashboard-page">
         <div className="loading-container">
-          <p>جاري التحميل...</p>
+          <div className="modern-loader">
+            <div className="loader-spinner"></div>
+            <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>Loading...</p>
+          </div>
         </div>
       </div>
     );
@@ -774,7 +777,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         <div className="admin-content">
           <div className="requests-section">
             <h2>جميع الطلبات ({serviceRequests.length})</h2>
-            
+
             {/* Services Files Grid */}
             <div className="services-files-grid">
               {SERVICES.map(service => {
@@ -788,7 +791,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 } else if (service.id === '5' && assignmentsConfig) {
                   serviceName = assignmentsConfig.serviceName;
                 }
-                
+
                 // Get icon component based on service icon name
                 const getServiceIcon = () => {
                   const iconProps = { size: 32 };
@@ -804,7 +807,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     default: return <FileText {...iconProps} />;
                   }
                 };
-                
+
                 return (
                   <div
                     key={service.id}
@@ -844,7 +847,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     <X size={20} />
                   </button>
                 </div>
-                
+
                 <div className="requests-grid">
                   {serviceRequests.filter(r => r.serviceId === selectedServiceId).length === 0 ? (
                     <div className="no-requests-message">
@@ -1335,7 +1338,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   {editingCertificate.imageUrl ? (
                                     <>
                                       <div style={{ position: 'relative', display: 'inline-block' }}>
-                                      <img src={editingCertificate.imageUrl} alt={editingCertificate.name} className="certificate-preview-image" />
+                                        <img src={editingCertificate.imageUrl} alt={editingCertificate.name} className="certificate-preview-image" />
                                       </div>
                                       <input
                                         type="file"
@@ -1548,7 +1551,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         <div className="admin-content">
           <div className="users-section">
             <h2>المستخدمين ({allStudents.length})</h2>
-            
+
             {/* Search Bar */}
             <div className="search-bar">
               <div className="search-input-wrapper">
@@ -1900,7 +1903,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="modal-content">
               <div className="modal-section">
                 <h3>معلومات المستخدم</h3>
@@ -1985,7 +1988,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       )}
 
       {activeTab === 'digitalTransformation' && (
-        <div className="admin-content">
+        <div className="admin-content digital-transformation-section">
           <div className="books-section">
             <div className="section-header">
               <h2>إعدادات خدمة التحول الرقمي</h2>

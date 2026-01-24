@@ -9,6 +9,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -222,6 +223,7 @@
   margin-top: 8px;
 }
 
+
 .payment-methods {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -231,57 +233,114 @@
 .payment-option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border: 2px solid #e2e8f0;
-  border-radius: 6px;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #000000;
+  /* Black Border */
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  background: white;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
 }
 
+/* User requested animation: Rotating Blue Glow on Hover */
 .payment-option:hover {
-  border-color: #cbd5e0;
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+}
+
+.payment-option:hover::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(transparent, transparent, transparent, #2563eb);
+  transform: translate(-50%, -50%);
+  animation: rotateBorder 3s linear infinite;
+  z-index: -2;
+}
+
+.payment-option:hover::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: white;
+  border-radius: 6px;
+  z-index: -1;
+}
+
+@keyframes rotateBorder {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
 }
 
 .payment-option input[type="radio"] {
   cursor: pointer;
+  width: 18px;
+  height: 18px;
+  accent-color: #2563eb;
+  position: relative;
+  z-index: 2;
 }
 
-.payment-option input[type="radio"]:checked + .payment-label {
-  color: #667eea;
-  font-weight: 600;
+.payment-option input[type="radio"]:checked+.payment-label {
+  color: #000000;
+  font-weight: 700;
 }
 
 .payment-option input[type="radio"]:checked {
-  accent-color: #667eea;
+  accent-color: #2563eb;
 }
 
 .payment-option:has(input[type="radio"]:checked) {
-  border-color: #667eea;
-  background: #edf2f7;
+  border-color: #2563eb;
+  background: #eff6ff;
+  border-width: 2px;
+}
+
+/* Stop rotation if selected */
+.payment-option:has(input[type="radio"]:checked):hover::before {
+  display: none;
 }
 
 .payment-label {
-  font-size: 14px;
-  color: #2d3748;
+  font-size: 15px;
+  color: #000000;
+  /* Black Text */
+  font-weight: 700;
   cursor: pointer;
   flex: 1;
+  position: relative;
+  z-index: 2;
 }
 
+/* Green Bar with White Text */
 .payment-amount {
-  background: #f0f9ff;
-  border: 2px solid #0ea5e9;
+  background: #f0fdf4;
+  border: 1px solid #000000;
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 20px;
   font-size: 16px;
-  color: #0369a1;
+  color: #000000;
 }
 
 .payment-amount strong {
   display: block;
   margin-bottom: 12px;
   font-size: 18px;
+  color: #000000;
 }
 
 .book-prices-list {
@@ -289,34 +348,45 @@
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 8px;
   margin-bottom: 16px;
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #000000;
 }
 
 .price-item-row {
   display: flex;
   justify-content: space-between;
   padding: 8px 12px;
-  background: white;
+  background: #ffffff;
   border-radius: 6px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #000000;
 }
 
 .price-item-row span {
-  color: #4a5568;
+  color: #000000;
+  font-weight: 600;
 }
 
 .price-item-row strong {
-  color: #10b981;
+  color: #000000;
   font-size: 16px;
 }
 
+/* Selected Price: Green Background, White Text */
 .selected-price {
   margin-top: 16px;
   padding: 12px;
-  background: #10b981;
-  color: white;
+  background: #16a34a;
+  /* Green */
+  color: #ffffff;
+  /* White */
   border-radius: 6px;
   text-align: center;
   font-size: 18px;
+  font-weight: 700;
+  border: 1px solid #000000;
+  box-shadow: 0 4px 6px rgba(22, 163, 74, 0.2);
 }
 
 .payment-info {
@@ -324,20 +394,25 @@
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  position: relative;
+  z-index: 2;
 }
 
 .payment-number {
-  font-size: 12px;
-  color: #718096;
-  font-weight: 500;
+  font-size: 13px;
+  color: #000000;
+  font-weight: 700;
   direction: ltr;
   text-align: right;
+  width: fit-content;
+  align-self: flex-end;
 }
 
-.payment-option input[type="radio"]:checked + .payment-info .payment-label {
-  color: #667eea;
-  font-weight: 600;
+.payment-option input[type="radio"]:checked+.payment-info .payment-label {
+  color: #000000;
+  font-weight: 700;
 }
+
 
 .section-receipt {
   margin-top: 20px;
@@ -437,6 +512,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -467,6 +543,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -518,12 +595,10 @@
   left: 0;
   bottom: 0;
   right: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.3),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.3),
+      transparent);
   animation: shimmer 1.5s infinite;
 }
 
@@ -531,6 +606,7 @@
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }

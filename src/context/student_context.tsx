@@ -136,7 +136,14 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   if (isLoading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>جاري التحميل...</div>;
+    return (
+      <div className="loading-container" style={{ position: 'fixed', zIndex: 9999 }}>
+        <div className="modern-loader">
+          <div className="loader-spinner"></div>
+          <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   return (

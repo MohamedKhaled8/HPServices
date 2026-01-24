@@ -74,7 +74,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       };
       loadBookConfig();
     }
-    
+
     // Load fees config for service 4
     if (service.id === '4') {
       const loadFeesConfig = async () => {
@@ -160,7 +160,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
     if (service.id === '1' || service.id === '2' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') {
       const initialData: Record<string, any> = {};
-      const addressString = student.address 
+      const addressString = student.address
         ? `${student.address.governorate || ''}, ${student.address.city || ''}, ${student.address.street || ''}, ${student.address.building || ''}, ${student.address.siteNumber || ''}${student.address.landmark ? `, ${student.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
         : '';
 
@@ -208,7 +208,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       });
 
       setServiceData(initialData);
-      
+
       // تعيين جميع الحقول القابلة للتعديل كغير قابلة للتعديل في البداية
       const editableState: Record<string, boolean> = {};
       service.fields.forEach(field => {
@@ -357,7 +357,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       setUploadProgress({ uploading: true, progress: 60 });
 
       await addServiceRequest(request);
-      
+
       setUploadProgress({ uploading: true, progress: 100 });
       await new Promise(resolve => setTimeout(resolve, 150));
 
@@ -396,18 +396,18 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   }
 
   return (
-    <div className="service-details-page">
+    <div className={`service-details-page ${service.id === '7' ? 'digital-transformation-page' : ''}`}>
       <div className="details-header">
         <button onClick={onBack} className="back-button">
           <ArrowRight size={20} />
           رجوع
         </button>
         <h1>
-          {service.id === '3' && bookConfig 
-            ? bookConfig.serviceName 
-            : service.id === '5' && assignmentsConfig 
-            ? assignmentsConfig.serviceName 
-            : service.nameAr}
+          {service.id === '3' && bookConfig
+            ? bookConfig.serviceName
+            : service.id === '5' && assignmentsConfig
+              ? assignmentsConfig.serviceName
+              : service.nameAr}
         </h1>
       </div>
 
@@ -992,7 +992,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                       }
                     }
                   }
-                  
+
                   return (
                     <label key={method} className="payment-option">
                       <input
@@ -1034,15 +1034,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   <Loader2 className="spinning-loader-large" size={64} />
                 </div>
                 <h3 className="loading-title">
-                  {service.id === '2' && receiptFiles.length > 0 
-                    ? 'جاري رفع الملفات' 
+                  {service.id === '2' && receiptFiles.length > 0
+                    ? 'جاري رفع الملفات'
                     : 'جاري تقديم الطلب'}
                 </h3>
                 <p className="loading-subtitle">يرجى الانتظار...</p>
                 <div className="progress-bar-wrapper">
                   <div className="progress-bar-track">
-                    <div 
-                      className="progress-bar-fill" 
+                    <div
+                      className="progress-bar-fill"
                       style={{ width: `${uploadProgress.progress}%` }}
                     ></div>
                   </div>

@@ -139,22 +139,52 @@
   animation: cardSlideIn 0.4s ease-out backwards;
 }
 
-.service-file:nth-child(1) { animation-delay: 0.05s; }
-.service-file:nth-child(2) { animation-delay: 0.1s; }
-.service-file:nth-child(3) { animation-delay: 0.15s; }
-.service-file:nth-child(4) { animation-delay: 0.2s; }
-.service-file:nth-child(5) { animation-delay: 0.25s; }
-.service-file:nth-child(6) { animation-delay: 0.3s; }
-.service-file:nth-child(7) { animation-delay: 0.35s; }
-.service-file:nth-child(8) { animation-delay: 0.4s; }
-.service-file:nth-child(9) { animation-delay: 0.45s; }
-.service-file:nth-child(10) { animation-delay: 0.5s; }
+.service-file:nth-child(1) {
+  animation-delay: 0.05s;
+}
+
+.service-file:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.service-file:nth-child(3) {
+  animation-delay: 0.15s;
+}
+
+.service-file:nth-child(4) {
+  animation-delay: 0.2s;
+}
+
+.service-file:nth-child(5) {
+  animation-delay: 0.25s;
+}
+
+.service-file:nth-child(6) {
+  animation-delay: 0.3s;
+}
+
+.service-file:nth-child(7) {
+  animation-delay: 0.35s;
+}
+
+.service-file:nth-child(8) {
+  animation-delay: 0.4s;
+}
+
+.service-file:nth-child(9) {
+  animation-delay: 0.45s;
+}
+
+.service-file:nth-child(10) {
+  animation-delay: 0.5s;
+}
 
 @keyframes cardSlideIn {
   from {
     opacity: 0;
     transform: translateY(15px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -189,7 +219,7 @@
 .service-file:hover {
   border-color: #d1d5db;
   transform: translateY(-4px);
-  box-shadow: 
+  box-shadow:
     0 4px 12px rgba(0, 0, 0, 0.08),
     0 2px 4px rgba(0, 0, 0, 0.04);
 }
@@ -207,7 +237,7 @@
   border-color: #2563eb;
   border-width: 2px;
   transform: translateY(-2px);
-  box-shadow: 
+  box-shadow:
     0 8px 20px rgba(37, 99, 235, 0.15),
     0 2px 6px rgba(37, 99, 235, 0.1);
 }
@@ -242,9 +272,12 @@
 }
 
 @keyframes iconBounce {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1.12) translateY(0);
   }
+
   50% {
     transform: scale(1.12) translateY(-3px);
   }
@@ -442,7 +475,7 @@
 
 .user-card.highlighted-match {
   border: 3px solid #2563eb;
-  box-shadow: 
+  box-shadow:
     0 4px 12px rgba(37, 99, 235, 0.2),
     0 0 0 4px rgba(37, 99, 235, 0.1);
   background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
@@ -450,13 +483,16 @@
 }
 
 @keyframes highlightPulse {
-  0%, 100% {
-    box-shadow: 
+
+  0%,
+  100% {
+    box-shadow:
       0 4px 12px rgba(37, 99, 235, 0.2),
       0 0 0 4px rgba(37, 99, 235, 0.1);
   }
+
   50% {
-    box-shadow: 
+    box-shadow:
       0 4px 16px rgba(37, 99, 235, 0.3),
       0 0 0 6px rgba(37, 99, 235, 0.15);
   }
@@ -701,7 +737,7 @@
   background: #ffffff;
   border-radius: 20px;
   padding: 32px;
-  box-shadow: 
+  box-shadow:
     0 4px 6px rgba(0, 0, 0, 0.05),
     0 10px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid #f3f4f6;
@@ -713,6 +749,7 @@
     opacity: 0;
     transform: translateY(-20px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -1385,11 +1422,12 @@
 }
 
 @media (max-width: 768px) {
+
   .add-transformation-type-form,
   .add-exam-language-form {
     grid-template-columns: 1fr;
   }
-  
+
   .add-price-button-enhanced {
     width: 100%;
   }
@@ -1424,8 +1462,13 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes slideUp {
@@ -1433,6 +1476,7 @@
     transform: translateY(20px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -1948,3 +1992,321 @@
   }
 }
 
+
+
+
+/* Digital Transformation Section - Blue & White Professional Design */
+
+/* Remove main container styling */
+.digital-transformation-section .books-section {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.digital-transformation-section .section-header {
+  border-bottom: none;
+  background: transparent;
+  padding-bottom: 0;
+  margin-bottom: 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.digital-transformation-section .section-header h2 {
+  color: #1e3a8a;
+  /* Deep Navy Blue */
+  font-weight: 700;
+  font-size: 24px;
+}
+
+/* Make each section a clean card */
+.digital-transformation-section .form-group {
+  background: #ffffff;
+  padding: 30px;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.04);
+  /* Subtle Blue shadow */
+  border: 1px solid #dbeafe;
+  /* Very Light Blue border */
+  margin-bottom: 24px;
+}
+
+.digital-transformation-section label {
+  color: #1e40af;
+  /* Dark Blue Text */
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 20px;
+  display: block;
+}
+
+/* Cleaner Grids */
+.digital-transformation-section .transformation-types-list,
+.digital-transformation-section .exam-languages-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* Cleaner Items */
+.digital-transformation-section .transformation-type-item,
+.digital-transformation-section .exam-language-item {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 0;
+  box-shadow: none;
+  transition: all 0.2s ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.digital-transformation-section .transformation-type-item:hover,
+.digital-transformation-section .exam-language-item:hover {
+  border-color: #3b82f6;
+  /* Blue Border */
+  background: #eff6ff;
+  /* Light Blue Background */
+  transform: translateY(-1px);
+}
+
+.digital-transformation-section .type-name,
+.digital-transformation-section .language-name {
+  color: #1f2937;
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.digital-transformation-section .type-price {
+  color: #2563eb;
+  /* Primary Blue */
+  font-weight: 700;
+  font-size: 14px;
+  background: #eff6ff;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+/* Modern Inline Add Forms */
+.digital-transformation-section .add-transformation-type-form,
+.digital-transformation-section .add-exam-language-form {
+  background: #f8fafc;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.digital-transformation-section .add-transformation-type-section,
+.digital-transformation-section .add-exam-language-section {
+  border-top: 1px solid #f1f5f9;
+  padding-top: 24px;
+}
+
+.digital-transformation-section .input-group {
+  flex: 1;
+  min-width: 220px;
+  margin-bottom: 0;
+}
+
+.digital-transformation-section .input-group label {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.digital-transformation-section .config-input-enhanced {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 16px;
+  height: 46px;
+  width: 100%;
+  font-size: 14px;
+  color: #1e293b;
+  transition: all 0.2s;
+}
+
+.digital-transformation-section .config-input-enhanced:focus {
+  border-color: #2563eb;
+  /* Primary Blue */
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  /* Blue Glow */
+}
+
+.digital-transformation-section .add-price-button-enhanced {
+  height: 46px;
+  padding: 0 24px;
+  background: #2563eb;
+  /* Primary Blue */
+  color: white;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.digital-transformation-section .add-price-button-enhanced:hover {
+  background: #1d4ed8;
+  /* Darker Blue */
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+}
+
+/* Payment Section */
+.digital-transformation-section .payment-numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.digital-transformation-section .payment-item {
+  background: #f8fafc;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.digital-transformation-section .payment-item label {
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: #4b5563;
+}
+
+.digital-transformation-section .config-input {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  width: 100%;
+  color: #1f2937;
+}
+
+.digital-transformation-section .config-input:focus {
+  border-color: #2563eb;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Minimalist Action Buttons */
+.digital-transformation-section .remove-assignment-button {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: #94a3b8;
+  background: transparent;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.digital-transformation-section .remove-assignment-button:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.digital-transformation-section .no-items-message {
+  padding: 30px;
+  text-align: center;
+  color: #64748b;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+}
+
+.digital-transformation-section .save-button {
+  background: #2563eb;
+  /* Primary Blue */
+  color: white;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.digital-transformation-section .save-button:hover {
+  background: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+
+  /* Modern Loader Styles */
+  .loading-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    /* Full viewport height */
+    width: 100%;
+    background-color: #ffffff;
+    /* Clean white background */
+  }
+
+  .modern-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .loader-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #e2e8f0;
+    /* Light gray base */
+    border-top: 4px solid #2563eb;
+    /* Blue spinner */
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .modern-loader p {
+    font-size: 16px;
+    font-weight: 600;
+    color: #334155;
+    margin: 0;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes pulse {
+
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.5;
+    }
+  }
+}
