@@ -5,8 +5,8 @@ import { checkIsAdmin } from '../services/firebaseService';
 import '../styles/DashboardPage.css';
 import {
   User, LogOut, Settings, Book,
-  Search, ArrowLeft, Star, Clock,
-  CheckCircle, Zap, Shield, BookOpen, AlertCircle,
+  Search, ArrowLeft, Star,
+  CheckCircle, Zap, Shield, BookOpen,
   Library, GraduationCap, ClipboardList, Package, CreditCard, CheckSquare, Award, FileCheck, Phone, Mail, MapPin, ChevronRight
 } from 'lucide-react';
 
@@ -206,22 +206,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                 نعمل على توفير وقتك وجهدك من خلال حلول ذكية ومبتكرة.
               </p>
               <div className="features-list">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="feature-pill">
                   <CheckCircle size={18} color="#10B981" /> <span>دعم فني</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="feature-pill">
                   <Shield size={18} color="#10B981" /> <span>أمان تام</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="feature-pill">
                   <Zap size={18} color="#10B981" /> <span>سرعة فائقة</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="feature-pill">
                   <Star size={18} color="#10B981" /> <span>جودة عالية</span>
                 </div>
               </div>
             </div>
 
-            <div style={{ background: 'rgba(255,255,255,0.05)', padding: 30, borderRadius: 20 }}>
+            <div className="footer-contact-card">
               <h3 style={{ marginBottom: 20 }}>تواصل معنا</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 16 }}>
                 <Phone size={20} color="#F59E0B" /> <span>01050889596</span>
@@ -236,7 +236,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
 
           <div className="footer-bottom">
-            © 2026 HP Services. جميع الحقوق محفوظة.
+            <span>© 2026 HP Services. جميع الحقوق محفوظة.</span>
+            <span className="powered-by">Powered By Eng. Mohamed Khaled</span>
           </div>
         </footer>
       </div>

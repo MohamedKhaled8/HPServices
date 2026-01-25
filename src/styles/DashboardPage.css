@@ -308,19 +308,36 @@ body {
   color: white;
 }
 
+/* Typography Enhancements */
 .hero-title {
-  font-size: 64px;
+  font-size: 72px;
+  /* Larger */
   font-weight: 900;
-  margin-bottom: 20px;
-  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  margin-bottom: 24px;
+  background: linear-gradient(180deg, #FFFFFF 0%, #E2E8F0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  /* Softer shadow */
+  letter-spacing: -2px;
+  /* Tight, modern spacing */
+  line-height: 1.1;
   animation: slideDown 0.8s ease-out;
 }
 
 .hero-subtitle {
-  font-size: 22px;
-  margin-bottom: 40px;
-  opacity: 0.95;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  font-size: 24px;
+  font-weight: 400;
+  /* Lighter weight for elegance */
+  margin-bottom: 48px;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  letter-spacing: 0.5px;
+  line-height: 1.6;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
   animation: slideDown 1s ease-out;
 }
 
@@ -374,6 +391,7 @@ body {
   position: relative;
 }
 
+/* Enhanced Section Title */
 .section-header {
   text-align: center;
   margin-bottom: 70px;
@@ -383,14 +401,19 @@ body {
   align-items: center;
 }
 
-/* Centered Title with Decoration */
 .section-title {
-  font-size: 42px;
+  font-size: 48px;
   font-weight: 900;
   color: var(--text-main);
   position: relative;
   z-index: 2;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, var(--text-main) 0%, #475569 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: inline-block;
+  padding-bottom: 10px;
 }
 
 .section-header::before {
@@ -406,13 +429,14 @@ body {
   letter-spacing: 10px;
 }
 
-/* Styling line underneath */
+/* Elegant Underline */
 .title-decoration {
-  width: 80px;
-  height: 6px;
-  background: linear-gradient(to right, var(--primary), var(--secondary));
+  width: 120px;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
   border-radius: 10px;
-  margin-top: 8px;
+  margin-top: -5px;
+  opacity: 0.8;
 }
 
 /* Services Grid & Cards */
@@ -528,7 +552,7 @@ body {
   /* Slight animation */
 }
 
-/* Clipped Footer */
+/* Updated Clipped Footer (Slanted) */
 .footer-clipped-wrapper {
   position: relative;
   margin-top: 120px;
@@ -538,10 +562,61 @@ body {
 .library-info-footer {
   background: #111827;
   color: white;
-  /* Stylish Top Clip */
-  clip-path: polygon(0 15%, 50% 0, 100% 15%, 100% 100%, 0% 100%);
+  /* Slanted Clip Path (Diagonal) */
+  clip-path: polygon(0 15%, 100% 0, 100% 100%, 0% 100%);
   padding: 140px 5% 40px;
-  background-image: radial-gradient(circle at top center, #1f2937 0%, #111827 60%);
+  background-image: radial-gradient(circle at top right, #1f2937 0%, #111827 60%);
+  position: relative;
+}
+
+/* Subtle Top Border Highlight for Depth */
+.library-info-footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.03), transparent 20%);
+  pointer-events: none;
+}
+
+/* Premium Footer Typography */
+.footer-about h2 {
+  font-size: 36px;
+  font-weight: 900;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, white 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: inline-block;
+  position: relative;
+}
+
+.footer-about h2::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  right: 0;
+  /* Adjusted for RTL: starts from right */
+  width: 60px;
+  height: 4px;
+  background: var(--primary);
+  border-radius: 2px;
+}
+
+.footer-about p {
+  color: #94a3b8;
+  line-height: 2;
+  font-size: 17px;
+  /* Larger */
+  font-weight: 400;
+  margin-bottom: 40px;
+  max-width: 600px;
+  border-right: 3px solid rgba(255, 255, 255, 0.1);
+  /* Decorative border hint */
+  padding-right: 20px;
 }
 
 .footer-main-grid {
@@ -552,15 +627,62 @@ body {
   margin: 0 auto 60px;
 }
 
-.footer-about h2 {
-  font-size: 36px;
-  font-weight: 900;
-  margin-bottom: 24px;
-}
-
+/* Modern Glass Feature Cards */
 .features-list {
+  display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 20px;
+}
+
+.feature-pill {
+  /* Renamed wrapper if needed, but styling div inside features-list */
+  display: flex;
+  /* Assuming the divs inside features-list have specific class or inline style - adjusting generic selector approach or creating new class in css to match jsx structure */
+}
+
+/* Since the JSX uses inline styles for the feature divs, I'll target divs inside .features-list directly or you can update JSX. 
+   Wait, the JSX has <div className="features-list">...<div style...>...</div> </div>
+   I will use nth-child or direct child selector.
+*/
+
+.features-list>div {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px !important;
+  /* Override inline style if possible, or just rely on flex gap */
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+.features-list>div:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.features-list span {
+  font-weight: 700;
+  font-size: 15px;
+  color: white;
+  letter-spacing: 0.5px;
+}
+
+.footer-contact-card {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 30px;
+  border-radius: 20px;
+  height: fit-content;
+  width: fit-content;
+  /* Fit to content */
+  min-width: 300px;
+  /* Minimum width for aesthetics */
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(5px);
 }
 
 .footer-bottom {
@@ -568,6 +690,24 @@ body {
   padding-top: 30px;
   text-align: center;
   color: #6b7280;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.powered-by {
+  font-size: 13px;
+  color: #4b5563;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+  opacity: 0.8;
+  transition: opacity 0.3s;
+}
+
+.powered-by:hover {
+  opacity: 1;
+  color: var(--primary);
 }
 
 @keyframes slideDown {
