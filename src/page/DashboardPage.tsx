@@ -110,7 +110,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="unique-profile-badge" onClick={onProfileClick}>
             <div className="profile-text">
               <span className="profile-name">{student?.fullNameArabic ? getFirstName(student.fullNameArabic) : 'زائر'}</span>
-              <span className="profile-track">{student?.track || 'عضو جديد'}</span>
+              <span className="profile-track">
+                {student?.track || 'عضو جديد'} <ChevronRight size={10} style={{ transform: 'rotate(90deg)' }} />
+              </span>
             </div>
             <div className="profile-avatar-hexagon">
               {student?.fullNameArabic ? student.fullNameArabic.charAt(0) : 'U'}
