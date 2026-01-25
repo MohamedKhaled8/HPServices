@@ -511,23 +511,23 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   // 2. Save to Firebase (Frontend Side)
                   try {
                     const codeData = {
-                      studentId: request.studentId,
-                      requestId: requestId,
-                      email: payload.email,
-                      fullNameArabic: payload.fullNameArabic,
-                      fullNameEnglish: payload.fullNameEnglish,
-                      phone: payload.phone,
-                      examLanguage: payload.examLanguage,
+                      studentId: request.studentId || '',
+                      requestId: requestId || '',
+                      email: payload.email || '',
+                      fullNameArabic: payload.fullNameArabic || '',
+                      fullNameEnglish: payload.fullNameEnglish || '',
+                      phone: payload.phone || '',
+                      examLanguage: payload.examLanguage || '',
 
-                      // Extracted Data
-                      serialNumber: data.data.serialNumber,
-                      name: data.data.name,
-                      fawryCode: data.data.fawryCode,
-                      mobile: data.data.mobile,
-                      whatsapp: data.data.whatsapp,
-                      type: data.data.type,
-                      value: data.data.value,
-                      status: data.data.status,
+                      // Extracted Data - Ensure no undefined
+                      serialNumber: data.data.serialNumber || '',
+                      name: data.data.name || '',
+                      fawryCode: data.data.fawryCode || '',
+                      mobile: data.data.mobile || '',
+                      whatsapp: data.data.whatsapp || '',
+                      type: data.data.type || '',
+                      value: data.data.value || '',
+                      status: data.data.status || '',
 
                       createdAt: new Date().toISOString()
                     };
