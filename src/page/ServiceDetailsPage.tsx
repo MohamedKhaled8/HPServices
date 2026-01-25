@@ -422,7 +422,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     if (service.id === '7' && digitalTransformationConfig && (!serviceData.exam_language || serviceData.exam_language === '')) {
       setSubmitMessage({
         type: 'error',
-        text: 'يرجى اختيار لغة الامتحان'
+        text: 'يرجى اختيار نوع التدريب'
       });
       setIsSubmitting(false);
       return;
@@ -1264,12 +1264,12 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
           {service.id === '7' && digitalTransformationConfig && (
             <section className="form-section">
-              <h2>لغة الامتحان</h2>
+              <h2>نوع التدريب</h2>
               <div className="exam-language-section">
                 {digitalTransformationConfig.examLanguage && digitalTransformationConfig.examLanguage.length > 0 ? (
                   <div className="field-wrapper">
                     <label htmlFor="exam_language" className="field-label-clean">
-                      اختر لغة الامتحان <span className="field-required">*</span>
+                      اختر نوع التدريب <span className="field-required">*</span>
                     </label>
                     <select
                       id="exam_language"
@@ -1278,14 +1278,14 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                       required
                       className="field-select-clean"
                     >
-                      <option value="">اختر لغة الامتحان...</option>
+                      <option value="">اختر نوع التدريب...</option>
                       {digitalTransformationConfig.examLanguage.map((language, index) => (
                         <option key={index} value={language}>{language}</option>
                       ))}
                     </select>
                   </div>
                 ) : (
-                  <p>لا توجد لغات محددة</p>
+                  <p>لا توجد أنواع محددة</p>
                 )}
               </div>
             </section>

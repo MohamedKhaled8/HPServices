@@ -23,7 +23,8 @@ import {
   subscribeToAllStudents,
   searchStudent,
   updateStudentData,
-  saveDigitalTransformationCode
+  saveDigitalTransformationCode,
+  subscribeToDigitalTransformationCodes
 } from '../services/firebaseService';
 import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice } from '../types';
 import {
@@ -339,16 +340,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadDigitalTransformationConfig();
 
-    // Load digital transformation codes
-    const loadDigitalTransformationCodes = async () => {
-      try {
-        const codes = await getDigitalTransformationCodes();
-        setDtCodes(codes);
-      } catch (error) {
-        console.error('Error loading digital transformation codes:', error);
-      }
-    };
-    loadDigitalTransformationCodes();
+    // Subscribe to digital transformation codes (Real-time)
+    const unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
+      console.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
+      setDtCodes(codes);
+    });
 
     // Load final review config
     const loadFinalReviewConfig = async () => {
@@ -426,7 +422,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadGraduationProjectConfig();
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (unsubscribeDtCodes) unsubscribeDtCodes();
+    };
   }, [isLoading]);
 
   // Subscribe to all students for users tab
@@ -490,7 +489,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 🔤 الاسم بالإنجليزي: ${payload.fullNameEnglish || 'غير موجود'}
 🆔 الرقم القومي: ${payload.nationalID || 'غير موجود'}
 📱 الموبايل: ${payload.phone || 'غير موجود'}
-🌐 لغة الامتحان: ${payload.examLanguage}
+🌐 نوع التدريب: ${payload.examLanguage}
             `.trim();
 
             console.log(debugInfo);
@@ -2624,7 +2623,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </div>
 
                 <div className="form-group">
-                  <label>لغات الامتحان</label>
+                  <label>أنواع التدريب المتاحة (كانت تسمى لغات الامتحان)</label>
                   <div className="exam-languages-list">
                     {digitalTransformationConfig.examLanguage.length > 0 ? (
                       digitalTransformationConfig.examLanguage.map((language, index) => (
@@ -2640,17 +2639,17 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         </div>
                       ))
                     ) : (
-                      <div className="no-items-message">لا توجد لغات مضافة</div>
+                      <div className="no-items-message">لا توجد أنواع مضافة</div>
                     )}
                   </div>
 
                   <div className="add-exam-language-section">
                     <div className="add-exam-language-form">
                       <div className="input-group">
-                        <label>إضافة لغة جديدة</label>
+                        <label>إضافة نوع تدريب جديد</label>
                         <input
                           type="text"
-                          placeholder="أدخل اسم اللغة"
+                          placeholder="أدخل نوع التدريب (مثال: اختبار فقط)"
                           value={newExamLanguage}
                           onChange={(e) => setNewExamLanguage(e.target.value)}
                           className="config-input-enhanced"
@@ -2662,7 +2661,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         />
                       </div>
                       <button onClick={handleAddExamLanguage} className="add-price-button-enhanced">
-                        <span>إضافة لغة</span>
+                        <span>إضافة</span>
                       </button>
                     </div>
                   </div>
@@ -2712,16 +2711,22 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       {activeTab === 'digitalTransformationCodes' && (
         <div className="admin-content">
           <div className="section-header">
-            <h2>أكواد التحول الرقمي المحفوظة ({dtCodes.length})</h2>
-            <button
-              onClick={async () => {
-                const codes = await getDigitalTransformationCodes();
-                setDtCodes(codes);
-              }}
-              className="save-button"
-            >
-              🔄 تحديث البيانات
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2>أكواد التحول الرقمي المحفوظة ({dtCodes.length})</h2>
+              <span style={{
+                fontSize: '0.8rem',
+                background: '#dcfce7',
+                color: '#166534',
+                padding: '4px 8px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                <span style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', display: 'inline-block' }}></span>
+                مباشر (Real-time)
+              </span>
+            </div>
           </div>
 
           <div className="table-container" style={{ overflowX: 'auto' }}>

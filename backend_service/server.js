@@ -739,20 +739,89 @@ async function runAutomation(data) {
                 // Check what this select contains
                 let selectedSomething = false;
 
-                // Training Type (has Arabic/English options)
-                if (optionsStr.includes('عربي') && optionsStr.includes('انجليزي')) {
-                    console.log(`Select ${i}: Detected TRAINING TYPE`);
-                    const targetLang = data.examLanguage.trim();
-                    const matchedOption = options.find(o =>
-                        o.includes(targetLang) ||
-                        (targetLang.includes('English') && o.includes('English')) ||
-                        (targetLang.includes('عربي') && o.includes('عربي'))
-                    );
+                // Training Type (Check for keywords like 'exam', 'training', 'arabic', 'english')
+                // FIXED: Don't require BOTH arabic and english. Just 'test' or 'training' keywords are enough.
+                if (optionsStr.includes('اختبار') || optionsStr.includes('تدريب') || (optionsStr.includes('عربي') && optionsStr.includes('انجليزي'))) {
+                    console.log(`Select ${i}: Detected TRAINING TYPE (Keywords found)`);
+                    console.log(`  Target from DB: "${data.examLanguage}"`);
 
-                    if (matchedOption) {
-                        await select.selectOption({ label: matchedOption });
-                        console.log(`✅ Selected: ${matchedOption}`);
+                    // Helper to normalize Arabic & cleaning
+                    const normalizeText = (text) => {
+                        return text
+                            .toLowerCase()
+                            .replace(/[()]/g, '')     // Remove brackets
+                            .replace(/[أإآ]/g, 'ا')    // Normalize Alef
+                            .replace(/[ة]/g, 'ه')     // Normalize Taa Marbouta
+                            .replace(/[ى]/g, 'ي')     // Normalize Yaa
+                            .replace(/\s+/g, ' ')     // Normalize spaces
+                            .trim();
+                    };
+
+                    const targetNorm = normalizeText(data.examLanguage);
+                    // Split target into words, handle typo "بالغة" -> ignore small words
+                    const targetWords = targetNorm.split(' ').filter(w => w.length > 3 || w === 'فقط');
+
+                    console.log(`  Target Normalized: "${targetNorm}"`);
+                    console.log(`  Target Keywords: ${JSON.stringify(targetWords)}`);
+
+                    let bestMatch = null;
+                    let bestScore = -1;
+
+                    for (const opt of options) {
+                        const optNorm = normalizeText(opt);
+                        if (optNorm.includes('اختر') || optNorm === 'select') continue;
+
+                        let score = 0;
+
+                        // 1. Exact match bonus (after normalization) mechanism
+                        if (optNorm === targetNorm) score += 100;
+
+                        // 2. Keyword overlap
+                        for (const word of targetWords) {
+                            if (optNorm.includes(word)) score += 10;
+                        }
+
+                        // 3. Language specific bonus
+                        // 3. Language specific bonus (Use roots to handle ه vs ي endings)
+                        // English indicators
+                        const isTargetEnglish = targetNorm.includes('english') || targetNorm.includes('انجليز');
+                        const isOptEnglish = optNorm.includes('english') || optNorm.includes('انجليز');
+
+                        if (isTargetEnglish && isOptEnglish) score += 20;
+
+                        // Arabic indicators
+                        const isTargetArabic = targetNorm.includes('arabic') || targetNorm.includes('عرب');
+                        const isOptArabic = optNorm.includes('arabic') || optNorm.includes('عرب');
+
+                        if (isTargetArabic && isOptArabic) score += 20;
+
+                        // 4. Test Only specific bonus
+                        if (targetNorm.includes('اختبار') && optNorm.includes('اختبار')) score += 5;
+                        if (targetNorm.includes('test') && optNorm.includes('test')) score += 5;
+
+                        console.log(`  > Option: "${opt}" (Norm: "${optNorm}") -> Score: ${score}`);
+
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestMatch = opt;
+                        }
+                    }
+
+                    console.log(`  🏆 Winner: "${bestMatch}" (Score: ${bestScore})`);
+
+                    if (bestMatch && bestScore > 0) {
+                        await select.selectOption({ label: bestMatch });
+                        console.log(`  ✅ Selected (Best Match): "${bestMatch}" (Score: ${bestScore})`);
                         selectedSomething = true;
+                    } else {
+                        console.log(`  ⚠️ No good match found for "${data.examLanguage}"`);
+                        // DO NOT rely on generic fallback for this important field
+                        // Try to select index 1 explicitly here but log it
+                        if (options.length > 1) {
+                            console.log(`  ⚠️ Force selecting index 1 as fallback for Training Type`);
+                            await select.selectOption({ index: 1 });
+                            selectedSomething = true; // Prevent generic fallback from overwriting log
+                        }
                     }
                 }
 

@@ -977,3 +977,37 @@ export const getDigitalTransformationCodes = async (): Promise<any[]> => {
     return [];
   }
 };
+
+// Subscribe to Digital Transformation Codes (Real-time)
+export const subscribeToDigitalTransformationCodes = (
+  onUpdate: (codes: any[]) => void,
+  onError?: (error: any) => void
+) => {
+  try {
+    const q = query(
+      collection(db, 'digitalTransformationCodes'),
+      orderBy('updatedAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const codes = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        onUpdate(codes);
+      },
+      (error) => {
+        console.error('Error subscribing to digital transformation codes:', error);
+        if (onError) onError(error);
+      }
+    );
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('Error setting up subscription:', error);
+    if (onError) onError(error);
+    return () => { };
+  }
+};
