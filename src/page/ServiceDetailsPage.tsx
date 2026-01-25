@@ -40,6 +40,10 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
   const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
 
+  // Scroll to top when service changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [serviceId]);
 
   // Load book config for service 3
   useEffect(() => {

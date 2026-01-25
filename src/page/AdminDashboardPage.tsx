@@ -97,6 +97,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
   const [newGradProjectPriceAmount, setNewGradProjectPriceAmount] = useState<string>('');
   const [newGradProjectFeature, setNewGradProjectFeature] = useState<string>('');
+  const [isSaving, setIsSaving] = useState<string | null>(null);
 
   useEffect(() => {
     if (!student?.id) return;
@@ -446,34 +447,43 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   };
 
   const handleSaveBookConfig = async () => {
-    if (!bookConfig) return;
+    if (!bookConfig || isSaving === 'books') return;
+    setIsSaving('books');
     try {
       await updateBookServiceConfig(bookConfig);
       setIsEditingBooks(false);
       alert('تم حفظ الإعدادات بنجاح');
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsSaving(null);
     }
   };
 
   const handleSaveFeesConfig = async () => {
-    if (!feesConfig) return;
+    if (!feesConfig || isSaving === 'fees') return;
+    setIsSaving('fees');
     try {
       await updateFeesServiceConfig(feesConfig);
       setIsEditingFees(false);
       alert('تم حفظ إعدادات المصروفات بنجاح');
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsSaving(null);
     }
   };
 
   const handleSaveAssignmentsConfig = async () => {
-    if (!assignmentsConfig) return;
+    if (!assignmentsConfig || isSaving === 'assignments') return;
+    setIsSaving('assignments');
     try {
       await updateAssignmentsServiceConfig(assignmentsConfig);
       alert('تم حفظ إعدادات التكليفات بنجاح');
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsSaving(null);
     }
   };
 
@@ -506,12 +516,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   };
 
   const handleSaveCertificatesConfig = async () => {
-    if (!certificatesConfig) return;
+    if (!certificatesConfig || isSaving === 'certificates') return;
+    setIsSaving('certificates');
     try {
       await updateCertificatesServiceConfig(certificatesConfig);
       alert('تم حفظ إعدادات الشهادات بنجاح');
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsSaving(null);
     }
   };
 
@@ -550,12 +563,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   // Digital Transformation handlers
   const handleSaveDigitalTransformationConfig = async () => {
-    if (!digitalTransformationConfig) return;
+    if (!digitalTransformationConfig || isSaving === 'digitalTransformation') return;
+    setIsSaving('digitalTransformation');
     try {
       await updateDigitalTransformationConfig(digitalTransformationConfig);
       alert('تم حفظ الإعدادات بنجاح!');
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsSaving(null);
     }
   };
 
@@ -615,23 +631,29 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   // Final Review handlers
   const handleSaveFinalReviewConfig = async () => {
-    if (!finalReviewConfig) return;
+    if (!finalReviewConfig || isSaving === 'finalReview') return;
+    setIsSaving('finalReview');
     try {
       await updateFinalReviewConfig(finalReviewConfig);
       alert('تم حفظ إعدادات المراجعة النهائية بنجاح!');
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsSaving(null);
     }
   };
 
   // Graduation Project handlers
   const handleSaveGraduationProjectConfig = async () => {
-    if (!graduationProjectConfig) return;
+    if (!graduationProjectConfig || isSaving === 'graduationProject') return;
+    setIsSaving('graduationProject');
     try {
       await updateGraduationProjectConfig(graduationProjectConfig);
       alert('تم حفظ إعدادات مشروع التخرج بنجاح!');
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsSaving(null);
     }
   };
 
@@ -691,15 +713,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     });
   };
 
-  const handleUpdateCertificate = () => {
-    if (!editingCertificate || !certificatesConfig) return;
-    setCertificatesConfig({
+  const handleUpdateCertificate = async () => {
+    if (!editingCertificate || !certificatesConfig || isSaving === 'updateCertificate') return;
+    setIsSaving('updateCertificate');
+    const updatedConfig = {
       ...certificatesConfig,
       certificates: certificatesConfig.certificates.map(c =>
         c.id === editingCertificate.id ? editingCertificate : c
       )
-    });
+    };
+    setCertificatesConfig(updatedConfig);
     setEditingCertificate(null);
+    // Save to Firebase
+    try {
+      await updateCertificatesServiceConfig(updatedConfig);
+      alert('تم حفظ التعديلات بنجاح');
+    } catch (error: any) {
+      alert(error.message || 'حدث خطأ أثناء حفظ التعديلات');
+    } finally {
+      setIsSaving(null);
+    }
   };
 
   const handleImageUpload = (certificateId: string, file: File) => {
@@ -802,13 +835,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   };
 
   const handleSaveStudent = async () => {
-    if (!editedStudentData || !editedStudentData.id) return;
+    if (!editedStudentData || !editedStudentData.id || isSaving === 'student') return;
+    setIsSaving('student');
     try {
       await updateStudentData(editedStudentData.id, editedStudentData);
       setIsEditingStudent(false);
       alert('تم تحديث بيانات المستخدم بنجاح');
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء تحديث البيانات');
+    } finally {
+      setIsSaving(null);
     }
   };
 
@@ -1130,17 +1166,17 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             <div className="section-header">
               <h2>إعدادات خدمة الكتب</h2>
               {!isEditingBooks ? (
-                <button onClick={() => setIsEditingBooks(true)} className="edit-button">
+                <button type="button" onClick={() => setIsEditingBooks(true)} className="edit-button">
                   <Edit2 size={18} />
                   تعديل
                 </button>
               ) : (
                 <div className="edit-actions">
-                  <button onClick={handleSaveBookConfig} className="save-button">
+                  <button type="button" onClick={handleSaveBookConfig} className="save-button" disabled={isSaving === 'books'}>
                     <Save size={18} />
-                    حفظ
+                    {isSaving === 'books' ? 'جاري الحفظ...' : 'حفظ'}
                   </button>
-                  <button onClick={() => setIsEditingBooks(false)} className="cancel-edit-button">
+                  <button type="button" onClick={() => setIsEditingBooks(false)} className="cancel-edit-button">
                     <X size={18} />
                     إلغاء
                   </button>
@@ -1247,17 +1283,17 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               <h2>المصروفات السن الدراسية للدبلومة</h2>
               <div className="edit-actions">
                 {!isEditingFees ? (
-                  <button onClick={() => setIsEditingFees(true)} className="edit-button">
+                  <button type="button" onClick={() => setIsEditingFees(true)} className="edit-button">
                     <Edit2 size={18} />
                     تعديل
                   </button>
                 ) : (
                   <>
-                    <button onClick={handleSaveFeesConfig} className="save-button">
+                    <button type="button" onClick={handleSaveFeesConfig} className="save-button" disabled={isSaving === 'fees'}>
                       <Save size={18} />
-                      حفظ
+                      {isSaving === 'fees' ? 'جاري الحفظ...' : 'حفظ'}
                     </button>
-                    <button onClick={() => setIsEditingFees(false)} className="cancel-edit-button">
+                    <button type="button" onClick={() => setIsEditingFees(false)} className="cancel-edit-button">
                       <X size={18} />
                       إلغاء
                     </button>
@@ -1351,9 +1387,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <div className="books-section">
             <div className="section-header">
               <h2>إعدادات خدمة التكليفات</h2>
-              <button onClick={handleSaveAssignmentsConfig} className="save-button">
+              <button type="button" onClick={handleSaveAssignmentsConfig} className="save-button" disabled={isSaving === 'assignments'}>
                 <Save size={18} />
-                حفظ
+                {isSaving === 'assignments' ? 'جاري الحفظ...' : 'حفظ'}
               </button>
             </div>
 
@@ -1469,9 +1505,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <div className="books-section">
             <div className="section-header">
               <h2>إعدادات خدمة الشهادات</h2>
-              <button onClick={handleSaveCertificatesConfig} className="save-button">
+              <button type="button" onClick={handleSaveCertificatesConfig} className="save-button" disabled={isSaving === 'certificates'}>
                 <Save size={18} />
-                حفظ
+                {isSaving === 'certificates' ? 'جاري الحفظ...' : 'حفظ'}
               </button>
             </div>
 
@@ -1589,11 +1625,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               />
                             </div>
                             <div className="edit-actions">
-                              <button onClick={handleUpdateCertificate} className="save-button">
+                              <button type="button" onClick={handleUpdateCertificate} className="save-button" disabled={isSaving === 'updateCertificate'}>
                                 <Save size={16} />
-                                حفظ التعديلات
+                                {isSaving === 'updateCertificate' ? 'جاري الحفظ...' : 'حفظ التعديلات'}
                               </button>
-                              <button onClick={() => setEditingCertificate(null)} className="cancel-edit-button">
+                              <button type="button" onClick={() => setEditingCertificate(null)} className="cancel-edit-button">
                                 <X size={16} />
                                 إلغاء
                               </button>
@@ -1727,9 +1763,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <div className="books-section">
             <div className="section-header">
               <h2>إعدادات المراجعة النهائية</h2>
-              <button onClick={handleSaveFinalReviewConfig} className="save-button">
+              <button type="button" onClick={handleSaveFinalReviewConfig} className="save-button" disabled={isSaving === 'finalReview'}>
                 <Save size={18} />
-                حفظ
+                {isSaving === 'finalReview' ? 'جاري الحفظ...' : 'حفظ'}
               </button>
             </div>
 
@@ -1845,9 +1881,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <div className="books-section">
             <div className="section-header">
               <h2>إعدادات مشروع التخرج</h2>
-              <button onClick={handleSaveGraduationProjectConfig} className="save-button">
+              <button type="button" onClick={handleSaveGraduationProjectConfig} className="save-button" disabled={isSaving === 'graduationProject'}>
                 <Save size={18} />
-                حفظ
+                {isSaving === 'graduationProject' ? 'جاري الحفظ...' : 'حفظ'}
               </button>
             </div>
 
@@ -2301,11 +2337,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </div>
 
                 <div className="modal-actions">
-                  <button onClick={handleSaveStudent} className="save-button">
+                  <button type="button" onClick={handleSaveStudent} className="save-button" disabled={isSaving === 'student'}>
                     <Save size={18} />
-                    حفظ التغييرات
+                    {isSaving === 'student' ? 'جاري الحفظ...' : 'حفظ التغييرات'}
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       setIsEditingStudent(false);
                     }}
@@ -2418,9 +2455,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <div className="books-section">
             <div className="section-header">
               <h2>إعدادات خدمة التحول الرقمي</h2>
-              <button onClick={handleSaveDigitalTransformationConfig} className="save-button">
+              <button type="button" onClick={handleSaveDigitalTransformationConfig} className="save-button" disabled={isSaving === 'digitalTransformation'}>
                 <Save size={18} />
-                حفظ
+                {isSaving === 'digitalTransformation' ? 'جاري الحفظ...' : 'حفظ'}
               </button>
             </div>
 
