@@ -421,6 +421,10 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         requestData.totalPrice = finalReviewConfig.paymentAmount;
       }
 
+      if (service.id === '2') {
+        requestData.totalPrice = 500;
+      }
+
       const request: ServiceRequest = {
         studentId: student.id || '',
         serviceId: service.id,
@@ -525,8 +529,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </section>
           )}
 
-          {service.id === '9' && (service.features || (graduationProjectConfig && graduationProjectConfig.features)) && (
-            <section className="form-section section-features">
+          {(service.id === '9' || service.id === '2') && (service.features || (graduationProjectConfig && graduationProjectConfig.features)) && (
+            <section className={`form-section section-features ${service.id === '2' ? 'premium-features' : ''}`}>
               <h2>المميزات</h2>
               <ul className="features-list">
                 {(graduationProjectConfig?.features || service.features || []).map((feature, index) => (
@@ -625,7 +629,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             }
                             return;
                           }
-                          
+
                           const value = parseInt(inputValue);
                           // التحقق من أن القيمة صحيحة بين 1 و 10
                           if (!isNaN(value) && value >= 1 && value <= 10) {
@@ -1147,6 +1151,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         <strong>المبلغ المستحق للدفع: {priceItem.price} جنيه</strong>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+              {service.id === '2' && (
+                <div className="payment-amount">
+                  <div className="selected-price">
+                    <strong>
+                      المبلغ المستحق للدفع: 500 جنيه للترم الواحد
+                    </strong>
                   </div>
                 </div>
               )}

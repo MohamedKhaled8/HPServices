@@ -127,7 +127,7 @@
   gap: 16px;
 }
 
-.service-fields > .dynamic-fields-section {
+.service-fields>.dynamic-fields-section {
   grid-column: 1 / -1;
   width: 100%;
 }
@@ -1393,4 +1393,29 @@
   background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
   transform: translateX(-4px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Premium Client Features Styling */
+.premium-features {
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  border: 1px solid #FCD34D;
+}
+
+.premium-features h2 {
+  color: #B45309;
+  border-bottom-color: #FDE68A;
+}
+
+.premium-features .feature-item {
+  border-right: 4px solid #F59E0B;
+  background: #ffffff;
+}
+
+.premium-features .feature-item:hover {
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+  transform: translateX(-5px);
+}
+
+.premium-features .feature-icon {
+  color: #F59E0B;
 }
