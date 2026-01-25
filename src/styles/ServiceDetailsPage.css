@@ -359,18 +359,22 @@
 /* Selected Price: Green Background, White Text */
 .selected-price {
   margin-top: 0;
-  padding: 24px;
-  background: #10B981;
-  /* لون أخضر فاتح ومبهج (Emerald) */
+  padding: 18px 32px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
   color: #ffffff;
   border-radius: 12px;
   text-align: center;
   border: none;
-  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4), 0 8px 10px -6px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
   display: flex;
   justify-content: center;
   align-items: center;
-  transition: transform 0.2s;
+  transition: all 0.3s ease;
+  width: auto;
+  min-width: 280px;
+  max-width: 90%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .selected-price:hover {
@@ -1418,4 +1422,239 @@
 
 .premium-features .feature-icon {
   color: #F59E0B;
+}
+
+/* Calculated Track Field Styling */
+.calculated-track-group {
+  margin-top: 10px;
+  background: #f0fdf4;
+  /* Light green bg */
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #bbf7d0;
+  animation: fadeIn 0.3s ease;
+}
+
+.calculated-track-display {
+  font-size: 18px;
+  font-weight: 700;
+  color: #15803d;
+  /* Dark green text */
+  padding: 10px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #86efac;
+  text-align: center;
+  margin-top: 5px;
+}
+
+.field-note {
+  font-size: 12px;
+  color: #166534;
+  margin-top: 8px;
+  margin-bottom: 0;
+  font-style: italic;
+}
+
+/* Read-only Track Field Styling */
+.calculated-track-display-mini {
+  flex: 1;
+  background: white;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #1a202c;
+  cursor: default;
+}
+
+.cancel-edit {
+  background: #e53e3e;
+  /* Red color for cancel */
+}
+
+.cancel-edit:hover {
+  background: #c53030;
+}
+
+.field-note-mini {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+/* Track Confirmation Modal Styles */
+.track-confirmation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease;
+}
+
+.track-confirmation-modal {
+  background: white;
+  border-radius: 20px;
+  padding: 40px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.track-confirmation-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.track-confirmation-header .success-icon {
+  color: #10B981;
+  margin-bottom: 16px;
+  animation: scaleIn 0.4s ease;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0);
+  }
+
+  to {
+    transform: scale(1);
+  }
+}
+
+.track-confirmation-header h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a202c;
+  margin: 0 0 8px 0;
+}
+
+.track-confirmation-header p {
+  font-size: 14px;
+  color: #718096;
+  margin: 0;
+}
+
+.track-confirmation-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.track-confirmation-content .form-group {
+  margin: 0;
+}
+
+.track-confirmation-content .form-group label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.track-select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a202c;
+  background: white;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.track-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+.track-select:hover {
+  border-color: #cbd5e0;
+}
+
+.track-confirmation-content .field-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #718096;
+  background: #f7fafc;
+  padding: 12px;
+  border-radius: 6px;
+  margin-top: 8px;
+  border-right: 3px solid #667eea;
+}
+
+.track-confirmation-content .field-note strong {
+  color: #667eea;
+  font-weight: 700;
+}
+
+.track-confirmation-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.confirm-track-button {
+  padding: 14px 32px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.confirm-track-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.confirm-track-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  .track-confirmation-modal {
+    padding: 30px 20px;
+    max-width: 95%;
+  }
+
+  .track-confirmation-header h2 {
+    font-size: 20px;
+  }
+
+  .confirm-track-button {
+    width: 100%;
+  }
 }

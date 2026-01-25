@@ -260,17 +260,26 @@ export const SERVICES: Service[] = [
   {
     id: '10',
     nameEn: 'Extract Documents',
-    nameAr: 'استخراج مستندات',
-    descriptionEn: 'Request and extract official documents',
-    descriptionAr: 'اطلب واستخرج المستندات الرسمية',
+    nameAr: 'استخراج شهادة التخرج',
+    descriptionEn: 'Request graduation certificate - receive after 20 days from college',
+    descriptionAr: 'هنقدملك علي شهادة التخرج و انت تيجي تستلمها من الكلية بعد 20 يوم. محتاجين تملي البيانات و تبعت الورق علي رقم واتس اب المكتبة 01050889596',
     icon: 'file-check',
     color: '#EF4444',
     fields: [
-      { name: 'document_type', label: 'نوع المستند', type: 'select', required: true, options: ['شهادة', 'كشف درجات', 'بيان حالة', 'مستندات أخرى'] },
-      { name: 'number_of_copies', label: 'عدد النسخ', type: 'number', required: true },
-      { name: 'purpose', label: 'الغرض من الاستخراج', type: 'textarea', required: true }
+      { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
+      { name: 'whatsapp_number', label: 'رقم واتساب', type: 'editable', required: true },
+      { name: 'diploma_year', label: 'سنة الدبلومة', type: 'select', required: true, options: ['اختر سنة الدبلومة'] },
+      { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: ['اختر نوع الدبلومة', 'دبلوم عام تربوي', 'دبلوم خاص'] },
+      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة'] }
     ],
-    paymentMethods: ['Credit Card', 'Bank Transfer']
+    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay'],
+    requiredDocuments: [
+      'صورة شهادة الميلاد',
+      'صورة التحول الرقمي',
+      'صورة شهادة التخرج الأساسية',
+      'صورة شخصية 4*6',
+      'صورة تحويل 700 جنيه علي كاش او انستا'
+    ]
   }
 ];
 

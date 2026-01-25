@@ -19,6 +19,9 @@ export interface StudentData {
   email: string;
   password?: string;
   createdAt?: string;
+  college?: string;
+  department?: string;
+  grade?: string;
 }
 
 export interface Service {
@@ -32,6 +35,7 @@ export interface Service {
   fields: ServiceField[];
   paymentMethods: string[];
   features?: string[]; // المميزات - اختياري
+  requiredDocuments?: string[]; // المستندات المطلوبة - اختياري
 }
 
 export interface ServiceField {

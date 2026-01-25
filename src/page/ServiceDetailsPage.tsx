@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
 import { ServiceRequest, UploadedFile } from '../types';
-import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig } from '../services/firebaseService';
+import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, updateStudentData } from '../services/firebaseService';
 import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
+import { calculateTrack, getAvailableTracks } from '../utils/trackUtils';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import '../styles/ServiceDetailsPage.css';
@@ -38,6 +39,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   const [digitalTransformationConfig, setDigitalTransformationConfig] = useState<DigitalTransformationConfig | null>(null);
   const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
   const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
+
 
   // Load book config for service 3
   useEffect(() => {
@@ -200,7 +202,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   useEffect(() => {
     if (!service || !student) return;
 
-    if (service.id === '1' || service.id === '2' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8') {
+    if (service.id === '1' || service.id === '2' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') {
       const initialData: Record<string, any> = {};
       const addressString = student.address
         ? `${student.address.governorate || ''}, ${student.address.city || ''}, ${student.address.street || ''}, ${student.address.building || ''}, ${student.address.siteNumber || ''}${student.address.landmark ? `, ${student.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
@@ -229,22 +231,46 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               initialData[field.name] = student.whatsappNumber || '';
               break;
           }
-        } else if (field.type === 'select' && (service.id === '4' || service.id === '5' || service.id === '8')) {
-          // Set default values for service 4, 5 and 8 fields
-          switch (field.name) {
-            case 'diploma_type':
-              initialData[field.name] = 'اختر نوع الدبلومة';
-              break;
-            case 'track_category':
-            case 'track':
-              initialData[field.name] = 'اختر المسار';
-              break;
-            case 'diploma_year':
-              initialData[field.name] = 'اختر السنه';
-              break;
-            case 'educational_specialization':
-              initialData[field.name] = 'اختر التخصص';
-              break;
+        } else if (field.type === 'select') {
+          if (service.id === '4' || service.id === '5' || service.id === '8' || service.id === '9' || service.id === '10') {
+            // Set default values for service 4, 5, 8, 9, and 10 fields
+            switch (field.name) {
+              case 'diploma_type':
+                initialData[field.name] = 'اختر نوع الدبلومة';
+                break;
+              case 'diploma_year':
+                if (service.id === '10') {
+                  // For Service 10, diploma_year will be populated dynamically
+                  initialData[field.name] = 'اختر سنة الدبلومة';
+                } else {
+                  initialData[field.name] = 'اختر السنه';
+                }
+                break;
+              case 'educational_specialization':
+                initialData[field.name] = 'اختر التخصص';
+                break;
+              case 'track_category':
+              case 'track':
+                if (student.track && student.track.trim() !== '') {
+                  initialData[field.name] = student.track;
+                } else {
+                  initialData[field.name] = 'اختر المسار';
+                }
+                break;
+            }
+          } else if (service.id === '1') {
+            // Pre-fill Service 1 select fields from profile
+            switch (field.name) {
+              case 'college':
+                if (student.college) initialData[field.name] = student.college;
+                break;
+              case 'department':
+                if (student.department) initialData[field.name] = student.department;
+                break;
+              case 'grade':
+                if (student.grade) initialData[field.name] = student.grade;
+                break;
+            }
           }
         }
       });
@@ -257,7 +283,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (field.type === 'editable') {
           editableState[field.name] = false;
         }
+        // Also set track fields as non-editable initially
+        if ((field.name === 'track' || field.name === 'track_category') && service.id !== '1') {
+          editableState[field.name] = false;
+        }
       });
+      // For Service 1, also set student_track as non-editable
+      if (service.id === '1' && student.track) {
+        editableState['student_track'] = false;
+      }
       setEditableFields(editableState);
     }
   }, [service, student]);
@@ -305,7 +339,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       const namesArray = serviceData.names_array || [];
       const tracksArray = serviceData.tracks_array || [];
 
-      if (namesArray.length !== copiesCount || namesArray.some(name => !name || !name.trim())) {
+      if (namesArray.length !== copiesCount || namesArray.some((name: string) => !name || !name.trim())) {
         setSubmitMessage({
           type: 'error',
           text: `يرجى ملء جميع الأسماء الرباعية (${copiesCount} أسماء مطلوبة)`
@@ -314,7 +348,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         return;
       }
 
-      if (tracksArray.length !== copiesCount || tracksArray.some(track => !track || !track.trim())) {
+      if (tracksArray.length !== copiesCount || tracksArray.some((track: string) => !track || !track.trim())) {
         setSubmitMessage({
           type: 'error',
           text: `يرجى ملء جميع المسارات والتخصصات (${copiesCount} مسارات مطلوبة)`
@@ -342,8 +376,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       return;
     }
 
-    // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات ومشروع التخرج، يجب رفع صورة الإيصال
-    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') && receiptFiles.length === 0) {
+    // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات ومشروع التخرج واستخراج المستندات، يجب رفع صورة الإيصال
+    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') && receiptFiles.length === 0) {
       setSubmitMessage({
         type: 'error',
         text: 'يرجى رفع صورة الإيصال أولاً'
@@ -429,7 +463,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         studentId: student.id || '',
         serviceId: service.id,
         data: requestData,
-        documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') ? receiptFiles : [],
+        documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') ? receiptFiles : [],
         paymentMethod: selectedPaymentMethod,
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -449,6 +483,31 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         type: 'success',
         text: 'تم تقديم الطلب بنجاح!'
       });
+
+      // Special handling for Service 1 (Register Data)
+      if (service.id === '1') {
+        const college = serviceData['college'];
+        const department = serviceData['department'];
+        const grade = serviceData['grade'];
+
+        // Calculate Track
+        const calculatedTrack = calculateTrack(college, department, grade);
+
+        if (calculatedTrack && student.id) {
+          // Use edited track from serviceData if available, otherwise use calculated track
+          const finalTrack = serviceData['track'] || calculatedTrack;
+
+          // Update Student Profile with track
+          const updatedStudentData = {
+            college,
+            department,
+            grade,
+            track: finalTrack
+          };
+
+          await updateStudentData(student.id, updatedStudentData);
+        }
+      }
 
       setTimeout(() => {
         onSubmitSuccess();
@@ -540,6 +599,25 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </li>
                 ))}
               </ul>
+            </section>
+          )}
+
+          {/* Required Documents Section for Service 10 */}
+          {service.id === '10' && service.requiredDocuments && (
+            <section className="form-section section-features">
+              <h2>المستندات المطلوبة</h2>
+              <ul className="features-list">
+                {service.requiredDocuments.map((doc, index) => (
+                  <li key={index} className="feature-item">
+                    <FileText size={18} className="feature-icon" />
+                    <span>{doc}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="edit-note">
+                <AlertCircle size={16} />
+                يرجى إرسال جميع المستندات المذكورة أعلاه على رقم واتس اب المكتبة: 01050889596
+              </p>
             </section>
           )}
 
@@ -654,87 +732,173 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
                     {field.type === 'select' && (
                       <>
-                        {field.name === 'diploma_year' && service.id === '4' && feesConfig ? (
-                          <select
-                            id={field.name}
-                            value={serviceData[field.name] || ''}
-                            onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
-                            required={field.required}
-                          >
-                            <option value="">اختر السنه</option>
-                            {Object.keys(feesConfig.prices).sort((a, b) => parseInt(b) - parseInt(a)).map(year => (
-                              <option key={year} value={year}>
-                                {year} - {feesConfig.prices[year]} جنيه
-                              </option>
-                            ))}
-                          </select>
-                        ) : field.name === 'track_other' && service.id === '4' ? (
-                          <>
-                            {serviceData['track_category'] === 'أخرى' && (
-                              <input
-                                type="text"
-                                value={serviceData['track_other'] || ''}
-                                onChange={(e) => handleServiceDataChange('track_other', e.target.value)}
-                                placeholder="اذكر المسار"
-                                required={false}
-                                className="other-input"
-                              />
-                            )}
-                          </>
-                        ) : field.name === 'transformation_type' && service.id === '7' && digitalTransformationConfig ? (
-                          <select
-                            id={field.name}
-                            value={serviceData[field.name] || ''}
-                            onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
-                            required={field.required}
-                          >
-                            <option value="">اختر نوع التحول الرقمي</option>
-                            {digitalTransformationConfig.transformationTypes.map(type => (
-                              <option key={type.id} value={type.id}>
-                                {type.name} - {type.price} جنيه
-                              </option>
-                            ))}
-                          </select>
+                        {(field.name === 'track' || field.name === 'track_category') && service.id !== '1' && student.track ? (
+                          // Special rendering for Track field in other services: Show Read-only with Edit Button
+                          !editableFields[field.name] ? (
+                            <div className="editable-field-container">
+                              <div className="editable-field-display">
+                                <div className="calculated-track-display-mini">
+                                  {student.track || 'لم يتم تحديد المسار'}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFieldEdit(field.name)}
+                                  className="edit-field-button"
+                                  title="تعديل المسار"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                              </div>
+                              <p className="field-note-mini">هذا هو مسارك الافتراضي: <strong>{student.track}</strong>. يمكنك تعديله للأقل.</p>
+                            </div>
+                          ) : (
+                            // Enum dropdown (already existing logic below will handle options, but we wrap in container to show cancel?)
+                            // Actually we just let it fall through to the select render, but we need to ensure it renders correctly.
+                            // We'll duplicate the select render here for specific control or just use a flag?
+                            // Let's implement specific render for track when editing.
+                            <div className="editable-field-container">
+                              <select
+                                id={field.name}
+                                value={serviceData[field.name] || student.track || ''}
+                                onChange={(e) => {
+                                  handleServiceDataChange(field.name, e.target.value);
+                                }}
+                                required={field.required}
+                                className="editable-input"
+                              >
+                                <option value="">اختر المسار...</option>
+                                {field.options?.slice(1).filter(option => {
+                                  // Filter track options if applicable - fallback for Service 1 or no student track
+                                  if ((field.name === 'track' || field.name === 'track_category') && student?.track) {
+                                    const allowed = getAvailableTracks(student.track);
+                                    return allowed.includes(option);
+                                  }
+                                  return true;
+                                }).map(option => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => toggleFieldEdit(field.name)}
+                                className="edit-field-button cancel-edit"
+                                title="إلغاء التعديل"
+                              >
+                                x
+                              </button>
+                            </div>
+                          )
                         ) : (
-                          <>
+                          // Normal Select Render
+                          field.name === 'diploma_year' && service.id === '4' && feesConfig ? (
                             <select
                               id={field.name}
                               value={serviceData[field.name] || ''}
-                              onChange={(e) => {
-                                handleServiceDataChange(field.name, e.target.value);
-                                // إذا تم اختيار Other أو أخرى، لا نفعل شيء. إذا تم اختيار شيء آخر، نحذف قيمة Other
-                                if (e.target.value !== 'Other' && e.target.value !== 'أخرى' && field.hasOther) {
-                                  handleServiceDataChange(field.name + '_other', '');
-                                }
-                                // إذا تم تغيير track_category، نعيد تعيين track_other
-                                if (field.name === 'track_category' && service.id === '4') {
-                                  if (e.target.value !== 'أخرى') {
-                                    handleServiceDataChange('track_other', '');
-                                  }
-                                }
-                              }}
+                              onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
                               required={field.required}
                             >
-                              {field.options?.[0]?.includes('اختر') ? (
-                                <option value={field.options[0]}>{field.options[0]}</option>
-                              ) : (
-                                <option value="">اختر...</option>
-                              )}
-                              {field.options?.slice(field.options[0]?.includes('اختر') ? 1 : 0).map(option => (
-                                <option key={option} value={option}>{option}</option>
+                              <option value="">اختر السنه</option>
+                              {Object.keys(feesConfig.prices).sort((a, b) => parseInt(b) - parseInt(a)).map(year => (
+                                <option key={year} value={year}>
+                                  {year} - {feesConfig.prices[year]} جنيه
+                                </option>
                               ))}
                             </select>
-                            {field.hasOther && (serviceData[field.name] === 'Other' || serviceData[field.name] === 'أخرى') && (
-                              <input
-                                type="text"
-                                value={serviceData[field.name + '_other'] || ''}
-                                onChange={(e) => handleServiceDataChange(field.name + '_other', e.target.value)}
-                                placeholder={field.name === 'educational_specialization' ? 'اذكر التخصص' : field.label.replace('الكلية او المعهد', 'اذكر الكلية او المعهد').replace('القسم او الشعبة', 'اذكر القسم او الشعبة')}
+                          ) : field.name === 'track_other' && service.id === '4' ? (
+                            <>
+                              {serviceData['track_category'] === 'أخرى' && (
+                                <input
+                                  type="text"
+                                  value={serviceData['track_other'] || ''}
+                                  onChange={(e) => handleServiceDataChange('track_other', e.target.value)}
+                                  placeholder="اذكر المسار"
+                                  required={false}
+                                  className="other-input"
+                                />
+                              )}
+                            </>
+                          ) : field.name === 'diploma_year' && service.id === '10' ? (
+                            <select
+                              id={field.name}
+                              value={serviceData[field.name] || ''}
+                              onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
+                              required={field.required}
+                            >
+                              <option value="">اختر سنة الدبلومة</option>
+                              {Array.from({ length: 60 }, (_, i) => {
+                                const startYear = 2049 - i;
+                                const endYear = 2050 - i;
+                                return (
+                                  <option key={startYear} value={`${startYear}/${endYear}`}>
+                                    {startYear}/{endYear}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          ) : field.name === 'transformation_type' && service.id === '7' && digitalTransformationConfig ? (
+                            <select
+                              id={field.name}
+                              value={serviceData[field.name] || ''}
+                              onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
+                              required={field.required}
+                            >
+                              <option value="">اختر نوع التحول الرقمي</option>
+                              {digitalTransformationConfig.transformationTypes.map(type => (
+                                <option key={type.id} value={type.id}>
+                                  {type.name} - {type.price} جنيه
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <>
+                              <select
+                                id={field.name}
+                                value={serviceData[field.name] || ''}
+                                onChange={(e) => {
+                                  handleServiceDataChange(field.name, e.target.value);
+                                  // إذا تم اختيار Other أو أخرى، لا نفعل شيء. إذا تم اختيار شيء آخر، نحذف قيمة Other
+                                  if (e.target.value !== 'Other' && e.target.value !== 'أخرى' && field.hasOther) {
+                                    handleServiceDataChange(field.name + '_other', '');
+                                  }
+                                  // إذا تم تغيير track_category، نعيد تعيين track_other
+                                  if (field.name === 'track_category' && service.id === '4') {
+                                    if (e.target.value !== 'أخرى') {
+                                      handleServiceDataChange('track_other', '');
+                                    }
+                                  }
+                                }}
                                 required={field.required}
-                                className="other-input"
-                              />
-                            )}
-                          </>
+                              >
+                                {field.options?.[0]?.includes('اختر') ? (
+                                  <option value={field.options[0]}>{field.options[0]}</option>
+                                ) : (
+                                  <option value="">اختر...</option>
+                                )}
+                                {field.options?.slice(field.options[0]?.includes('اختر') ? 1 : 0)
+                                  .filter(option => {
+                                    // Fallback filter for situations where read-only mode isn't active (e.g. Service 1 or no track yet)
+                                    if ((field.name === 'track' || field.name === 'track_category') && student?.track) {
+                                      const allowed = getAvailableTracks(student.track);
+                                      return allowed.includes(option);
+                                    }
+                                    return true;
+                                  })
+                                  .map(option => (
+                                    <option key={option} value={option}>{option}</option>
+                                  ))}
+                              </select>
+                              {field.hasOther && (serviceData[field.name] === 'Other' || serviceData[field.name] === 'أخرى') && (
+                                <input
+                                  type="text"
+                                  value={serviceData[field.name + '_other'] || ''}
+                                  onChange={(e) => handleServiceDataChange(field.name + '_other', e.target.value)}
+                                  placeholder={field.name === 'educational_specialization' ? 'اذكر التخصص' : field.label.replace('الكلية او المعهد', 'اذكر الكلية او المعهد').replace('القسم او الشعبة', 'اذكر القسم او الشعبة')}
+                                  required={field.required}
+                                  className="other-input"
+                                />
+                              )}
+                            </>
+                          )
                         )}
                       </>
                     )}
@@ -752,6 +916,58 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </div>
                 );
               })}
+
+              {/* Display Track for Service 1 if student has one */}
+              {service.id === '1' && student.track && (
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="student-track">
+                    المسار المحسوب
+                    <span className="required">*</span>
+                  </label>
+                  {!editableFields['student_track'] ? (
+                    <div className="editable-field-container">
+                      <div className="editable-field-display">
+                        <div className="calculated-track-display-mini">
+                          {student.track}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleFieldEdit('student_track')}
+                          className="edit-field-button"
+                          title="تعديل المسار"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      </div>
+                      <p className="field-note-mini">هذا هو مسارك المحفوظ: <strong>{student.track}</strong>. يمكنك تعديله للأقل.</p>
+                    </div>
+                  ) : (
+                    <div className="editable-field-container">
+                      <select
+                        id="student-track"
+                        value={serviceData['track'] || student.track || ''}
+                        onChange={(e) => handleServiceDataChange('track', e.target.value)}
+                        className="editable-input"
+                      >
+                        <option value="">اختر المسار...</option>
+                        {getAvailableTracks(student.track).map(track => (
+                          <option key={track} value={track}>{track}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => toggleFieldEdit('student_track')}
+                        className="edit-field-button cancel-edit"
+                        title="إلغاء التعديل"
+                      >
+                        x
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+
 
               {/* Dynamic Names and Tracks Fields for Books Service - داخل نفس القسم */}
               {service.id === '3' && serviceData.number_of_copies && serviceData.number_of_copies !== '' && parseInt(serviceData.number_of_copies) > 0 && (
@@ -1114,6 +1330,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </div>
                 </div>
               )}
+              {service.id === '10' && (
+                <div className="payment-amount">
+                  <div className="selected-price">
+                    <strong>
+                      المبلغ المستحق للدفع: 700 جنيه
+                    </strong>
+                  </div>
+                </div>
+              )}
               {service.id === '6' && selectedCertificate && (
                 <div className="payment-amount">
                   <div className="selected-price">
@@ -1232,19 +1457,33 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         default:
                           phoneNumber = '';
                       }
-                    } else {
+                    } else if ((service.id as string) === '10') {
+                      // Using default numbers for Service 10 as per request "standard payment methods"
                       switch (method) {
                         case 'Vodafone':
                         case 'Etisalat':
                         case 'Orange':
-                          phoneNumber = '01050889591';
+                          phoneNumber = '01050889591'; // Using default wallet number
                           break;
                         case 'instaPay':
-                          phoneNumber = '01017180923';
+                          phoneNumber = '01017180923'; // Using default InstaPay number
                           break;
                         default:
                           phoneNumber = '';
                       }
+                    }
+                  } else {
+                    switch (method) {
+                      case 'Vodafone':
+                      case 'Etisalat':
+                      case 'Orange':
+                        phoneNumber = '01050889591';
+                        break;
+                      case 'instaPay':
+                        phoneNumber = '01017180923';
+                        break;
+                      default:
+                        phoneNumber = '';
                     }
                   }
 
@@ -1270,10 +1509,14 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </section>
           )}
 
-          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') && (
+          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') && (
             <section className="form-section section-receipt">
-              <h2>رفع صورة الإيصال</h2>
-              <p className="receipt-note">يرجى رفع صورة إيصال الدفع قبل تقديم الطلب</p>
+              <h2>{service.id === '10' ? 'رفع المستندات وصورة الإيصال' : 'رفع صورة الإيصال'}</h2>
+              <p className="receipt-note">
+                {service.id === '10'
+                  ? 'يرجى رفع صور المستندات المطلوبة وصورة إيصال التحويل (يمكنك اختيار أكثر من ملف)'
+                  : 'يرجى رفع صورة إيصال الدفع قبل تقديم الطلب'}
+              </p>
               <FileUpload
                 onFilesSelected={setReceiptFiles}
                 maxFileSize={5 * 1024 * 1024}
@@ -1332,8 +1575,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </button>
           </div>
         </div>
-      </form>
-    </div>
+      </form >
+    </div >
   );
 };
 
