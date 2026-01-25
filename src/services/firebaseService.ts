@@ -14,7 +14,8 @@ import {
   query,
   where,
   onSnapshot,
-  serverTimestamp
+  serverTimestamp,
+  orderBy
 } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
@@ -257,10 +258,7 @@ export const searchStudent = async (searchTerm: string): Promise<StudentData[]> 
         matches = true;
       }
 
-      // 7. Track
-      if (student.track && student.track.toLowerCase().includes(searchLower)) {
-        matches = true;
-      }
+
 
       // 8. Diploma Year
       if (student.diplomaYear && student.diplomaYear.includes(searchTrimmed)) {
@@ -944,3 +942,38 @@ export const updateGraduationProjectConfig = async (config: GraduationProjectCon
   }
 };
 
+// Save Digital Transformation Code
+export const saveDigitalTransformationCode = async (data: any): Promise<void> => {
+  try {
+    const collectionRef = collection(db, 'digitalTransformationCodes');
+    const docRef = doc(collectionRef); // Auto-generate ID
+
+    await setDoc(docRef, {
+      ...data,
+      id: docRef.id,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('Digital transformation code saved successfully');
+  } catch (error: any) {
+    console.error('Error saving digital transformation code:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء حفظ كود التحول الرقمي');
+  }
+};
+
+
+// Get Digital Transformation Codes
+export const getDigitalTransformationCodes = async (): Promise<any[]> => {
+  try {
+    const q = query(collection(db, 'digitalTransformationCodes'), orderBy('updatedAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error: any) {
+    console.error('Error fetching digital transformation codes:', error);
+    return [];
+  }
+};

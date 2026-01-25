@@ -129,10 +129,6 @@ export const validateStudentData = (data: Partial<StudentData>): ValidationError
     errors.push({ field: 'diplomaType', message: 'هذا الحقل مطلوب' });
   }
 
-  if (!data.track) {
-    errors.push({ field: 'track', message: 'هذا الحقل مطلوب' });
-  }
-
   if (!data.nationalID) {
     errors.push({ field: 'nationalID', message: 'هذا الحقل مطلوب' });
   } else {

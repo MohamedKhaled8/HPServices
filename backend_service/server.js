@@ -249,67 +249,143 @@ async function runAutomation(data) {
         await page.getByText('التحول الرقمي', { exact: false }).first().click();
 
         // 4. New Booking
-        console.log('➕ New Booking...');
-        await page.getByText('حجز جديد', { exact: false }).first().click();
+        console.log('➕ Clicking New Booking...');
+        await page.waitForTimeout(2000);
+        const newBookingBtn = page.locator('button, a').filter({ hasText: /حجز جديد|New Booking/ }).first();
+        await newBookingBtn.click();
+        await page.waitForTimeout(2000);
 
         // 5. Fill Booking Form
-        console.log('📝 Filling booking details...');
-        await page.waitForSelector('form');
+        console.log('📝 Filling booking form...');
+        await page.waitForTimeout(1000);
 
-        // Fill fields (Booking Form)
-        // Arabic Name
-        await page.locator('input[name*="ar"], input[placeholder*="عربي"]').fill(data.fullNameArabic);
-        // English Name
-        await page.locator('input[name*="en"], input[placeholder*="انجليزي"]').fill(data.fullNameEnglish);
+        // Get all inputs
+        const bookingInputs = await page.locator('input:not([type="password"])').all();
+        console.log(`Found ${bookingInputs.length} inputs in booking form`);
 
-        // National ID (Booking)
-        if (data.nationalID) {
-            const nidInputBooking = page.locator('input[name*="national"], input[name*="nid"], input[placeholder*="قومي"]').first();
-            if (await nidInputBooking.isVisible()) {
-                await nidInputBooking.fill(data.nationalID);
+        // Fill name fields smartly
+        let filledArabicBooking = false;
+        let filledEnglishBooking = false;
+        let filledPhoneBooking = false;
+
+        for (const input of bookingInputs) {
+            try {
+                const placeholder = await input.getAttribute('placeholder') || '';
+                const name = (await input.getAttribute('name') || '').toLowerCase();
+                const type = await input.getAttribute('type') || '';
+
+                // Arabic Name
+                if (!filledArabicBooking && (placeholder.includes('عربي') || placeholder.includes('عربى') || name.includes('ar'))) {
+                    await input.fill(data.fullNameArabic);
+                    console.log('✅ Filled Arabic name in booking');
+                    filledArabicBooking = true;
+                }
+                // English Name
+                else if (!filledEnglishBooking && (placeholder.includes('إنجليزي') || placeholder.includes('انجليزي') || placeholder.includes('English') || name.includes('en'))) {
+                    await input.fill(data.fullNameEnglish);
+                    console.log('✅ Filled English name in booking');
+                    filledEnglishBooking = true;
+                }
+                // Phone
+                else if (!filledPhoneBooking && (type === 'tel' || name.includes('phone') || name.includes('mobile') || placeholder.includes('هاتف') || placeholder.includes('محمول'))) {
+                    await input.fill(data.phone);
+                    console.log('✅ Filled phone in booking');
+                    filledPhoneBooking = true;
+                }
+            } catch (e) {
+                console.log('Error filling booking input:', e.message);
             }
         }
-        // Phone
-        await page.locator('input[name*="phone"], input[name*="mobile"], input[placeholder*="هاتف"]').first().fill(data.phone);
 
-        // Language Select
+        // Fill selects
+        console.log('📋 Filling dropdowns...');
         const selects = await page.locator('select').all();
         for (const select of selects) {
-            const text = await select.textContent();
-            if (text.includes('لغة') || text.includes('Lang')) {
-                await select.selectOption({ label: data.examLanguage }).catch(async () => {
-                    await select.selectOption({ index: 1 });
+            try {
+                const label = await select.evaluate(el => {
+                    const labelEl = document.querySelector(`label[for="${el.id}"]`);
+                    return labelEl ? labelEl.textContent : '';
                 });
-            }
-            if (text.includes('الكلية') || text.includes('College')) {
-                await select.selectOption({ label: 'التربية' }).catch(() => select.selectOption({ index: 1 }));
-            }
-            if (text.includes('الجامعة') || text.includes('University')) {
-                await select.selectOption({ label: 'السادات' }).catch(() => select.selectOption({ index: 1 }));
+                const nearbyText = await select.evaluate(el => el.previousElementSibling?.textContent || '');
+                const context = label + ' ' + nearbyText;
+
+                console.log(`Select context: "${context}"`);
+
+                // Training Type (same as exam language)
+                if (context.includes('نوع') || context.includes('التدريب') || context.includes('Type')) {
+                    await select.selectOption({ label: data.examLanguage }).catch(async () => {
+                        // Try by value
+                        const options = await select.locator('option').all();
+                        for (const opt of options) {
+                            const text = await opt.textContent();
+                            if (text && text.includes(data.examLanguage)) {
+                                await select.selectOption({ label: text });
+                                break;
+                            }
+                        }
+                    });
+                    console.log(`✅ Selected training type: ${data.examLanguage}`);
+                }
+                // College
+                else if (context.includes('الكلية') || context.includes('College')) {
+                    await select.selectOption({ label: 'التربية' }).catch(() => {
+                        console.log('⚠️ Could not select التربية, trying index');
+                        return select.selectOption({ index: 1 });
+                    });
+                    console.log('✅ Selected college: التربية');
+                }
+                // University
+                else if (context.includes('الجامعة') || context.includes('University')) {
+                    await select.selectOption({ label: 'السادات' }).catch(async () => {
+                        // Try variations
+                        await select.selectOption({ label: 'مدينة السادات' }).catch(() => {
+                            console.log('⚠️ Could not select السادات, trying index');
+                            return select.selectOption({ index: 1 });
+                        });
+                    });
+                    console.log('✅ Selected university: السادات');
+                }
+            } catch (e) {
+                console.log('Error with select:', e.message);
             }
         }
 
-        console.log('💾 Saving...');
-        await page.click('button:has-text("حفظ"), button:has-text("Save")');
+        // Save
+        console.log('💾 Clicking Save...');
+        await page.waitForTimeout(500);
+        const saveBtn = page.locator('button').filter({ hasText: /حفظ|Save|إرسال/ }).first();
+        await saveBtn.click();
+        await page.waitForTimeout(3000);
 
-        // 6. Extract Data
-        console.log('🔍 Extracting results...');
+        // 6. Extract Data from Table
+        console.log('🔍 Extracting data from table...');
         await page.waitForSelector('table', { timeout: 30000 });
 
-        const rows = await page.locator('table tr').all();
+        // Get the last row (most recent booking)
+        const rows = await page.locator('table tbody tr').all();
+        if (rows.length === 0) {
+            throw new Error('No rows found in table');
+        }
+
         const lastRow = rows[rows.length - 1];
         const cells = await lastRow.locator('td').allInnerTexts();
 
+        console.log(`Extracted ${cells.length} cells from table`);
+        console.log('Cell values:', cells);
+
         const result = {
-            name: cells[0] || '',
-            code: cells[1] || '',
-            mobile: cells[2] || '',
-            whatsapp: cells[3] || '',
-            type: cells[4] || '',
-            value: cells[5] || '',
-            status: cells[6] || '',
-            actions: cells[7] || ''
+            serialNumber: cells[0] || '',      // م
+            name: cells[1] || '',               // الإسم
+            fawryCode: cells[2] || '',          // رقم فوري
+            mobile: cells[3] || '',             // موبايل
+            whatsapp: cells[4] || '',           // Whatsapp
+            type: cells[5] || '',               // النوع
+            value: cells[6] || '',              // القيمة
+            status: cells[7] || '',             // حالة الطلب
+            actions: cells[8] || ''             // الإجراءات
         };
+
+        console.log('✅ Extracted result:', result);
 
         await browser.close();
         return result;

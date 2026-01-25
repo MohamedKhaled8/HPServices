@@ -13,6 +13,7 @@ import {
   updateCertificatesServiceConfig,
   getDigitalTransformationConfig,
   updateDigitalTransformationConfig,
+  getDigitalTransformationCodes,
   getFinalReviewConfig,
   updateFinalReviewConfig,
   getGraduationProjectConfig,
@@ -21,7 +22,8 @@ import {
   getStudentData,
   subscribeToAllStudents,
   searchStudent,
-  updateStudentData
+  updateStudentData,
+  saveDigitalTransformationCode
 } from '../services/firebaseService';
 import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice } from '../types';
 import {
@@ -61,7 +63,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [students, setStudents] = useState<Record<string, StudentData>>({});
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'assignments' | 'certificates' | 'digitalTransformation' | 'finalReview' | 'graduationProject' | 'users'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'assignments' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'finalReview' | 'graduationProject' | 'users'>('requests');
   const [bookConfig, setBookConfig] = useState<BookServiceConfig | null>(null);
   const [feesConfig, setFeesConfig] = useState<FeesServiceConfig | null>(null);
   const [assignmentsConfig, setAssignmentsConfig] = useState<AssignmentsServiceConfig | null>(null);
@@ -80,6 +82,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newTransformationTypeName, setNewTransformationTypeName] = useState<string>('');
   const [newTransformationTypePrice, setNewTransformationTypePrice] = useState<string>('');
   const [newExamLanguage, setNewExamLanguage] = useState<string>('');
+  const [dtCodes, setDtCodes] = useState<any[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
@@ -336,6 +339,17 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadDigitalTransformationConfig();
 
+    // Load digital transformation codes
+    const loadDigitalTransformationCodes = async () => {
+      try {
+        const codes = await getDigitalTransformationCodes();
+        setDtCodes(codes);
+      } catch (error) {
+        console.error('Error loading digital transformation codes:', error);
+      }
+    };
+    loadDigitalTransformationCodes();
+
     // Load final review config
     const loadFinalReviewConfig = async () => {
       try {
@@ -441,6 +455,104 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const handleStatusChange = async (requestId: string, status: 'pending' | 'completed' | 'rejected', serviceId: string) => {
     try {
       await updateServiceRequestStatus(requestId, status, serviceId);
+
+      // Trigger Automation Service (Node.js Backend)
+      if (serviceId === '7' && status === 'completed') {
+        const request = serviceRequests.find(r => r.id === requestId);
+        if (request) {
+          const studentData = students[request.studentId];
+          if (studentData) {
+
+            // Notify Admin
+            alert('🔄 جاري بدء الأتمتة (Backend Service)... \nسيقوم السيرفر بإنشاء الحساب وحجز الدورة تلقائياً.');
+
+            const payload = {
+              requestId: requestId,
+              studentId: request.studentId,
+              email: request.data.email || studentData.email,
+              fullNameArabic: request.data.full_name_arabic || studentData.fullNameArabic,
+              fullNameEnglish: request.data.full_name_english || studentData.vehicleNameEnglish,
+              nationalID: request.data.national_id || studentData.nationalID,
+              phone: request.data.whatsapp_number || studentData.whatsappNumber,
+              examLanguage: request.data.exam_language || request.data.selectedExamLanguage || 'عربي'
+            };
+
+            // Debug: Print payload
+            console.log('📤 Sending Payload to Backend:', payload);
+            console.log('📊 Student Data:', studentData);
+            console.log('📋 Request Data:', request.data);
+
+            // Show user what we're sending
+            const debugInfo = `
+البيانات المرسلة للأتمتة:
+✉️ الإيميل: ${payload.email}
+👤 الاسم بالعربي: ${payload.fullNameArabic}
+🔤 الاسم بالإنجليزي: ${payload.fullNameEnglish || 'غير موجود'}
+🆔 الرقم القومي: ${payload.nationalID || 'غير موجود'}
+📱 الموبايل: ${payload.phone || 'غير موجود'}
+🌐 لغة الامتحان: ${payload.examLanguage}
+            `.trim();
+
+            console.log(debugInfo);
+            alert('🔍 فحص البيانات:\n\n' + debugInfo + '\n\nسيتم بدء الأتمتة الآن...');
+
+            // Call Node.js Backend
+            fetch('/api/digital-transformation/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            })
+              .then(async (res) => {
+                const data = await res.json();
+                if (data.success) {
+                  // 1. Show Success Message
+                  alert(`✅ تمت العملية بنجاح!\nتم استخراج الكود: ${data.data.fawryCode}\nجاري الحفظ في قاعدة البيانات...`);
+
+                  // 2. Save to Firebase (Frontend Side)
+                  try {
+                    const codeData = {
+                      studentId: request.studentId,
+                      requestId: requestId,
+                      email: payload.email,
+                      fullNameArabic: payload.fullNameArabic,
+                      fullNameEnglish: payload.fullNameEnglish,
+                      phone: payload.phone,
+                      examLanguage: payload.examLanguage,
+
+                      // Extracted Data
+                      serialNumber: data.data.serialNumber,
+                      name: data.data.name,
+                      fawryCode: data.data.fawryCode,
+                      mobile: data.data.mobile,
+                      whatsapp: data.data.whatsapp,
+                      type: data.data.type,
+                      value: data.data.value,
+                      status: data.data.status,
+
+                      createdAt: new Date().toISOString()
+                    };
+
+                    await saveDigitalTransformationCode(codeData);
+                    alert('🎉 تم الحفظ في "أكواد التحول الرقمي" بنجاح!');
+
+                  } catch (saveError) {
+                    console.error('Save Error:', saveError);
+                    alert('⚠️ نجحت الأتمتة ولكن فشل الحفظ في قاعدة البيانات.');
+                  }
+
+                } else {
+                  console.error('Automation Error:', data.error);
+                  alert(`❌ فشلت الأتمتة:\n${data.error}`);
+                }
+              })
+              .catch(err => {
+                console.error('Connection Error:', err);
+                alert('⚠️ لا يمكن الاتصال بخدمة الأتمتة (Backend Service).\nتأكد من تشغيل: node server.js');
+              });
+          }
+        }
+      }
+
     } catch (error: any) {
       alert(error.message || 'حدث خطأ أثناء تحديث حالة الطلب');
     }
@@ -960,6 +1072,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         >
           <Zap size={18} />
           التحول الرقمي
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'digitalTransformationCodes' ? 'active' : ''}`}
+          onClick={() => setActiveTab('digitalTransformationCodes')}
+        >
+          <Zap size={18} />
+          أكواد التحول الرقمي
         </button>
         <button
           className={`tab-button ${activeTab === 'finalReview' ? 'active' : ''}`}
@@ -2077,10 +2196,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                             <span className="detail-label">نوع الدبلومة:</span>
                             <span className="detail-value">{student.diplomaType || 'غير متاح'}</span>
                           </div>
-                          <div className="detail-item">
-                            <span className="detail-label">المسار:</span>
-                            <span className="detail-value">{student.track || 'غير متاح'}</span>
-                          </div>
+
                           <div className="detail-item">
                             <span className="detail-label">سنة الدبلومة:</span>
                             <span className="detail-value">{student.diplomaYear || 'غير متاح'}</span>
@@ -2244,18 +2360,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </div>
 
                 <div className="form-row">
-                  <div className="form-group">
-                    <label>المسار</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.track || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        track: e.target.value
-                      })}
-                      className="form-input"
-                    />
-                  </div>
+
                   <div className="form-group">
                     <label>سنة الدبلومة</label>
                     <input
@@ -2598,6 +2703,72 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'digitalTransformationCodes' && (
+        <div className="admin-content">
+          <div className="section-header">
+            <h2>أكواد التحول الرقمي المحفوظة ({dtCodes.length})</h2>
+            <button
+              onClick={async () => {
+                const codes = await getDigitalTransformationCodes();
+                setDtCodes(codes);
+              }}
+              className="save-button"
+            >
+              🔄 تحديث البيانات
+            </button>
+          </div>
+
+          <div className="table-container" style={{ overflowX: 'auto' }}>
+            {dtCodes.length > 0 ? (
+              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>رقم فوري</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>موبايل</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>Whatsapp</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>النوع</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>القيمة</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>الحالة</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الحفظ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dtCodes.map((code, index) => (
+                    <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px' }}>{code.name}</td>
+                      <td style={{ padding: '12px', fontWeight: 'bold', color: '#2563eb' }}>{code.fawryCode}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.whatsapp}</td>
+                      <td style={{ padding: '12px' }}>{code.type}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.value}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '12px',
+                          fontSize: '0.85rem',
+                          background: code.status === 'NEW' ? '#dcfce7' : '#f1f5f9',
+                          color: code.status === 'NEW' ? '#166534' : '#64748b'
+                        }}>
+                          {code.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
+                        {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                لا توجد أكواد محفوظة حتى الآن
               </div>
             )}
           </div>

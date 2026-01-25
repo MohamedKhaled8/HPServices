@@ -5,7 +5,6 @@ export interface StudentData {
   whatsappNumber: string;
   diplomaYear: string;
   diplomaType: string;
-  track: string;
   nationalID: string;
   address: {
     governorate: string;

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StudentData, ValidationError } from '../types';
 import { validateStudentData } from '../utils/validation';
-import { GOVERNORATES, DIPLOMA_YEARS, TRACKS, COURSES, DIPLOMA_TYPES } from '../constants/services';
+import { GOVERNORATES, DIPLOMA_YEARS, COURSES, DIPLOMA_TYPES } from '../constants/services';
 import { useStudent } from '../context';
 import { registerUser } from '../services/firebaseService';
 import { AlertCircle } from 'lucide-react';
@@ -77,7 +77,6 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
         whatsappNumber: formData.whatsappNumber || '',
         diplomaYear: formData.diplomaYear || '',
         diplomaType: formData.diplomaType || '',
-        track: formData.track || '',
         nationalID: formData.nationalID || '',
         address: formData.address || {
           governorate: '',
@@ -94,7 +93,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
 
       // Register with Firebase
       const user = await registerUser(email, password, studentData);
-      
+
       // Get the saved student data with the ID from Firebase
       const savedStudentData: StudentData = {
         ...studentData,
@@ -239,42 +238,22 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
               </div>
             </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="track">التخصص *</label>
-                <select
-                  id="track"
-                  value={formData.track || ''}
-                  onChange={(e) => handleInputChange('track', e.target.value as any)}
-                  className={getFieldError('track') ? 'error' : ''}
-                >
-                  <option value="">اختر التخصص</option>
-                  {TRACKS.map(track => (
-                    <option key={track} value={track}>{track}</option>
-                  ))}
-                </select>
-                {getFieldError('track') && (
-                  <span className="error-message">{getFieldError('track')}</span>
-                )}
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="course">المقرر *</label>
-                <select
-                  id="course"
-                  value={formData.course || ''}
-                  onChange={(e) => handleInputChange('course', e.target.value as any)}
-                  className={getFieldError('course') ? 'error' : ''}
-                >
-                  <option value="">اختر المقرر</option>
-                  {COURSES.map(course => (
-                    <option key={course} value={course}>{course}</option>
-                  ))}
-                </select>
-                {getFieldError('course') && (
-                  <span className="error-message">{getFieldError('course')}</span>
-                )}
-              </div>
+            <div className="form-group">
+              <label htmlFor="course">المقرر *</label>
+              <select
+                id="course"
+                value={formData.course || ''}
+                onChange={(e) => handleInputChange('course', e.target.value as any)}
+                className={getFieldError('course') ? 'error' : ''}
+              >
+                <option value="">اختر المقرر</option>
+                {COURSES.map(course => (
+                  <option key={course} value={course}>{course}</option>
+                ))}
+              </select>
+              {getFieldError('course') && (
+                <span className="error-message">{getFieldError('course')}</span>
+              )}
             </div>
           </div>
 
