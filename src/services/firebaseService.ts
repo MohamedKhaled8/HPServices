@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
-import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig } from '../types';
+import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
 
 // Auth Functions
 export const registerUser = async (email: string, password: string, studentData: StudentData): Promise<FirebaseUser> => {
@@ -52,7 +52,7 @@ export const loginUser = async (email: string, password: string): Promise<Fireba
   } catch (error: any) {
     // تحسين رسائل الخطأ
     let errorMessage = 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
-    
+
     if (error.code === 'auth/user-not-found') {
       errorMessage = 'المستخدم غير موجود. يرجى التسجيل أولاً';
     } else if (error.code === 'auth/wrong-password') {
@@ -68,7 +68,7 @@ export const loginUser = async (email: string, password: string): Promise<Fireba
     } else if (error.message) {
       errorMessage = error.message;
     }
-    
+
     throw new Error(errorMessage);
   }
 };
@@ -94,7 +94,7 @@ export const getStudentData = async (userId: string): Promise<StudentData | null
   try {
     const docRef = doc(db, 'students', userId);
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
       const data = docSnap.data();
       return {
@@ -107,13 +107,13 @@ export const getStudentData = async (userId: string): Promise<StudentData | null
   } catch (error: any) {
     // تحسين رسائل الخطأ
     let errorMessage = 'حدث خطأ أثناء جلب البيانات';
-    
+
     if (error.code === 'permission-denied') {
       errorMessage = 'الأذونات مفقودة. يرجى التحقق من Firestore Security Rules';
     } else if (error.message) {
       errorMessage = error.message;
     }
-    
+
     console.error('Error getting student data:', error);
     throw new Error(errorMessage);
   }
@@ -139,7 +139,7 @@ export const getAllStudents = async (): Promise<StudentData[]> => {
   try {
     const q = query(collection(db, 'students'));
     const querySnapshot = await getDocs(q);
-    
+
     return querySnapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -159,7 +159,7 @@ export const subscribeToAllStudents = (
   onError?: (error: any) => void
 ): (() => void) => {
   const q = query(collection(db, 'students'));
-  
+
   return onSnapshot(q, (querySnapshot) => {
     const students: StudentData[] = querySnapshot.docs.map(doc => {
       const data = doc.data();
@@ -184,21 +184,21 @@ export const searchStudent = async (searchTerm: string): Promise<StudentData[]> 
   try {
     const studentsRef = collection(db, 'students');
     const allStudents: StudentData[] = [];
-    
+
     // If search term is empty, return empty array
     if (!searchTerm.trim()) {
       return [];
     }
-    
+
     // Get all students (Firestore doesn't support full-text search easily)
     const querySnapshot = await getDocs(studentsRef);
-    
+
     // Check if search term is a number (for national ID or phone)
     const isNumeric = /^\d+$/.test(searchTerm);
     const isNationalID = isNumeric && searchTerm.length <= 14;
     const searchLower = searchTerm.toLowerCase();
     const searchTrimmed = searchTerm.trim();
-    
+
     querySnapshot.docs.forEach(doc => {
       const data = doc.data();
       const student = {
@@ -206,30 +206,30 @@ export const searchStudent = async (searchTerm: string): Promise<StudentData[]> 
         id: doc.id,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
       } as StudentData;
-      
+
       let matches = false;
-      
+
       // Search in all fields
       // 1. Full Name Arabic
       if (student.fullNameArabic && student.fullNameArabic.toLowerCase().includes(searchLower)) {
         matches = true;
       }
-      
+
       // 2. Full Name English
       if (student.vehicleNameEnglish && student.vehicleNameEnglish.toLowerCase().includes(searchLower)) {
         matches = true;
       }
-      
+
       // 3. Email
       if (student.email && student.email.toLowerCase().includes(searchLower)) {
         matches = true;
       }
-      
+
       // 4. WhatsApp Number
       if (student.whatsappNumber && student.whatsappNumber.includes(searchTrimmed)) {
         matches = true;
       }
-      
+
       // 5. National ID - special handling
       if (student.nationalID) {
         if (isNationalID) {
@@ -251,27 +251,27 @@ export const searchStudent = async (searchTerm: string): Promise<StudentData[]> 
           }
         }
       }
-      
+
       // 6. Diploma Type
       if (student.diplomaType && student.diplomaType.toLowerCase().includes(searchLower)) {
         matches = true;
       }
-      
+
       // 7. Track
       if (student.track && student.track.toLowerCase().includes(searchLower)) {
         matches = true;
       }
-      
+
       // 8. Diploma Year
       if (student.diplomaYear && student.diplomaYear.includes(searchTrimmed)) {
         matches = true;
       }
-      
+
       // 9. Course
       if (student.course && student.course.toLowerCase().includes(searchLower)) {
         matches = true;
       }
-      
+
       // 10. Address fields
       if (student.address) {
         if (student.address.governorate && student.address.governorate.toLowerCase().includes(searchLower)) {
@@ -293,12 +293,12 @@ export const searchStudent = async (searchTerm: string): Promise<StudentData[]> 
           matches = true;
         }
       }
-      
+
       if (matches) {
         allStudents.push(student);
       }
     });
-    
+
     return allStudents;
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء البحث');
@@ -325,7 +325,7 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
     }
 
     let fileToUpload: File | Blob;
-    
+
     // If we have the actual file object, use it directly
     if (file.file) {
       fileToUpload = file.file;
@@ -334,36 +334,36 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
       const response = await fetch(file.url);
       fileToUpload = await response.blob();
     }
-    
+
     // Create a unique file path
     const timestamp = Date.now();
     const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const publicId = `serviceRequests/${studentId}/${serviceId}/${timestamp}_${sanitizedFileName}`;
-    
+
     // Create FormData for upload
     const formData = new FormData();
     formData.append('file', fileToUpload);
     formData.append('upload_preset', UPLOAD_PRESET); // Unsigned preset - secure, no API secret needed
     formData.append('public_id', publicId);
     formData.append('folder', 'serviceRequests');
-    
+
     // Note: eager and flags parameters are not allowed with unsigned upload preset
     // Transformations will be applied via URL parameters when serving images
-    
+
     // Upload to Cloudinary using fetch
     const response = await fetch(CLOUDINARY_CONFIG.upload_url, {
       method: 'POST',
       body: formData
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json();
       const errorMessage = errorData.error?.message || 'فشل رفع الملف إلى Cloudinary';
       throw new Error(errorMessage);
     }
-    
+
     const data = await response.json();
-    
+
     // Apply transformations via URL for images (not PDFs)
     // This allows optimization without using eager parameter (which is not allowed with unsigned preset)
     let optimizedUrl = data.secure_url;
@@ -377,7 +377,7 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
         optimizedUrl = optimizedUrl.substring(0, uploadIndex + 8) + 'w_1200,c_limit,q_auto,f_auto/' + optimizedUrl.substring(uploadIndex + 8);
       }
     }
-    
+
     return optimizedUrl;
   } catch (error: any) {
     console.error('Error uploading file to Cloudinary:', error);
@@ -391,10 +391,10 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
     // Each service has its own collection
     const collectionName = `serviceRequests_${request.serviceId}`;
     const requestRef = doc(collection(db, collectionName));
-    
+
     // Upload files to Cloudinary and get URLs
     let documentUrls: Array<{ name: string; url: string; size: number; type: string }> = [];
-    
+
     if (request.documents && request.documents.length > 0) {
       const uploadPromises = request.documents.map(async (file) => {
         try {
@@ -410,10 +410,10 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
           throw error;
         }
       });
-      
+
       documentUrls = await Promise.all(uploadPromises);
     }
-    
+
     // Prepare request data with only links (no base64, no sensitive data)
     const requestData = {
       ...request,
@@ -422,18 +422,18 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
-    
+
     // Debug: Calculate document size before saving
     const documentSize = calculateDocumentSize(requestData);
     const maxSize = 1024 * 1024; // 1 MB limit
-    
+
     if (documentSize > maxSize) {
       console.warn(`Document size (${(documentSize / 1024).toFixed(2)} KB) is large. Consider splitting data.`);
       // Still save, but log warning
     }
-    
+
     console.log(`Saving document with size: ${(documentSize / 1024).toFixed(2)} KB`);
-    
+
     // Save request - only links, no base64, optimized and secure
     await setDoc(requestRef, requestData);
     return requestRef.id;
@@ -450,9 +450,9 @@ export const getServiceRequests = async (studentId?: string): Promise<ServiceReq
     } else {
       q = query(collection(db, 'serviceRequests'));
     }
-    
+
     const querySnapshot = await getDocs(q);
-    
+
     return querySnapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -475,7 +475,7 @@ export const subscribeToServiceRequests = (
   const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
   const unsubscribes: (() => void)[] = [];
   const allRequests: ServiceRequest[] = [];
-  
+
   serviceIds.forEach(serviceId => {
     const collectionName = `serviceRequests_${serviceId}`;
     let q;
@@ -484,7 +484,7 @@ export const subscribeToServiceRequests = (
     } else {
       q = query(collection(db, collectionName));
     }
-    
+
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const requests: ServiceRequest[] = querySnapshot.docs.map(doc => {
         const data = doc.data();
@@ -494,21 +494,21 @@ export const subscribeToServiceRequests = (
           createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
         } as ServiceRequest;
       });
-      
+
       // Update allRequests array - remove old requests for this service and add new ones
       const filteredRequests = allRequests.filter(r => r.serviceId !== serviceId);
       allRequests.length = 0;
       allRequests.push(...filteredRequests, ...requests);
-      
+
       // Call callback with merged results
       callback([...allRequests]);
     }, (error) => {
       console.error(`Error in service requests subscription for ${serviceId}:`, error);
     });
-    
+
     unsubscribes.push(unsubscribe);
   });
-  
+
   // Return function to unsubscribe from all
   return () => {
     unsubscribes.forEach(unsub => unsub());
@@ -534,7 +534,7 @@ export const getAllServiceRequests = async (): Promise<ServiceRequest[]> => {
   try {
     const q = query(collection(db, 'serviceRequests'));
     const querySnapshot = await getDocs(q);
-    
+
     return querySnapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -555,11 +555,11 @@ export const subscribeToAllServiceRequests = (
   const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
   const unsubscribes: (() => void)[] = [];
   const allRequests: ServiceRequest[] = [];
-  
+
   serviceIds.forEach(serviceId => {
     const collectionName = `serviceRequests_${serviceId}`;
     const q = query(collection(db, collectionName));
-    
+
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const requests: ServiceRequest[] = querySnapshot.docs.map(doc => {
         const data = doc.data();
@@ -569,7 +569,7 @@ export const subscribeToAllServiceRequests = (
           createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
         } as ServiceRequest;
       });
-      
+
       // Update allRequests array
       const existingIndex = allRequests.findIndex(r => r.serviceId === serviceId);
       if (existingIndex >= 0) {
@@ -578,16 +578,16 @@ export const subscribeToAllServiceRequests = (
       }
       // Add new requests
       allRequests.push(...requests);
-      
+
       // Call callback with merged results
       callback([...allRequests]);
     }, (error) => {
       console.error(`Error in service requests subscription for ${serviceId}:`, error);
     });
-    
+
     unsubscribes.push(unsubscribe);
   });
-  
+
   // Return function to unsubscribe from all
   return () => {
     unsubscribes.forEach(unsub => unsub());
@@ -619,7 +619,7 @@ export const getBookServiceConfig = async (): Promise<BookServiceConfig | null> 
   try {
     const docRef = doc(db, 'config', 'bookService');
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
       return docSnap.data() as BookServiceConfig;
     }
@@ -649,7 +649,7 @@ export const getFeesServiceConfig = async (): Promise<FeesServiceConfig | null> 
   try {
     const docRef = doc(db, 'config', 'feesService');
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
       return docSnap.data() as FeesServiceConfig;
     }
@@ -679,7 +679,7 @@ export const getAssignmentsServiceConfig = async (): Promise<AssignmentsServiceC
   try {
     const docRef = doc(db, 'config', 'assignmentsService');
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
       return docSnap.data() as AssignmentsServiceConfig;
     }
@@ -788,8 +788,8 @@ export const getDigitalTransformationConfig = async (): Promise<DigitalTransform
       // Handle backward compatibility: convert string examLanguage to array
       const config: DigitalTransformationConfig = {
         ...data,
-        examLanguage: Array.isArray(data.examLanguage) 
-          ? data.examLanguage 
+        examLanguage: Array.isArray(data.examLanguage)
+          ? data.examLanguage
           : (data.examLanguage ? [data.examLanguage] : [])
       };
       console.log('Digital transformation config loaded:', {
@@ -840,6 +840,107 @@ export const updateDigitalTransformationConfig = async (config: DigitalTransform
   } catch (error: any) {
     console.error('Error saving digital transformation config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات التحول الرقمي');
+  }
+};
+
+// Final Review Service Configuration
+export const getFinalReviewConfig = async (): Promise<FinalReviewConfig | null> => {
+  try {
+    console.log('Fetching final review config from Firebase...');
+    const docRef = doc(db, 'config', 'finalReviewService');
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data() as FinalReviewConfig;
+      console.log('Final review config loaded:', {
+        serviceName: data.serviceName,
+        paymentAmount: data.paymentAmount
+      });
+      return data;
+    } else {
+      console.log('Final review config document does not exist');
+      return null;
+    }
+  } catch (error: any) {
+    console.error('Error fetching final review config:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء جلب إعدادات المراجعة النهائية');
+  }
+};
+
+export const updateFinalReviewConfig = async (config: FinalReviewConfig): Promise<void> => {
+  try {
+    const cleanConfig = {
+      serviceName: config.serviceName || 'المراجعة النهائية',
+      paymentAmount: config.paymentAmount || 500,
+      paymentMethods: config.paymentMethods
+    };
+
+    console.log('Saving final review config to Firebase:', cleanConfig);
+
+    await setDoc(
+      doc(db, 'config', 'finalReviewService'),
+      {
+        ...cleanConfig,
+        updatedAt: serverTimestamp()
+      },
+      { merge: false }
+    );
+
+    console.log('Final review config saved to Firebase successfully');
+  } catch (error: any) {
+    console.error('Error saving final review config:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات المراجعة النهائية');
+  }
+};
+
+// Graduation Project Service Configuration
+export const getGraduationProjectConfig = async (): Promise<GraduationProjectConfig | null> => {
+  try {
+    console.log('Fetching graduation project config from Firebase...');
+    const docRef = doc(db, 'config', 'graduationProjectService');
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data() as GraduationProjectConfig;
+      console.log('Graduation project config loaded:', {
+        serviceName: data.serviceName,
+        featuresCount: data.features?.length || 0
+      });
+      return data;
+    } else {
+      console.log('Graduation project config document does not exist');
+      return null;
+    }
+  } catch (error: any) {
+    console.error('Error fetching graduation project config:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء جلب إعدادات مشروع التخرج');
+  }
+};
+
+export const updateGraduationProjectConfig = async (config: GraduationProjectConfig): Promise<void> => {
+  try {
+    const cleanConfig = {
+      serviceName: config.serviceName || 'مشروع التخرج',
+      features: config.features || [],
+      prices: config.prices || [],
+      paymentMethods: config.paymentMethods
+    };
+
+    console.log('Saving graduation project config to Firebase:', cleanConfig);
+
+    await setDoc(
+      doc(db, 'config', 'graduationProjectService'),
+      {
+        ...cleanConfig,
+        updatedAt: serverTimestamp()
+      },
+      { merge: false }
+    );
+
+    console.log('Graduation project config saved to Firebase successfully');
+  } catch (error: any) {
+    console.error('Error saving graduation project config:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات مشروع التخرج');
   }
 };
 

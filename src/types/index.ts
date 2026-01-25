@@ -31,6 +31,7 @@ export interface Service {
   color: string;
   fields: ServiceField[];
   paymentMethods: string[];
+  features?: string[]; // المميزات - اختياري
 }
 
 export interface ServiceField {
@@ -143,6 +144,30 @@ export interface DigitalTransformationType {
 export interface DigitalTransformationConfig {
   transformationTypes: DigitalTransformationType[];
   examLanguage: string[]; // قائمة لغات الامتحان
+  paymentMethods: {
+    instaPay: string;
+    cashWallet: string;
+  };
+}
+
+export interface FinalReviewConfig {
+  serviceName: string; // اسم السيكشن - يمكن تغييره من الأدمن
+  paymentAmount: number; // مبلغ الدفع (500 جنيه افتراضياً)
+  paymentMethods: {
+    instaPay: string;
+    cashWallet: string;
+  };
+}
+
+export interface GraduationProjectPrice {
+  id: string;
+  price: number; // السعر فقط
+}
+
+export interface GraduationProjectConfig {
+  serviceName: string;
+  features: string[]; // المميزات
+  prices: GraduationProjectPrice[]; // الأسعار المتعددة
   paymentMethods: {
     instaPay: string;
     cashWallet: string;

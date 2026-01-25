@@ -127,6 +127,11 @@
   gap: 16px;
 }
 
+.service-fields > .dynamic-fields-section {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
 @media (max-width: 768px) {
   .service-fields {
     grid-template-columns: 1fr;
@@ -235,8 +240,10 @@
   align-items: center;
   gap: 12px;
   padding: 16px;
-  border: 1px solid #000000;
-  /* Black Border */
+  border: 1px solid #e2e8f0;
+  /* رمادي فاتح جداً وناعم */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02), 0 1px 3px rgba(0, 0, 0, 0.05);
+  /* ظل ناعم بدلاً من الحدود القوية */
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -327,66 +334,47 @@
 
 /* Green Bar with White Text */
 .payment-amount {
-  background: #f0fdf4;
-  border: 1px solid #000000;
-  border-radius: 8px;
-  padding: 16px;
+  background: transparent;
+  border: none;
+  padding: 0;
   margin-bottom: 20px;
-  font-size: 16px;
-  color: #000000;
 }
 
 .payment-amount strong {
+  margin: 0;
+  font-size: 18px;
+  color: #2d3748;
+  font-weight: 600;
   display: block;
   margin-bottom: 12px;
+}
+
+/* استثناء للـ selected-price */
+.payment-amount .selected-price strong {
+  color: #ffffff;
   font-size: 18px;
-  color: #000000;
-}
-
-.book-prices-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 8px;
-  margin-bottom: 16px;
-  background: white;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid #000000;
-}
-
-.price-item-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: #ffffff;
-  border-radius: 6px;
-  border: 1px solid #000000;
-}
-
-.price-item-row span {
-  color: #000000;
   font-weight: 600;
-}
-
-.price-item-row strong {
-  color: #000000;
-  font-size: 16px;
 }
 
 /* Selected Price: Green Background, White Text */
 .selected-price {
-  margin-top: 16px;
-  padding: 12px;
-  background: #16a34a;
-  /* Green */
+  margin-top: 0;
+  padding: 24px;
+  background: #10B981;
+  /* لون أخضر فاتح ومبهج (Emerald) */
   color: #ffffff;
-  /* White */
-  border-radius: 6px;
+  border-radius: 12px;
   text-align: center;
-  font-size: 18px;
-  font-weight: 700;
-  border: 1px solid #000000;
-  box-shadow: 0 4px 6px rgba(22, 163, 74, 0.2);
+  border: none;
+  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4), 0 8px 10px -6px rgba(16, 185, 129, 0.2);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: transform 0.2s;
+}
+
+.selected-price:hover {
+  transform: translateY(-2px);
 }
 
 .payment-info {
@@ -416,6 +404,195 @@
 
 .section-receipt {
   margin-top: 20px;
+}
+
+/* Features Section for Graduation Project */
+.section-features {
+  margin-top: 20px;
+  background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
+  border: 1px solid #667eea30;
+}
+
+.features-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+  transition: all 0.3s ease;
+  border-right: 4px solid #667eea;
+}
+
+.feature-item:hover {
+  transform: translateX(-5px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.feature-icon {
+  color: #667eea;
+  flex-shrink: 0;
+}
+
+.feature-item span {
+  color: #2d3748;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* Graduation Project Prices */
+.graduation-prices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 0;
+}
+
+.graduation-prices-list .selected-price {
+  margin-top: 0;
+}
+
+.graduation-price-item {
+  padding: 16px 20px;
+  background: #10B981;
+  color: #ffffff;
+  border-radius: 8px;
+  text-align: center;
+  box-shadow: 0 4px 12px -2px rgba(16, 185, 129, 0.25);
+  transition: all 0.2s ease;
+}
+
+.graduation-price-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px -2px rgba(16, 185, 129, 0.3);
+}
+
+.graduation-price-item strong {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+/* Dynamic Fields Container for Books Service - داخل نفس القسم */
+.dynamic-fields-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  grid-column: 1 / -1;
+  width: 100%;
+  clear: both;
+}
+
+.dynamic-fields-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0 0 12px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dynamic-fields-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .dynamic-fields-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dynamic-fields-container .form-group {
+  margin-bottom: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.dynamic-fields-container .form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.dynamic-fields-container .form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  background: white;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.dynamic-fields-container .form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.dynamic-fields-container .form-group input:hover {
+  border-color: #cbd5e0;
+}
+
+/* Book Prices List - تصميم جميل للكتب الدراسية */
+.book-prices-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.price-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.price-item-row:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  transform: translateY(-1px);
+}
+
+.price-item-row span {
+  color: #2d3748;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.price-item-row strong {
+  color: #667eea;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .receipt-note {

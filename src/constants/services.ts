@@ -129,9 +129,7 @@ export const SERVICES: Service[] = [
     icon: 'package',
     color: '#10B981',
     fields: [
-      { name: 'number_of_copies', label: 'عدد النسخ المطلوبة (من 1 إلى 10)', type: 'text', required: true },
-      { name: 'names', label: 'الأسماء الرباعية (إذا أكثر من نسخة، اكتب الأسماء تحت بعضها)', type: 'textarea', required: true },
-      { name: 'tracks', label: 'المسارات والتخصصات (إذا أكثر من نسخة، اكتب المسارات بالترتيب تحت بعضها)', type: 'textarea', required: true },
+      { name: 'number_of_copies', label: 'عدد النسخ المطلوبة (من 1 إلى 10)', type: 'number', required: true },
       { name: 'phone_whatsapp', label: 'رقم هاتف للتواصل والشحن (واتساب وفون)', type: 'text', required: true },
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: DIPLOMA_TYPES },
       { name: 'address_details', label: 'العنوان بالتفصيل (المحافظة / المدينة / اسم الشارع / علامة مميزة / رقم العقار)', type: 'textarea', required: true },
@@ -219,12 +217,12 @@ export const SERVICES: Service[] = [
     icon: 'search',
     color: '#F97316',
     fields: [
-      { name: 'exam_name', label: 'اسم الامتحان', type: 'text', required: true },
-      { name: 'review_type', label: 'نوع المراجعة', type: 'select', required: true, options: ['شاملة', 'مركزة', 'نقاط رئيسية'] },
-      { name: 'subjects', label: 'المواد', type: 'text', required: true },
-      { name: 'additional_notes', label: 'ملاحظات إضافية', type: 'textarea', required: false }
+      { name: 'full_name_arabic', label: 'الاسم الرباعي', type: 'editable', required: true },
+      { name: 'whatsapp_number', label: 'رقم هاتف (واتس اب)', type: 'editable', required: true },
+      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة'] },
+      { name: 'address', label: 'العنوان', type: 'editable', required: true }
     ],
-    paymentMethods: ['Credit Card']
+    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
   },
   {
     id: '9',
@@ -232,15 +230,24 @@ export const SERVICES: Service[] = [
     nameAr: 'مشروع التخرج',
     descriptionEn: 'Get help with your graduation project',
     descriptionAr: 'احصل على مساعدة في مشروع التخرج',
-    icon: 'target',
+    icon: 'graduation-cap',
     color: '#6366F1',
-    fields: [
-      { name: 'project_title', label: 'عنوان المشروع', type: 'text', required: true },
-      { name: 'project_description', label: 'وصف المشروع', type: 'textarea', required: true },
-      { name: 'team_size', label: 'حجم الفريق', type: 'number', required: true },
-      { name: 'submission_date', label: 'تاريخ التقديم', type: 'text', required: true }
+    features: [
+      'اعداد مشروع التخرج كامل',
+      'شرح جميع جوانب المشروع و تفاصيله',
+      'اعداد الاجزاء الاحصائية علي ارض الواقع',
+      'تقسيم الادوار و التدريب علي الالقاء الشفوي',
+      'احدث قائمة مراجع للمشروع',
+      'اعداد العرض التقديمي PowerPoint'
     ],
-    paymentMethods: ['Credit Card', 'Bank Transfer']
+    fields: [
+      { name: 'student_names', label: 'اسماء الطلاب المشتركين في المشروع (اكتب كل اسم في سطر منفصل)', type: 'textarea', required: true },
+      { name: 'leader_whatsapp', label: 'رقم واتس اب ليدر المجموعة المسؤول عن المشروع', type: 'text', required: true },
+      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة'] },
+      { name: 'project_title', label: 'عنوان المشروع كامل كما تم كتابته في الاستمارة', type: 'textarea', required: true },
+      { name: 'group_link', label: 'لينك الجروب الخاص بالمجموعة', type: 'text', required: true }
+    ],
+    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
   },
   {
     id: '10',

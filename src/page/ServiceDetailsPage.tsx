@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
 import { ServiceRequest, UploadedFile } from '../types';
-import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig } from '../services/firebaseService';
-import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig } from '../types';
+import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig } from '../services/firebaseService';
+import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import '../styles/ServiceDetailsPage.css';
@@ -36,6 +36,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   const [certificatesConfig, setCertificatesConfig] = useState<CertificatesServiceConfig | null>(null);
   const [selectedCertificate, setSelectedCertificate] = useState<CertificateItem | null>(null);
   const [digitalTransformationConfig, setDigitalTransformationConfig] = useState<DigitalTransformationConfig | null>(null);
+  const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
+  const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
 
   // Load book config for service 3
   useEffect(() => {
@@ -152,13 +154,53 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       };
       loadDigitalTransformationConfig();
     }
+
+    if (service.id === '8') {
+      const loadFinalReviewConfig = async () => {
+        try {
+          console.log('Loading final review config in ServiceDetailsPage...');
+          const config = await getFinalReviewConfig();
+          if (config) {
+            console.log('Setting final review config in ServiceDetailsPage:', config);
+            setFinalReviewConfig(config);
+          } else {
+            console.log('No final review config found in ServiceDetailsPage');
+            setFinalReviewConfig(null);
+          }
+        } catch (error) {
+          console.error('Error loading final review config in ServiceDetailsPage:', error);
+          setFinalReviewConfig(null);
+        }
+      };
+      loadFinalReviewConfig();
+    }
+
+    if (service.id === '9') {
+      const loadGraduationProjectConfig = async () => {
+        try {
+          console.log('Loading graduation project config in ServiceDetailsPage...');
+          const config = await getGraduationProjectConfig();
+          if (config) {
+            console.log('Setting graduation project config in ServiceDetailsPage:', config);
+            setGraduationProjectConfig(config);
+          } else {
+            console.log('No graduation project config found in ServiceDetailsPage');
+            setGraduationProjectConfig(null);
+          }
+        } catch (error) {
+          console.error('Error loading graduation project config in ServiceDetailsPage:', error);
+          setGraduationProjectConfig(null);
+        }
+      };
+      loadGraduationProjectConfig();
+    }
   }, [service?.id]);
 
   // ملء البيانات الشخصية تلقائياً من بيانات المستخدم للخدمة الأولى و VIP و دفع المصروفات
   useEffect(() => {
     if (!service || !student) return;
 
-    if (service.id === '1' || service.id === '2' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') {
+    if (service.id === '1' || service.id === '2' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8') {
       const initialData: Record<string, any> = {};
       const addressString = student.address
         ? `${student.address.governorate || ''}, ${student.address.city || ''}, ${student.address.street || ''}, ${student.address.building || ''}, ${student.address.siteNumber || ''}${student.address.landmark ? `, ${student.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
@@ -187,8 +229,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               initialData[field.name] = student.whatsappNumber || '';
               break;
           }
-        } else if (field.type === 'select' && (service.id === '4' || service.id === '5')) {
-          // Set default values for service 4 and 5 fields
+        } else if (field.type === 'select' && (service.id === '4' || service.id === '5' || service.id === '8')) {
+          // Set default values for service 4, 5 and 8 fields
           switch (field.name) {
             case 'diploma_type':
               initialData[field.name] = 'اختر نوع الدبلومة';
@@ -245,8 +287,42 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     setSubmitMessage(null);
 
     const missingFields = service.fields
-      .filter(field => field.required && !serviceData[field.name])
+      .filter(field => field.required && (!serviceData[field.name] || (typeof serviceData[field.name] === 'string' && serviceData[field.name].includes('اختر'))))
       .map(field => field.label);
+
+    // التحقق من الأسماء والمسارات لخدمة الكتب
+    if (service.id === '3' && serviceData.number_of_copies) {
+      const copiesCount = parseInt(serviceData.number_of_copies) || 0;
+      if (copiesCount < 1 || copiesCount > 10) {
+        setSubmitMessage({
+          type: 'error',
+          text: 'عدد النسخ يجب أن يكون بين 1 و 10'
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const namesArray = serviceData.names_array || [];
+      const tracksArray = serviceData.tracks_array || [];
+
+      if (namesArray.length !== copiesCount || namesArray.some(name => !name || !name.trim())) {
+        setSubmitMessage({
+          type: 'error',
+          text: `يرجى ملء جميع الأسماء الرباعية (${copiesCount} أسماء مطلوبة)`
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (tracksArray.length !== copiesCount || tracksArray.some(track => !track || !track.trim())) {
+        setSubmitMessage({
+          type: 'error',
+          text: `يرجى ملء جميع المسارات والتخصصات (${copiesCount} مسارات مطلوبة)`
+        });
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     if (missingFields.length > 0) {
       setSubmitMessage({
@@ -266,8 +342,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       return;
     }
 
-    // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات، يجب رفع صورة الإيصال
-    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') && receiptFiles.length === 0) {
+    // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات ومشروع التخرج، يجب رفع صورة الإيصال
+    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') && receiptFiles.length === 0) {
       setSubmitMessage({
         type: 'error',
         text: 'يرجى رفع صورة الإيصال أولاً'
@@ -341,11 +417,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         }
       }
 
+      if (service.id === '8' && finalReviewConfig) {
+        requestData.totalPrice = finalReviewConfig.paymentAmount;
+      }
+
       const request: ServiceRequest = {
         studentId: student.id || '',
         serviceId: service.id,
         data: requestData,
-        documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') ? receiptFiles : [],
+        documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') ? receiptFiles : [],
         paymentMethod: selectedPaymentMethod,
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -407,7 +487,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             ? bookConfig.serviceName
             : service.id === '5' && assignmentsConfig
               ? assignmentsConfig.serviceName
-              : service.nameAr}
+              : service.id === '8' && finalReviewConfig
+                ? finalReviewConfig.serviceName
+                : service.id === '9' && graduationProjectConfig
+                  ? graduationProjectConfig.serviceName
+                  : service.nameAr}
         </h1>
       </div>
 
@@ -438,6 +522,20 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                 <Edit2 size={16} />
                 هذه البيانات غير قابلة للتعديل. يمكنك تحديثها من الملف الشخصي
               </p>
+            </section>
+          )}
+
+          {service.id === '9' && (service.features || (graduationProjectConfig && graduationProjectConfig.features)) && (
+            <section className="form-section section-features">
+              <h2>المميزات</h2>
+              <ul className="features-list">
+                {(graduationProjectConfig?.features || service.features || []).map((feature, index) => (
+                  <li key={index} className="feature-item">
+                    <CheckCircle size={18} className="feature-icon" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 
@@ -510,8 +608,41 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                       <input
                         id={field.name}
                         type="number"
-                        value={serviceData[field.name] || ''}
-                        onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
+                        min="1"
+                        max="10"
+                        value={serviceData[field.name] ?? ''}
+                        onChange={(e) => {
+                          const inputValue = e.target.value;
+                          // إذا كان الحقل فارغاً، نضع قيمة فارغة
+                          if (inputValue === '') {
+                            handleServiceDataChange(field.name, '');
+                            if (service.id === '3' && field.name === 'number_of_copies') {
+                              setServiceData(prev => ({
+                                ...prev,
+                                names_array: [],
+                                tracks_array: []
+                              }));
+                            }
+                            return;
+                          }
+                          
+                          const value = parseInt(inputValue);
+                          // التحقق من أن القيمة صحيحة بين 1 و 10
+                          if (!isNaN(value) && value >= 1 && value <= 10) {
+                            handleServiceDataChange(field.name, value);
+                            // إذا كانت خدمة الكتب، نعيد تهيئة مصفوفات الأسماء والمسارات فوراً
+                            if (service.id === '3' && field.name === 'number_of_copies') {
+                              const namesArray = Array.from({ length: value }, (_, i) => serviceData.names_array?.[i] || '');
+                              const tracksArray = Array.from({ length: value }, (_, i) => serviceData.tracks_array?.[i] || '');
+                              setServiceData(prev => ({
+                                ...prev,
+                                [field.name]: value,
+                                names_array: namesArray,
+                                tracks_array: tracksArray
+                              }));
+                            }
+                          }
+                        }}
                         placeholder={field.label}
                         required={field.required}
                       />
@@ -617,6 +748,71 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </div>
                 );
               })}
+
+              {/* Dynamic Names and Tracks Fields for Books Service - داخل نفس القسم */}
+              {service.id === '3' && serviceData.number_of_copies && serviceData.number_of_copies !== '' && parseInt(serviceData.number_of_copies) > 0 && (
+                <>
+                  <div className="dynamic-fields-section">
+                    <h3 className="dynamic-fields-title">الأسماء الرباعية</h3>
+                    <div className="dynamic-fields-container">
+                      {Array.from({ length: Math.min(parseInt(serviceData.number_of_copies) || 1, 10) }, (_, index) => (
+                        <div key={index} className="form-group">
+                          <label htmlFor={`name_${index}`}>
+                            الاسم الرباعي للنسخة {index + 1}
+                            <span className="required">*</span>
+                          </label>
+                          <input
+                            id={`name_${index}`}
+                            type="text"
+                            value={serviceData.names_array?.[index] || ''}
+                            onChange={(e) => {
+                              const namesArray = [...(serviceData.names_array || [])];
+                              namesArray[index] = e.target.value;
+                              setServiceData(prev => ({
+                                ...prev,
+                                names_array: namesArray,
+                                names: namesArray.join('\n') // حفظ كـ textarea أيضاً للتوافق
+                              }));
+                            }}
+                            placeholder={`اكتب الاسم الرباعي للنسخة ${index + 1}`}
+                            required
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="dynamic-fields-section">
+                    <h3 className="dynamic-fields-title">المسارات والتخصصات</h3>
+                    <div className="dynamic-fields-container">
+                      {Array.from({ length: Math.min(parseInt(serviceData.number_of_copies) || 1, 10) }, (_, index) => (
+                        <div key={index} className="form-group">
+                          <label htmlFor={`track_${index}`}>
+                            المسار/التخصص للنسخة {index + 1}
+                            <span className="required">*</span>
+                          </label>
+                          <input
+                            id={`track_${index}`}
+                            type="text"
+                            value={serviceData.tracks_array?.[index] || ''}
+                            onChange={(e) => {
+                              const tracksArray = [...(serviceData.tracks_array || [])];
+                              tracksArray[index] = e.target.value;
+                              setServiceData(prev => ({
+                                ...prev,
+                                tracks_array: tracksArray,
+                                tracks: tracksArray.join('\n') // حفظ كـ textarea أيضاً للتوافق
+                              }));
+                            }}
+                            placeholder={`اكتب المسار/التخصص للنسخة ${index + 1}`}
+                            required
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </section>
 
@@ -934,10 +1130,30 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </div>
                 </div>
               )}
+              {service.id === '8' && finalReviewConfig && (
+                <div className="payment-amount">
+                  <div className="selected-price">
+                    <strong>
+                      المبلغ المستحق للدفع: {finalReviewConfig.paymentAmount} جنيه
+                    </strong>
+                  </div>
+                </div>
+              )}
+              {service.id === '9' && graduationProjectConfig && graduationProjectConfig.prices && graduationProjectConfig.prices.length > 0 && (
+                <div className="payment-amount">
+                  <div className="graduation-prices-list">
+                    {graduationProjectConfig.prices.map((priceItem) => (
+                      <div key={priceItem.id} className="selected-price graduation-price-item">
+                        <strong>المبلغ المستحق للدفع: {priceItem.price} جنيه</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="payment-methods">
                 {service.paymentMethods && service.paymentMethods.length > 0 && service.paymentMethods.map(method => {
                   let phoneNumber = '';
-                  if (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') {
+                  if (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') {
                     if (service.id === '6' && certificatesConfig) {
                       switch (method) {
                         case 'Vodafone':
@@ -973,6 +1189,32 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                           break;
                         case 'instaPay':
                           phoneNumber = digitalTransformationConfig.paymentMethods.instaPay;
+                          break;
+                        default:
+                          phoneNumber = '';
+                      }
+                    } else if (service.id === '8' && finalReviewConfig) {
+                      switch (method) {
+                        case 'Vodafone':
+                        case 'Etisalat':
+                        case 'Orange':
+                          phoneNumber = finalReviewConfig.paymentMethods.cashWallet;
+                          break;
+                        case 'instaPay':
+                          phoneNumber = finalReviewConfig.paymentMethods.instaPay;
+                          break;
+                        default:
+                          phoneNumber = '';
+                      }
+                    } else if (service.id === '9' && graduationProjectConfig) {
+                      switch (method) {
+                        case 'Vodafone':
+                        case 'Etisalat':
+                        case 'Orange':
+                          phoneNumber = graduationProjectConfig.paymentMethods.cashWallet;
+                          break;
+                        case 'instaPay':
+                          phoneNumber = graduationProjectConfig.paymentMethods.instaPay;
                           break;
                         default:
                           phoneNumber = '';
@@ -1015,7 +1257,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </section>
           )}
 
-          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7') && (
+          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') && (
             <section className="form-section section-receipt">
               <h2>رفع صورة الإيصال</h2>
               <p className="receipt-note">يرجى رفع صورة إيصال الدفع قبل تقديم الطلب</p>
@@ -1071,7 +1313,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             <button
               type="submit"
               className="submit-button"
-              disabled={isSubmitting || ((service.id === '2' || service.id === '3' || service.id === '4') && receiptFiles.length === 0)}
+              disabled={isSubmitting || ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') && receiptFiles.length === 0)}
             >
               {isSubmitting ? 'جاري التقديم...' : 'تقديم الطلب'}
             </button>

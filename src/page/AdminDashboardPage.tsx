@@ -13,13 +13,17 @@ import {
   updateCertificatesServiceConfig,
   getDigitalTransformationConfig,
   updateDigitalTransformationConfig,
+  getFinalReviewConfig,
+  updateFinalReviewConfig,
+  getGraduationProjectConfig,
+  updateGraduationProjectConfig,
   checkIsAdmin,
   getStudentData,
   subscribeToAllStudents,
   searchStudent,
   updateStudentData
 } from '../services/firebaseService';
-import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType } from '../types';
+import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice } from '../types';
 import {
   LogOut,
   Package,
@@ -57,7 +61,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [students, setStudents] = useState<Record<string, StudentData>>({});
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'assignments' | 'certificates' | 'digitalTransformation' | 'users'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'assignments' | 'certificates' | 'digitalTransformation' | 'finalReview' | 'graduationProject' | 'users'>('requests');
   const [bookConfig, setBookConfig] = useState<BookServiceConfig | null>(null);
   const [feesConfig, setFeesConfig] = useState<FeesServiceConfig | null>(null);
   const [assignmentsConfig, setAssignmentsConfig] = useState<AssignmentsServiceConfig | null>(null);
@@ -85,6 +89,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [editedStudentData, setEditedStudentData] = useState<StudentData | null>(null);
   const [newFeeYear, setNewFeeYear] = useState<string>('');
   const [newFeeAmount, setNewFeeAmount] = useState<string>('');
+
+  // Final Review states
+  const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
+
+  // Graduation Project states
+  const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
+  const [newGradProjectPriceAmount, setNewGradProjectPriceAmount] = useState<string>('');
+  const [newGradProjectFeature, setNewGradProjectFeature] = useState<string>('');
 
   useEffect(() => {
     if (!student?.id) return;
@@ -323,6 +335,82 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadDigitalTransformationConfig();
 
+    // Load final review config
+    const loadFinalReviewConfig = async () => {
+      try {
+        console.log('Loading final review config in AdminDashboard...');
+        const config = await getFinalReviewConfig();
+        if (config) {
+          console.log('Setting final review config in AdminDashboard:', config);
+          setFinalReviewConfig(config);
+        } else {
+          console.log('No config found, using default final review config');
+          const defaultConfig: FinalReviewConfig = {
+            serviceName: 'المراجعة النهائية',
+            paymentAmount: 500,
+            paymentMethods: {
+              instaPay: '01017180923',
+              cashWallet: '01050889591'
+            }
+          };
+
+          try {
+            await updateFinalReviewConfig(defaultConfig);
+            console.log('Default final review config saved to Firebase');
+          } catch (saveError) {
+            console.error('Error saving default config:', saveError);
+          }
+
+          setFinalReviewConfig(defaultConfig);
+        }
+      } catch (error) {
+        console.error('Error loading final review config:', error);
+      }
+    };
+    loadFinalReviewConfig();
+
+    // Load graduation project config
+    const loadGraduationProjectConfig = async () => {
+      try {
+        console.log('Loading graduation project config in AdminDashboard...');
+        const config = await getGraduationProjectConfig();
+        if (config) {
+          console.log('Setting graduation project config in AdminDashboard:', config);
+          setGraduationProjectConfig(config);
+        } else {
+          console.log('No config found, using default graduation project config');
+          const defaultConfig: GraduationProjectConfig = {
+            serviceName: 'مشروع التخرج',
+            features: [
+              'اعداد مشروع التخرج كامل',
+              'شرح جميع جوانب المشروع و تفاصيله',
+              'اعداد الاجزاء الاحصائية علي ارض الواقع',
+              'تقسيم الادوار و التدريب علي الالقاء الشفوي',
+              'احدث قائمة مراجع للمشروع',
+              'اعداد العرض التقديمي PowerPoint'
+            ],
+            prices: [],
+            paymentMethods: {
+              instaPay: '01017180923',
+              cashWallet: '01050889591'
+            }
+          };
+
+          try {
+            await updateGraduationProjectConfig(defaultConfig);
+            console.log('Default graduation project config saved to Firebase');
+            setGraduationProjectConfig(defaultConfig);
+          } catch (saveError) {
+            console.error('Error saving default graduation project config:', saveError);
+            setGraduationProjectConfig(defaultConfig);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading graduation project config:', error);
+      }
+    };
+    loadGraduationProjectConfig();
+
     return () => unsubscribe();
   }, [isLoading]);
 
@@ -525,6 +613,76 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   };
 
+  // Final Review handlers
+  const handleSaveFinalReviewConfig = async () => {
+    if (!finalReviewConfig) return;
+    try {
+      await updateFinalReviewConfig(finalReviewConfig);
+      alert('تم حفظ إعدادات المراجعة النهائية بنجاح!');
+    } catch (error: any) {
+      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    }
+  };
+
+  // Graduation Project handlers
+  const handleSaveGraduationProjectConfig = async () => {
+    if (!graduationProjectConfig) return;
+    try {
+      await updateGraduationProjectConfig(graduationProjectConfig);
+      alert('تم حفظ إعدادات مشروع التخرج بنجاح!');
+    } catch (error: any) {
+      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+    }
+  };
+
+  const handleAddGraduationProjectPrice = () => {
+    if (!graduationProjectConfig) return;
+    if (!newGradProjectPriceAmount) {
+      alert('يرجى إدخال السعر');
+      return;
+    }
+    const newPrice: GraduationProjectPrice = {
+      id: Date.now().toString(),
+      price: parseFloat(newGradProjectPriceAmount)
+    };
+    setGraduationProjectConfig({
+      ...graduationProjectConfig,
+      prices: [...(graduationProjectConfig.prices || []), newPrice]
+    });
+    setNewGradProjectPriceAmount('');
+  };
+
+  const handleRemoveGraduationProjectPrice = (priceId: string) => {
+    if (!graduationProjectConfig) return;
+    setGraduationProjectConfig({
+      ...graduationProjectConfig,
+      prices: graduationProjectConfig.prices.filter(p => p.id !== priceId)
+    });
+  };
+
+  const handleAddGraduationProjectFeature = () => {
+    if (!graduationProjectConfig) return;
+    if (!newGradProjectFeature.trim()) {
+      alert('يرجى إدخال الميزة');
+      return;
+    }
+    setGraduationProjectConfig({
+      ...graduationProjectConfig,
+      features: [...(graduationProjectConfig.features || []), newGradProjectFeature.trim()]
+    });
+    setNewGradProjectFeature('');
+  };
+
+  const handleRemoveGraduationProjectFeature = (index: number) => {
+    if (!graduationProjectConfig) return;
+    const newFeatures = [...graduationProjectConfig.features];
+    newFeatures.splice(index, 1);
+    setGraduationProjectConfig({
+      ...graduationProjectConfig,
+      features: newFeatures
+    });
+  };
+
   const handleEditCertificate = (certificate: CertificateItem) => {
     // Create a deep copy to avoid reference issues
     setEditingCertificate({
@@ -665,6 +823,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (serviceId === '5' && assignmentsConfig) {
       return assignmentsConfig.serviceName;
     }
+    if (serviceId === '8' && finalReviewConfig) {
+      return finalReviewConfig.serviceName;
+    }
     const serviceNames: Record<string, string> = {
       '1': 'سجل بياناتك',
       '2': 'العميل المميز',
@@ -763,6 +924,20 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         >
           <Zap size={18} />
           التحول الرقمي
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'finalReview' ? 'active' : ''}`}
+          onClick={() => setActiveTab('finalReview')}
+        >
+          <Search size={18} />
+          المراجعة النهائية
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'graduationProject' ? 'active' : ''}`}
+          onClick={() => setActiveTab('graduationProject')}
+        >
+          <GraduationCap size={18} />
+          مشروع التخرج
         </button>
         <button
           className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
@@ -1533,6 +1708,257 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           ...certificatesConfig,
                           paymentMethods: {
                             ...certificatesConfig.paymentMethods,
+                            cashWallet: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'finalReview' && (
+        <div className="admin-content">
+          <div className="books-section">
+            <div className="section-header">
+              <h2>إعدادات المراجعة النهائية</h2>
+              <button onClick={handleSaveFinalReviewConfig} className="save-button">
+                <Save size={18} />
+                حفظ
+              </button>
+            </div>
+
+            {finalReviewConfig && (
+              <div className="book-config-form">
+                <div className="form-group">
+                  <label>اسم السيكشن</label>
+                  <input
+                    type="text"
+                    value={finalReviewConfig.serviceName}
+                    onChange={(e) => setFinalReviewConfig({ ...finalReviewConfig, serviceName: e.target.value })}
+                    className="config-input"
+                    placeholder="المراجعة النهائية"
+                  />
+                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    يمكنك تغيير اسم السيكشن ليظهر للمستخدمين
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label>مبلغ الدفع (جنيه)</label>
+                  <input
+                    type="number"
+                    value={finalReviewConfig.paymentAmount}
+                    onChange={(e) => setFinalReviewConfig({
+                      ...finalReviewConfig,
+                      paymentAmount: parseFloat(e.target.value) || 0
+                    })}
+                    className="config-input"
+                    min="0"
+                    step="0.01"
+                    placeholder="500"
+                  />
+                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    المبلغ المطلوب دفعه للمراجعة النهائية
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label>أرقام الدفع</label>
+                  <div className="payment-numbers">
+                    <div className="payment-item">
+                      <label>instaPay</label>
+                      <input
+                        type="text"
+                        value={finalReviewConfig.paymentMethods.instaPay}
+                        onChange={(e) => setFinalReviewConfig({
+                          ...finalReviewConfig,
+                          paymentMethods: {
+                            ...finalReviewConfig.paymentMethods,
+                            instaPay: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                      />
+                    </div>
+                    <div className="payment-item">
+                      <label>محفظة الكاش</label>
+                      <input
+                        type="text"
+                        value={finalReviewConfig.paymentMethods.cashWallet}
+                        onChange={(e) => setFinalReviewConfig({
+                          ...finalReviewConfig,
+                          paymentMethods: {
+                            ...finalReviewConfig.paymentMethods,
+                            cashWallet: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#1e293b' }}>
+                    البيانات المطلوبة من المستخدم
+                  </h3>
+                  <div style={{ display: 'grid', gap: '8px', fontSize: '14px', color: '#475569' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: '#ef4444' }}>*</span>
+                      <span>الاسم الرباعي</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: '#ef4444' }}>*</span>
+                      <span>رقم هاتف (واتس اب)</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: '#ef4444' }}>*</span>
+                      <span>المسار</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: '#ef4444' }}>*</span>
+                      <span>العنوان</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
+                      <span style={{ color: '#10b981' }}>✓</span>
+                      <span>رفع إيصال الدفع</span>
+                    </div>
+                  </div>
+                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '12px', display: 'block' }}>
+                    هذه البيانات ثابتة ويتم جمعها تلقائياً من المستخدم عند التقديم
+                  </small>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'graduationProject' && (
+        <div className="admin-content">
+          <div className="books-section">
+            <div className="section-header">
+              <h2>إعدادات مشروع التخرج</h2>
+              <button onClick={handleSaveGraduationProjectConfig} className="save-button">
+                <Save size={18} />
+                حفظ
+              </button>
+            </div>
+
+            {graduationProjectConfig && (
+              <div className="book-config-form">
+                <div className="form-group">
+                  <label>اسم السيكشن</label>
+                  <input
+                    type="text"
+                    value={graduationProjectConfig.serviceName}
+                    onChange={(e) => setGraduationProjectConfig({ ...graduationProjectConfig, serviceName: e.target.value })}
+                    className="config-input"
+                    placeholder="مشروع التخرج"
+                  />
+                </div>
+
+                {/* Features Section */}
+                <div className="form-group">
+                  <label>المميزات</label>
+                  <div className="features-admin-list">
+                    {graduationProjectConfig.features.map((feature, index) => (
+                      <div key={index} className="feature-admin-item">
+                        <span>{feature}</span>
+                        <button
+                          onClick={() => handleRemoveGraduationProjectFeature(index)}
+                          className="remove-price-button"
+                          title="حذف"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="add-price-form" style={{ marginTop: '12px' }}>
+                    <input
+                      type="text"
+                      placeholder="أضف ميزة جديدة"
+                      value={newGradProjectFeature}
+                      onChange={(e) => setNewGradProjectFeature(e.target.value)}
+                      className="config-input"
+                    />
+                    <button onClick={handleAddGraduationProjectFeature} className="add-price-button">
+                      إضافة ميزة
+                    </button>
+                  </div>
+                </div>
+
+                {/* Prices Section */}
+                <div className="form-group">
+                  <label>الأسعار</label>
+                  <div className="prices-grid">
+                    {(graduationProjectConfig.prices || []).map((priceItem) => (
+                      <div key={priceItem.id} className="price-item">
+                        <div className="price-item-info">
+                          <span className="price-amount">{priceItem.price} جنيه</span>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveGraduationProjectPrice(priceItem.id)}
+                          className="remove-price-button"
+                          title="حذف"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="add-price-section" style={{ marginTop: '16px' }}>
+                    <div className="add-price-form">
+                      <input
+                        type="number"
+                        placeholder="السعر (جنيه)"
+                        value={newGradProjectPriceAmount}
+                        onChange={(e) => setNewGradProjectPriceAmount(e.target.value)}
+                        className="config-input"
+                        min="0"
+                      />
+                      <button onClick={handleAddGraduationProjectPrice} className="add-price-button">
+                        إضافة سعر
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Methods */}
+                <div className="form-group">
+                  <label>أرقام الدفع</label>
+                  <div className="payment-numbers">
+                    <div className="payment-item">
+                      <label>instaPay</label>
+                      <input
+                        type="text"
+                        value={graduationProjectConfig.paymentMethods.instaPay}
+                        onChange={(e) => setGraduationProjectConfig({
+                          ...graduationProjectConfig,
+                          paymentMethods: {
+                            ...graduationProjectConfig.paymentMethods,
+                            instaPay: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                      />
+                    </div>
+                    <div className="payment-item">
+                      <label>محفظة الكاش</label>
+                      <input
+                        type="text"
+                        value={graduationProjectConfig.paymentMethods.cashWallet}
+                        onChange={(e) => setGraduationProjectConfig({
+                          ...graduationProjectConfig,
+                          paymentMethods: {
+                            ...graduationProjectConfig.paymentMethods,
                             cashWallet: e.target.value
                           }
                         })}

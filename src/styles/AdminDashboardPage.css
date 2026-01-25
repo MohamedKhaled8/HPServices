@@ -1236,6 +1236,41 @@
   background: #dc2626;
 }
 
+/* Features Admin List for Graduation Project */
+.features-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.feature-admin-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.feature-admin-item span {
+  color: #2d3748;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.price-item-info {
+  display: flex;
+  align-items: center;
+}
+
+.price-item-info .price-amount {
+  color: #667eea;
+  font-weight: 700;
+  font-size: 16px;
+}
+
 .payment-item {
   display: flex;
   flex-direction: column;
