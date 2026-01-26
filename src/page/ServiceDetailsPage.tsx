@@ -20,7 +20,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   onBack,
   onSubmitSuccess
 }) => {
-  const { student, addServiceRequest } = useStudent();
+  const { student, addServiceRequest, setStudent } = useStudent();
   const service = SERVICES.find(s => s.id === serviceId);
 
   const [serviceData, setServiceData] = useState<Record<string, any>>({});
@@ -510,6 +510,12 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           };
 
           await updateStudentData(student.id, updatedStudentData);
+
+          // Update local context immediately to reflect changes
+          setStudent({
+            ...student,
+            ...updatedStudentData
+          });
         }
       }
 
@@ -724,7 +730,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                 ...prev,
                                 [field.name]: value,
                                 names_array: namesArray,
-                                tracks_array: tracksArray
+                                tracks_array: tracksArray,
+                                names: namesArray.join('\n'), // Sync string representation
+                                tracks: tracksArray.join('\n') // Sync string representation
                               }));
                             }
                           }
@@ -802,11 +810,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                               required={field.required}
                             >
                               <option value="">اختر السنه</option>
-                              {Object.keys(feesConfig.prices).sort((a, b) => parseInt(b) - parseInt(a)).map(year => (
-                                <option key={year} value={year}>
-                                  {year} - {feesConfig.prices[year]} جنيه
-                                </option>
-                              ))}
+                              {feesConfig ? (
+                                Object.keys(feesConfig.prices).sort((a, b) => parseInt(b) - parseInt(a)).map(year => (
+                                  <option key={year} value={year}>
+                                    {year} - {feesConfig.prices[year]} جنيه
+                                  </option>
+                                ))
+                              ) : (
+                                <option disabled>جاري تحميل السنوات...</option>
+                              )}
                             </select>
                           ) : field.name === 'track_other' && service.id === '4' ? (
                             <>
@@ -839,7 +851,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                 );
                               })}
                             </select>
-                          ) : field.name === 'transformation_type' && service.id === '7' && digitalTransformationConfig ? (
+                          ) : field.name === 'transformation_type' && service.id === '7' ? (
                             <select
                               id={field.name}
                               value={serviceData[field.name] || ''}
@@ -847,11 +859,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                               required={field.required}
                             >
                               <option value="">اختر نوع التحول الرقمي</option>
-                              {digitalTransformationConfig.transformationTypes.map(type => (
-                                <option key={type.id} value={type.id}>
-                                  {type.name} - {type.price} جنيه
-                                </option>
-                              ))}
+                              {digitalTransformationConfig ? (
+                                digitalTransformationConfig.transformationTypes.map(type => (
+                                  <option key={type.id} value={type.id}>
+                                    {type.name} - {type.price} جنيه
+                                  </option>
+                                ))
+                              ) : (
+                                <option disabled>جاري تحميل الأنواع...</option>
+                              )}
                             </select>
                           ) : (
                             <>

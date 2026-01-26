@@ -61,9 +61,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   useEffect(() => {
     const hour = new Date().getHours();
-    if (hour < 12) setGreeting('صباح الخير');
-    else if (hour < 18) setGreeting('مساء الخير');
-    else setGreeting('مساء الخير');
+    // Egyptian timing nuance: 
+    // "Sabah el Kheir" is typically used from dawn (approx 4 AM) until noon.
+    // "Masaa el Kheir" is used from noon until late night (covering 12 PM - 3 AM).
+    if (hour >= 4 && hour < 12) {
+      setGreeting('صباح الخير');
+    } else {
+      setGreeting('مساء الخير');
+    }
   }, []);
 
   const getFirstName = (fullName: string): string => fullName.split(' ')[0];
@@ -153,8 +158,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             <Library size={24} />
           </div>
           <div>
-            <span style={{ display: 'block', fontWeight: 700 }}>{student?.course || '-'}</span>
-            <span style={{ fontSize: 13, color: '#64748b' }}>المسار الحالي</span>
+            <span style={{ display: 'block', fontWeight: 700 }}>{student?.course || 'التخصص غير محدد'}</span>
+            <span style={{ fontSize: 13, color: '#64748b' }}>
+              مسارك: <strong style={{ color: '#4F46E5' }}>{student?.track || 'غير محدد'}</strong>
+            </span>
           </div>
         </div>
         <div className="stat-box">

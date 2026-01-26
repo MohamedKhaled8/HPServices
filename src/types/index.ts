@@ -21,6 +21,7 @@ export interface StudentData {
   college?: string;
   department?: string;
   grade?: string;
+  track?: string;
 }
 
 export interface Service {

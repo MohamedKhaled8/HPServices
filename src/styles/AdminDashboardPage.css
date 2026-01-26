@@ -72,47 +72,61 @@
   box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
 }
 
+/* Modern Floating Tabs */
 .admin-tabs {
   display: flex;
-  gap: 4px;
-  padding: 0 40px;
+  gap: 12px;
+  padding: 20px 40px;
   max-width: 1400px;
   margin: 0 auto;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(10px);
+  border-bottom: none;
+  background: transparent;
   overflow-x: auto;
   scrollbar-width: thin;
+  align-items: center;
 }
 
 .tab-button {
-  padding: 14px 20px;
-  border: none;
-  background: transparent;
+  padding: 10px 20px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  background: white;
   color: #64748b;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: all 0.2s ease;
+  border-radius: 50px;
+  /* Pill shape */
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   gap: 8px;
   white-space: nowrap;
   position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
 .tab-button:hover {
-  color: #475569;
-  background: rgba(241, 245, 249, 0.5);
+  color: #1e293b;
+  border-color: #cbd5e1;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
 .tab-button.active {
-  color: #2563eb;
-  border-bottom-color: #2563eb;
-  background: rgba(37, 99, 235, 0.05);
-  font-weight: 600;
+  color: white;
+  border-color: #2563eb;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  transform: translateY(-1px);
+}
+
+.tab-button svg {
+  opacity: 0.8;
+  transition: 0.3s;
+}
+
+.tab-button.active svg {
+  opacity: 1;
 }
 
 .admin-content {
@@ -2465,16 +2479,6 @@
     animation: pulse 1.5s ease-in-out infinite;
   }
 
-  @keyframes spin {
-    0% {
-      transform: rotate(0deg);
-    }
-
-    100% {
-      transform: rotate(360deg);
-    }
-  }
-
   @keyframes pulse {
 
     0%,
@@ -2486,4 +2490,29 @@
       opacity: 0.5;
     }
   }
+}
+
+/* Fix for Admin Dashboard Section Headers (Books, Fees, Assignments) */
+.books-section .section-header {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 30px;
+  width: 100%;
+}
+
+.books-section .section-header h2 {
+  margin: 0 !important;
+  order: 1;
+  /* Name on Right (in RTL) */
+}
+
+.books-section .section-header .edit-button,
+.books-section .section-header .edit-actions,
+.books-section .section-header .save-button {
+  order: 2;
+  /* Buttons on Left (in RTL) */
+  margin-right: auto;
+  /* Push to left end if needed, but space-between handles it */
 }
