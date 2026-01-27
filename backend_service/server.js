@@ -8,6 +8,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health check route
+app.get('/', (req, res) => {
+    res.send('🤖 AI Automation Server is Live and Running!');
+});
+
 // Initialize Firebase Admin (يجب إضافة ملف المفاتيح لاحقاً)
 // admin.initializeApp({
 //   credential: admin.credential.cert(require('./serviceAccountKey.json'))
