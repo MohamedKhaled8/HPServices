@@ -14,7 +14,7 @@ interface FileUploadProps {
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesSelected,
   maxFileSize = 20 * 1024 * 1024, // 20 MB
-  acceptedFormats = ['JPEG', 'PNG', 'PDF'],
+  acceptedFormats = ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF'],
   resetTrigger
 }) => {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -63,7 +63,11 @@ const FileUpload: React.FC<FileUploadProps> = ({
     }
 
     // Security: Additional validation - check MIME type
-    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+    const allowedMimeTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+      'image/heic', 'image/heif', 'image/bmp', 'image/gif',
+      'application/pdf'
+    ];
     if (!allowedMimeTypes.includes(file.type)) {
       return {
         valid: false,

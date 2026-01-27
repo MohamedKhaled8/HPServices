@@ -152,8 +152,8 @@ app.post('/api/electronic-payment/create', async (req, res) => {
 
 async function runAutomation(data) {
     const browser = await chromium.launch({
-        headless: false,
-        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--start-maximized']
+        headless: true, // Changed to true for production
+        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-gpu', '--disable-dev-shm-usage']
     });
     const context = await browser.newContext({
         viewport: null, // Let the window size dictate the viewport
@@ -1141,8 +1141,8 @@ async function runAutomation(data) {
 
 async function runElectronicPaymentAutomation(data) {
     const browser = await chromium.launch({
-        headless: false,
-        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--start-maximized']
+        headless: true, // Changed to true for production
+        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-gpu', '--disable-dev-shm-usage']
     });
     const context = await browser.newContext({
         viewport: null,
