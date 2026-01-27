@@ -216,7 +216,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                 {/* Optional Status Footer */}
                 {service.id === '1' && !student?.track && (
                   <div className="card-footer" style={{ color: '#ef4444', background: '#fef2f2' }}>
-                    <AlertCircle size={14} />
+                    <Icons.AlertCircle size={14} />
                     <span>مطلوب التسجيل</span>
                   </div>
                 )}
