@@ -8,7 +8,7 @@ import {
   getFeesServiceConfig,
   updateFeesServiceConfig,
   getAssignmentsServiceConfig,
-  updateAssignmentsServiceConfig,
+  // updateAssignmentsServiceConfig, // Commented out to fix build errors
   getCertificatesServiceConfig,
   updateCertificatesServiceConfig,
   getDigitalTransformationConfig,
@@ -27,7 +27,7 @@ import {
   saveElectronicPaymentCode,
   subscribeToElectronicPaymentCodes,
 } from '../services/firebaseService';
-import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice } from '../types';
+import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice } from '../types';
 import {
   LogOut,
   Package,
@@ -50,14 +50,8 @@ import {
   Search,
   Pencil,
   Zap,
-  Image,
-  Folder,
-  Send,
-  Loader2,
-  CheckSquare,
-  Square
+  Image
 } from 'lucide-react';
-import FileUpload from '../components/FileUpload';
 import { SERVICES } from '../constants/services';
 import '../styles/AdminDashboardPage.css';
 
@@ -80,8 +74,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [digitalTransformationConfig, setDigitalTransformationConfig] = useState<DigitalTransformationConfig | null>(null);
   const [isEditingBooks, setIsEditingBooks] = useState(false);
   const [isEditingFees, setIsEditingFees] = useState(false);
-  const [newAssignmentName, setNewAssignmentName] = useState<string>('');
-  const [newAssignmentPrice, setNewAssignmentPrice] = useState<string>('');
+  // const [newAssignmentName, setNewAssignmentName] = useState<string>('');
+  // const [newAssignmentPrice, setNewAssignmentPrice] = useState<string>('');
   const [newCertificateName, setNewCertificateName] = useState<string>('');
   const [newCertificatePrice, setNewCertificatePrice] = useState<string>('');
   const [newCertificateDescription, setNewCertificateDescription] = useState<string>('');
@@ -673,6 +667,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   };
 
+  /*
   const handleSaveAssignmentsConfig = async () => {
     if (!assignmentsConfig || isSaving === 'assignments') return;
     setIsSaving('assignments');
@@ -685,7 +680,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       setIsSaving(null);
     }
   };
+  */
 
+  /*
   const handleAddAssignment = () => {
     if (!newAssignmentName || !newAssignmentPrice || !assignmentsConfig) return;
     const price = parseFloat(newAssignmentPrice);
@@ -705,7 +702,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     setNewAssignmentName('');
     setNewAssignmentPrice('');
   };
+  */
 
+  /*
   const handleRemoveAssignment = (id: string) => {
     if (!assignmentsConfig) return;
     setAssignmentsConfig({
@@ -713,6 +712,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       assignments: assignmentsConfig.assignments.filter(a => a.id !== id)
     });
   };
+  */
 
   const handleSaveCertificatesConfig = async () => {
     if (!certificatesConfig || isSaving === 'certificates') return;

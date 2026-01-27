@@ -41,7 +41,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   onAssignmentsClick,
   onRequestsClick
 }) => {
-  const { student, serviceRequests } = useStudent();
+  const { student } = useStudent();
   const [isAdmin, setIsAdmin] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [greeting, setGreeting] = useState('');

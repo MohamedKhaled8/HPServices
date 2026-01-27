@@ -1467,7 +1467,7 @@ async function runElectronicPaymentAutomation(data) {
     }
 }
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`🤖 AI Automation Service running on port ${PORT}`);
 });
