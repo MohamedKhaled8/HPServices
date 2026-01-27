@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ai-automation-service
+    env: node
+    plan: free
+    # هذا المسار الفرعي مهم لأن السيرفر داخل مجلد
+    rootDir: backend_service
+    # أمر البناء: تثبيت المكتبات + مستلزمات المتصفح
+    buildCommand: npm install && npx playwright install --with-deps
+    # أمر التشغيل
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 10000

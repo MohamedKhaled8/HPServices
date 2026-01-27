@@ -513,7 +513,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             alert('🔍 فحص البيانات:\n\n' + debugInfo + '\n\nسيتم بدء الأتمتة الآن...');
 
             // Call Node.js Backend
-            fetch('/api/digital-transformation/register', {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+            const apiUrl = `${API_BASE_URL}/api/digital-transformation/register`;
+
+            fetch(apiUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
@@ -588,7 +591,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
             console.log('📤 [EP] Sending Payload to Backend:', payload);
 
-            fetch('/api/electronic-payment/create', {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+            const apiUrl = `${API_BASE_URL}/api/electronic-payment/create`;
+
+            fetch(apiUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
