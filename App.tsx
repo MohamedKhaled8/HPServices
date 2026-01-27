@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { StudentProvider, useStudent } from './src/context';
+import { getCurrentUser, checkIsAdmin } from './src/services/firebaseService';
 import RegisterPage from './src/page/RegisterPage';
 import LoginPage from './src/page/LoginPage';
 import DashboardPage from './src/page/DashboardPage';
@@ -7,133 +9,317 @@ import ServiceDetailsPage from './src/page/ServiceDetailsPage';
 import ProfilePage from './src/page/ProfilePage';
 import AllUsersPage from './src/page/AllUsersPage';
 import AdminDashboardPage from './src/page/AdminDashboardPage';
+import AssignmentsManagementPage from './src/page/AssignmentsManagementPage';
+import StudentAssignmentsPage from './src/page/StudentAssignmentsPage';
+import ApprovedRequestsPage from './src/page/ApprovedRequestsPage';
 import './src/styles/App.css';
 
-type Page = 'login' | 'register' | 'dashboard' | 'service' | 'profile' | 'allUsers' | 'admin';
+// مكون حماية المسارات الخاصة بالمستخدمين المسجلين (الطلاب فقط)
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isLoggedIn } = useStudent();
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
-const AppContent: React.FC = () => {
-  const { isLoggedIn, logout } = useStudent();
-  const [currentPage, setCurrentPage] = useState<Page>(isLoggedIn ? 'dashboard' : 'login');
-  const [selectedServiceId, setSelectedServiceId] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
+  useEffect(() => {
+    const checkAuthAndRole = async () => {
+      try {
+        // تأخير بسيط لمحاكاة/انتظار تحميل الحالة
+        await new Promise(resolve => setTimeout(resolve, 800));
 
-  const handleLoginSuccess = () => {
-    setCurrentPage('dashboard');
-  };
+        const user = getCurrentUser();
+        if (user) {
+          const adminStatus = await checkIsAdmin(user.uid);
+          setIsAdmin(adminStatus);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsAuthChecking(false);
+      }
+    };
 
-  const handleRegistrationSuccess = () => {
-    setCurrentPage('dashboard');
-  };
+    if (isLoggedIn) {
+      checkAuthAndRole();
+    } else {
+      setIsAuthChecking(false);
+    }
+  }, [isLoggedIn]);
 
-  const handleServiceClick = (serviceId: string) => {
-    setSelectedServiceId(serviceId);
-    setCurrentPage('service');
-  };
-
-  const handleProfileClick = () => {
-    setCurrentPage('profile');
-  };
-
-  const handleAllUsersClick = () => {
-    setCurrentPage('allUsers');
-  };
-
-  const handleAdminLogin = () => {
-    setCurrentPage('admin');
-  };
-
-  const handleLogout = () => {
-    logout();
-    setCurrentPage('login');
-  };
-
-  const handleBack = () => {
-    setCurrentPage('dashboard');
-  };
-
-  const handleSubmitSuccess = () => {
-    setCurrentPage('dashboard');
-  };
-
-  const goToRegister = () => {
-    setCurrentPage('register');
-  };
-
-  const goToLogin = () => {
-    setCurrentPage('login');
-  };
-
-  React.useEffect(() => {
-    // Simulate loading time on refresh/initial load
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 1500); // 1.5 seconds loading screen
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading) {
+  if (isAuthChecking) {
     return (
       <div className="loading-container" style={{ position: 'fixed', zIndex: 9999 }}>
         <div className="modern-loader">
           <div className="loader-spinner"></div>
-          <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>Loading...</p>
+          <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>جارٍ التحقق...</p>
         </div>
       </div>
     );
   }
 
+  // غير مسجل دخول -> Login
+  if (!isLoggedIn) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // مسجل دخول وهو مدير -> Admin Dashboard (ممنوع عليه صفحة الطلاب)
+  if (isAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// مكون حماية مسارات الأدمن
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const verifyAdmin = async () => {
+      try {
+        const user = getCurrentUser();
+        if (user) {
+          const adminStatus = await checkIsAdmin(user.uid);
+          setIsAdmin(adminStatus);
+        } else {
+          setIsAdmin(false);
+        }
+      } catch (e) {
+        setIsAdmin(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+    verifyAdmin();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="loading-container">
+        <div className="modern-loader">
+          <div className="loader-spinner"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    // إذا لم يكن مديراً، نطرده لصفحة الطلاب (أو Login)
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// --- Page Wrappers & Logic ---
+
+const LoginWrapper = () => {
+  const navigate = useNavigate();
+  const { isLoggedIn } = useStudent();
+
+  useEffect(() => {
+    const checkRedirect = async () => {
+      if (isLoggedIn) {
+        // التحقق من الدور قبل التوجيه
+        const user = getCurrentUser();
+        if (user) {
+          const isAdmin = await checkIsAdmin(user.uid);
+          if (isAdmin) {
+            navigate('/admin', { replace: true });
+          } else {
+            navigate('/dashboard', { replace: true });
+          }
+        }
+      }
+    };
+    checkRedirect();
+  }, [isLoggedIn, navigate]);
+
   return (
-    <div className="app">
-      {currentPage === 'login' && !isLoggedIn && (
-        <LoginPage
-          onLoginSuccess={handleLoginSuccess}
-          onGoToRegister={goToRegister}
-          onAdminLogin={handleAdminLogin}
-        />
-      )}
-
-      {currentPage === 'register' && !isLoggedIn && (
-        <RegisterPage onRegistrationSuccess={handleRegistrationSuccess} onGoToLogin={goToLogin} />
-      )}
-
-      {currentPage === 'dashboard' && isLoggedIn && (
-        <DashboardPage
-          onServiceClick={handleServiceClick}
-          onProfileClick={handleProfileClick}
-          onLogout={handleLogout}
-          onAllUsersClick={handleAllUsersClick}
-          onAdminClick={handleAdminLogin}
-        />
-      )}
-
-      {currentPage === 'allUsers' && isLoggedIn && (
-        <AllUsersPage onBack={handleBack} />
-      )}
-
-      {currentPage === 'service' && isLoggedIn && (
-        <ServiceDetailsPage
-          serviceId={selectedServiceId}
-          onBack={handleBack}
-          onSubmitSuccess={handleSubmitSuccess}
-        />
-      )}
-
-      {currentPage === 'profile' && isLoggedIn && (
-        <ProfilePage onBack={handleBack} />
-      )}
-
-      {currentPage === 'admin' && isLoggedIn && (
-        <AdminDashboardPage onLogout={handleLogout} onBack={handleBack} />
-      )}
-    </div>
+    <LoginPage
+      onLoginSuccess={() => {
+        // يتم التعامل مع التوجيه في useEffect
+      }}
+      onGoToRegister={() => navigate('/register')}
+      onAdminLogin={() => navigate('/login')}
+    />
   );
 };
+
+const RegisterWrapper = () => {
+  const navigate = useNavigate();
+  const { isLoggedIn } = useStudent();
+
+  useEffect(() => {
+    if (isLoggedIn) navigate('/dashboard', { replace: true });
+  }, [isLoggedIn, navigate]);
+
+  return (
+    <RegisterPage
+      onRegistrationSuccess={() => navigate('/dashboard')}
+      onGoToLogin={() => navigate('/login')}
+    />
+  );
+};
+
+const DashboardWrapper = () => {
+  const navigate = useNavigate();
+  const { logout } = useStudent();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+    navigate('/login', { replace: true });
+  };
+
+  return (
+    <DashboardPage
+      onServiceClick={(id) => navigate(`/service/${id}`)}
+      onProfileClick={() => navigate('/profile')}
+      onAssignmentsClick={() => navigate('/my-assignments')}
+      onRequestsClick={() => navigate('/my-requests')}
+      onLogout={handleLogout}
+      onAdminClick={() => navigate('/admin')}
+    />
+  );
+};
+
+const StudentAssignmentsWrapper = () => {
+  const navigate = useNavigate();
+  return <StudentAssignmentsPage onBack={() => navigate('/dashboard')} />;
+};
+
+const ApprovedRequestsWrapper = () => {
+  const navigate = useNavigate();
+  return <ApprovedRequestsPage onBack={() => navigate('/dashboard')} />;
+};
+
+const ServiceDetailsWrapper = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+
+  // إذا لم يكن هناك ID، نعود للوحة التحكم
+  if (!id) return <Navigate to="/dashboard" replace />;
+
+  return (
+    <ServiceDetailsPage
+      serviceId={id}
+      onBack={() => navigate('/dashboard')}
+      onSubmitSuccess={() => navigate('/dashboard')}
+    />
+  );
+};
+
+const ProfileWrapper = () => {
+  const navigate = useNavigate();
+  return <ProfilePage onBack={() => navigate('/dashboard')} />;
+};
+
+const AllUsersWrapper = () => {
+  const navigate = useNavigate();
+  return <AllUsersPage onBack={() => navigate('/dashboard')} />;
+};
+
+const AdminDashboardWrapper = () => {
+  const navigate = useNavigate();
+  const { logout } = useStudent();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      // تأخير بسيط لضمان تحديث الحالة
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+    navigate('/login', { replace: true });
+  };
+
+  return (
+    <AdminDashboardPage
+      onLogout={handleLogout}
+      onBack={() => navigate('/dashboard')}
+      onAssignmentsClick={() => navigate('/admin/assignments')}
+    />
+  );
+};
+
+const AssignmentsWrapper = () => {
+  const navigate = useNavigate();
+  return <AssignmentsManagementPage onBack={() => navigate('/admin')} />;
+};
+
+// --- Main App Component ---
 
 const App: React.FC = () => {
   return (
     <StudentProvider>
-      <AppContent />
+      <BrowserRouter>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<LoginWrapper />} />
+          <Route path="/register" element={<RegisterWrapper />} />
+          <Route path="/admin-login" element={<Navigate to="/login" replace />} />
+
+          {/* User Protected Routes */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <DashboardWrapper />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/my-assignments" element={
+            <ProtectedRoute>
+              <StudentAssignmentsWrapper />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/my-requests" element={
+            <ProtectedRoute>
+              <ApprovedRequestsWrapper />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/service/:id" element={
+            <ProtectedRoute>
+              <ServiceDetailsWrapper />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/profile" element={
+            <ProtectedRoute>
+              <ProfileWrapper />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/all-users" element={
+            <ProtectedRoute>
+              <AllUsersWrapper />
+            </ProtectedRoute>
+          } />
+
+          {/* Admin Routes */}
+          <Route path="/admin" element={
+            <AdminRoute>
+              <AdminDashboardWrapper />
+            </AdminRoute>
+          } />
+
+          <Route path="/admin/assignments" element={
+            <AdminRoute>
+              <AssignmentsWrapper />
+            </AdminRoute>
+          } />
+
+          {/* Catch All */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
     </StudentProvider>
   );
 };

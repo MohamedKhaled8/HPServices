@@ -7,18 +7,35 @@ interface FileUploadProps {
   onFilesSelected: (files: UploadedFile[]) => void;
   maxFileSize?: number;
   acceptedFormats?: string[];
+  key?: string; // Allow key prop for resetting component
+  resetTrigger?: number; // Trigger reset when this changes
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesSelected,
-  maxFileSize = 5 * 1024 * 1024,
-  acceptedFormats = ['JPEG', 'PNG', 'PDF']
+  maxFileSize = 20 * 1024 * 1024, // 20 MB
+  acceptedFormats = ['JPEG', 'PNG', 'PDF'],
+  resetTrigger
 }) => {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset component when resetTrigger changes
+  React.useEffect(() => {
+    if (resetTrigger !== undefined) {
+      setUploadedFiles([]);
+      setError('');
+      setSuccess('');
+      setIsProcessing(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      onFilesSelected([]);
+    }
+  }, [resetTrigger, onFilesSelected]);
 
   const getFileType = (name: string): string => {
     const ext = name.split('.').pop()?.toUpperCase() || '';
@@ -65,7 +82,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
     const filesArray = Array.from(files);
     const validFiles: File[] = [];
-    
+
     // First, validate all files
     filesArray.forEach((file) => {
       const validation = isValidFile(file);
@@ -129,16 +146,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    handleFileSelect(e.dataTransfer.files);
-  };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
 
   const removeFile = (fileId: string) => {
     setUploadedFiles(prev => {
@@ -147,6 +155,8 @@ const FileUpload: React.FC<FileUploadProps> = ({
       onFilesSelected(updated);
       return updated;
     });
+    // Clear success message when removing files
+    setSuccess('');
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -159,45 +169,35 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
   return (
     <div className="file-upload-container">
-      {isProcessing && (
-        <div className="file-upload-overlay">
-          <div className="file-upload-loading">
-            <Loader2 className="spinning-loader-large" size={48} />
-            <p>جاري معالجة الملفات...</p>
-          </div>
-        </div>
-      )}
-      <div className="upload-section">
-        <div
-          className={`drop-zone ${isProcessing ? 'processing' : ''}`}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-        >
-          <Upload size={48} />
-          <h3>أضف الصور أو المستندات</h3>
-          <p>اسحب الملفات هنا أو انقر لاختيارها</p>
-          <span className="file-types">
-            صيغ مقبولة: {acceptedFormats.join(', ')} | الحد الأقصى: 5 ميجابايت
-          </span>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={acceptedFormats.map(f => `.${f.toLowerCase()}`).join(',')}
-            onChange={(e) => handleFileSelect(e.target.files)}
-            className="file-input"
-            disabled={isProcessing}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="select-button"
-            disabled={isProcessing}
-          >
-            {isProcessing ? 'جاري المعالجة...' : 'اختر الملفات'}
-          </button>
-        </div>
-      </div>
+      {/* زر رفع الملفات */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={acceptedFormats.map(f => `.${f.toLowerCase()}`).join(',')}
+        onChange={(e) => handleFileSelect(e.target.files)}
+        style={{ display: 'none' }}
+        disabled={isProcessing}
+      />
+
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="upload-simple-button"
+        disabled={isProcessing}
+      >
+        {isProcessing ? (
+          <>
+            <Loader2 className="spinning-icon" size={18} />
+            جاري الرفع...
+          </>
+        ) : (
+          <>
+            <Upload size={18} />
+            رفع الملفات
+          </>
+        )}
+      </button>
 
       {error && (
         <div className="alert alert-error">
@@ -214,33 +214,34 @@ const FileUpload: React.FC<FileUploadProps> = ({
       )}
 
       {uploadedFiles.length > 0 && (
-        <div className="uploaded-files">
-          <h4>الملفات المرفوعة ({uploadedFiles.length})</h4>
-          <div className="files-list">
-            {uploadedFiles.map((file) => (
-              <div key={file.id} className="file-item">
-                <div className="file-info">
-                  {file.preview && file.type !== 'PDF' ? (
-                    <img src={file.preview} alt={file.name} className="file-preview" />
-                  ) : (
-                    <div className="file-icon">PDF</div>
-                  )}
-                  <div className="file-details">
-                    <span className="file-name">{file.name}</span>
-                    <span className="file-size">{formatFileSize(file.size)}</span>
-                  </div>
+        <div className="uploaded-files-simple">
+          {uploadedFiles.map((file) => (
+            <div key={file.id} className="file-item-simple">
+              <div className="file-info-simple">
+                <div className="file-icon-simple">
+                  {file.type === 'PDF' ? 'PDF' : 'IMG'}
                 </div>
+                <div className="file-details-simple">
+                  <span className="file-name-simple">{file.name}</span>
+                  <span className="file-size-simple">{formatFileSize(file.size)}</span>
+                </div>
+              </div>
+              <div className="file-actions-simple">
+                <label className="checkbox-label-simple">
+                  <input type="checkbox" />
+                  <span className="checkbox-custom-simple" />
+                </label>
                 <button
                   type="button"
                   onClick={() => removeFile(file.id)}
-                  className="remove-button"
+                  className="remove-button-simple"
                   title="حذف"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

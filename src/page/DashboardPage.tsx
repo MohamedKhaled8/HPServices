@@ -3,10 +3,11 @@ import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
 import { checkIsAdmin } from '../services/firebaseService';
 import '../styles/DashboardPage.css';
+import '../styles/GeometricShapes.css';
 import {
   User, LogOut, Settings, Book,
-  Search, ArrowLeft, Star,
-  CheckCircle, Zap, Shield, BookOpen,
+  Search, Star,
+  CheckCircle, Zap, Shield, BookOpen, Menu, X,
   Library, GraduationCap, ClipboardList, Package, CreditCard, CheckSquare, Award, FileCheck, Phone, Mail, MapPin, ChevronRight
 } from 'lucide-react';
 
@@ -14,8 +15,9 @@ interface DashboardPageProps {
   onServiceClick: (serviceId: string) => void;
   onProfileClick: () => void;
   onLogout: () => void;
-  onAllUsersClick?: () => void;
   onAdminClick?: () => void;
+  onAssignmentsClick: () => void;
+  onRequestsClick: () => void;
 }
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -35,13 +37,39 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   onServiceClick,
   onProfileClick,
   onLogout,
-  onAllUsersClick,
-  onAdminClick
+  onAdminClick,
+  onAssignmentsClick,
+  onRequestsClick
 }) => {
-  const { student } = useStudent();
+  const { student, serviceRequests } = useStudent();
   const [isAdmin, setIsAdmin] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [greeting, setGreeting] = useState('');
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  const promoImages = [
+    "/images/1.jpg",
+    "/images/2.jpg",
+    "/images/5.jpg",
+    "/images/6.jpg",
+    "/images/7.jpg",
+    "/images/10.jpg"
+  ];
+
+
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentImageIndex((prev) => (prev + 1) % promoImages.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [promoImages.length]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -61,9 +89,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   useEffect(() => {
     const hour = new Date().getHours();
-    // Egyptian timing nuance: 
-    // "Sabah el Kheir" is typically used from dawn (approx 4 AM) until noon.
-    // "Masaa el Kheir" is used from noon until late night (covering 12 PM - 3 AM).
     if (hour >= 4 && hour < 12) {
       setGreeting('صباح الخير');
     } else {
@@ -87,47 +112,190 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   return (
     <div className="dashboard-page">
-      {/* Animated Blobs */}
-      <div className="bg-blob blob-1"></div>
-      <div className="bg-blob blob-2"></div>
-      <div className="bg-blob blob-3"></div>
-      <div className="bg-wave"></div>
+      {/* Real Geometric Shapes Throughout Body */}
+      <div className="body-geometric-shapes">
+        {/* Top Section */}
+        <div className="geo-shape geo-circle-1"></div>
+        <div className="geo-shape geo-triangle-1"></div>
+        <div className="geo-shape geo-square-1"></div>
+        <div className="geo-shape geo-diamond-1"></div>
+        <div className="geo-shape geo-circle-2"></div>
+
+        {/* Upper-Middle Section */}
+        <div className="geo-shape geo-hexagon-1"></div>
+        <div className="geo-shape geo-square-2"></div>
+        <div className="geo-shape geo-triangle-2"></div>
+        <div className="geo-shape geo-pentagon-1"></div>
+        <div className="geo-shape geo-circle-3"></div>
+
+        {/* Lower-Middle Section */}
+        <div className="geo-shape geo-square-3"></div>
+        <div className="geo-shape geo-circle-4"></div>
+        <div className="geo-shape geo-triangle-3"></div>
+        <div className="geo-shape geo-diamond-2"></div>
+        <div className="geo-shape geo-hexagon-2"></div>
+
+        {/* Bottom Section */}
+        <div className="geo-shape geo-circle-5"></div>
+        <div className="geo-shape geo-square-4"></div>
+        <div className="geo-shape geo-triangle-4"></div>
+        <div className="geo-shape geo-pentagon-2"></div>
+        <div className="geo-shape geo-circle-6"></div>
+        <div className="geo-shape geo-diamond-3"></div>
+        <div className="geo-shape geo-circle-7"></div>
+        <div className="geo-shape geo-square-5"></div>
+      </div>
 
       {/* Navbar */}
+      {/* Navbar - Fully Responsive */}
       <nav className={`dashboard-navbar ${scrolled ? 'scrolled' : ''}`}>
+
+        {/* Right Side: Brand */}
         <div className="nav-brand">
           <BookOpen size={32} />
           <span>HP Services</span>
         </div>
 
-        <div className="nav-links">
+        {/* Center: Links (Hidden on Mobile) */}
+        <div className="nav-links desktop-only">
           <span className="nav-link" onClick={() => scrollToSection('services')}>الخدمات</span>
           <span className="nav-link" onClick={() => scrollToSection('about')}>من نحن</span>
         </div>
 
-        <div className="nav-profile-container">
-          {isAdmin && onAdminClick && (
-            <button className="logout-btn-minimal" onClick={onAdminClick} title="Admin" style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
-              <Settings size={18} />
-            </button>
-          )}
+        {/* Left Side: Actions */}
+        <div className="nav-right-actions">
 
-          <div className="unique-profile-badge" onClick={onProfileClick}>
-            <div className="profile-text">
-              <span className="profile-name">{student?.fullNameArabic ? getFirstName(student.fullNameArabic) : 'زائر'}</span>
-              <span className="profile-track">
-                {student?.course || 'عضو جديد'} <ChevronRight size={10} style={{ transform: 'rotate(90deg)' }} />
+          {/* Mobile Toggle Button */}
+          <button
+            className="mobile-menu-toggle"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="Toggle Menu"
+          >
+            {isMobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
+          </button>
+
+          {/* Desktop Profile (Hidden on Mobile) */}
+          <div className="nav-profile-container desktop-only">
+            {isAdmin && onAdminClick && (
+              <button className="logout-btn-minimal" onClick={onAdminClick} title="Admin" style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
+                <Settings size={18} />
+              </button>
+            )}
+
+            <div
+              className="unique-profile-badge"
+              onClick={() => setShowProfileMenu(prev => !prev)}
+            >
+              <div className="profile-text">
+                <span className="profile-name">{student?.fullNameArabic ? getFirstName(student.fullNameArabic) : 'زائر'}</span>
+                <span className="profile-track">
+                  {student?.course || 'عضو جديد'} <ChevronRight size={10} style={{ transform: 'rotate(90deg)' }} />
+                </span>
+              </div>
+              <div className="profile-avatar-hexagon">
+                {student?.fullNameArabic ? student.fullNameArabic.charAt(0) : 'U'}
+              </div>
+            </div>
+
+            {showProfileMenu && (
+              <div className="profile-dropdown-menu">
+                <button
+                  type="button"
+                  className="profile-dropdown-item"
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onProfileClick();
+                  }}
+                >
+                  <User size={16} className="ml-2" />
+                  الملف الشخصي
+                </button>
+                <button
+                  type="button"
+                  className="profile-dropdown-item"
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onRequestsClick();
+                  }}
+                >
+                  <ClipboardList size={16} className="ml-2" />
+                  الطلبات الموافق عليها
+                </button>
+                <button
+                  type="button"
+                  className="profile-dropdown-item"
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onAssignmentsClick();
+                  }}
+                >
+                  <Book size={16} className="ml-2" />
+                  التكليفات الدراسية
+                </button>
+                <div style={{ height: '1px', background: '#f1f5f9', margin: '4px 0' }}></div>
+                <button
+                  type="button"
+                  className="profile-dropdown-item"
+                  onClick={onLogout}
+                  style={{ color: '#ef4444' }}
+                >
+                  <LogOut size={16} className="ml-2" />
+                  تسجيل خروج
+                </button>
+              </div>
+            )}
+            <button className="logout-btn-minimal" onClick={onLogout} title="Logout">
+              <LogOut size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Menu Overlay */}
+        {isMobileMenuOpen && (
+          <div className="mobile-menu-overlay">
+            <button className="mobile-menu-close" onClick={() => setIsMobileMenuOpen(false)}>
+              <X size={32} color="white" />
+            </button>
+
+            <div className="mobile-menu-content">
+              {/* Profile in Mobile Menu */}
+              <div className="mobile-profile-section" onClick={onProfileClick} style={{ textAlign: 'center', marginBottom: '30px' }}>
+                <div className="profile-avatar-hexagon" style={{ width: '80px', height: '80px', fontSize: '32px', margin: '0 auto' }}>
+                  {student?.fullNameArabic ? student.fullNameArabic.charAt(0) : 'U'}
+                </div>
+                <h3 style={{ color: 'white', marginTop: '16px', fontSize: '20px' }}>{student?.fullNameArabic || 'زائر'}</h3>
+                <p style={{ color: '#94a3b8', fontSize: '14px' }}>{student?.course}</p>
+              </div>
+
+              <div className="mobile-menu-divider"></div>
+
+              <span className="mobile-nav-link" onClick={() => { scrollToSection('services'); setIsMobileMenuOpen(false); }}>الخدمات</span>
+              <span className="mobile-nav-link" onClick={() => { scrollToSection('about'); setIsMobileMenuOpen(false); }}>من نحن</span>
+
+              <div className="mobile-menu-divider"></div>
+
+              <span className="mobile-nav-link" onClick={() => { onProfileClick(); setIsMobileMenuOpen(false); }}>
+                <User size={20} className="ml-2" /> الملف الشخصي
+              </span>
+              <span className="mobile-nav-link" onClick={() => { onRequestsClick(); setIsMobileMenuOpen(false); }}>
+                <ClipboardList size={20} className="ml-2" /> الطلبات الموافق عليها
+              </span>
+              <span className="mobile-nav-link" onClick={() => { onAssignmentsClick(); setIsMobileMenuOpen(false); }}>
+                <Book size={20} className="ml-2" /> التكليفات الدراسية
+              </span>
+
+              {isAdmin && onAdminClick && (
+                <span className="mobile-nav-link" onClick={() => { onAdminClick(); setIsMobileMenuOpen(false); }}>
+                  <Settings size={20} className="ml-2" /> لوحة الأدمن
+                </span>
+              )}
+
+              <span className="mobile-nav-link logout" onClick={onLogout}>
+                <LogOut size={20} className="ml-2" /> تسجيل خروج
               </span>
             </div>
-            <div className="profile-avatar-hexagon">
-              {student?.fullNameArabic ? student.fullNameArabic.charAt(0) : 'U'}
-            </div>
           </div>
-
-          <button className="logout-btn-minimal" onClick={onLogout} title="Logout">
-            <LogOut size={18} />
-          </button>
-        </div>
+        )}
       </nav>
 
       {/* Clipper Hero */}
@@ -201,6 +369,29 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               </div>
             </div>
           ))}
+        </div>
+
+        {/* New Added Section based on User Image */}
+        <div className="additional-info-section">
+
+
+          <div className="promo-banner-card">
+            <div className="promo-image-side">
+              <img
+                key={currentImageIndex}
+                src={promoImages[currentImageIndex]}
+                alt="Study Success"
+                className="promo-carousel-img"
+              />
+            </div>
+            <div className="promo-content-side">
+              <h2>طريقك نحو التميز الدراسي يبدأ بخطوة واحدة معنا</h2>
+              <p>
+                انضم إلى آلاف الطلاب الذين وثقوا في خدماتنا التعليمية. نحن نوفر لك البيئة المثالية
+                والخبرات اللازمة لتطوير مهاراتك والتميز في مسارك التعليمي بكل سهولة واحترافية.
+              </p>
+            </div>
+          </div>
         </div>
       </main>
 

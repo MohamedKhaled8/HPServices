@@ -17,6 +17,24 @@ app.use(express.json());
 // Constants
 const TARGET_URL = 'https://eksc.usc.edu.eg/login';
 
+// ============================================
+// Helper: normalize Arabic text for fuzzy match
+// ============================================
+function normalizeArabic(text = '') {
+    return text
+        .toString()
+        .trim()
+        .replace(/[إأآا]/g, 'ا')
+        .replace(/ى/g, 'ي')
+        .replace(/ؤ/g, 'و')
+        .replace(/ئ/g, 'ي')
+        .replace(/ة/g, 'ه')
+        .replace(/[-–—]/g, ' ')
+        .replace(/[^\u0621-\u064A0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+}
+
 app.post('/api/digital-transformation/register', async (req, res) => {
     console.log('\n🔔 ========== NEW REQUEST RECEIVED ==========');
     console.log('📥 Request Body:', JSON.stringify(req.body, null, 2));
@@ -64,6 +82,66 @@ app.post('/api/digital-transformation/register', async (req, res) => {
         } catch (e) { }
 
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// =====================================================
+// NEW: Electronic Payment Automation (USC Payment Portal)
+// =====================================================
+
+app.post('/api/electronic-payment/create', async (req, res) => {
+    console.log('\n💳 ========== NEW ELECTRONIC PAYMENT REQUEST ==========');
+    console.log('📥 Request Body:', JSON.stringify(req.body, null, 2));
+
+    const {
+        requestId,
+        studentId,
+        email,
+        fullNameArabic,
+        nationalID,
+        phone
+    } = req.body;
+
+    if (!email || !fullNameArabic || !nationalID || !phone) {
+        return res.status(400).json({
+            success: false,
+            error: 'البيانات غير مكتملة. يرجى التأكد من (الاسم، البريد الإلكتروني، الرقم القومي، الموبايل).'
+        });
+    }
+
+    try {
+        const result = await runElectronicPaymentAutomation({
+            email,
+            fullNameArabic,
+            nationalID,
+            phone
+        });
+
+        console.log('✅ Electronic payment automation success:', result);
+
+        // نرجع البيانات للـ Frontend ليحفظها في Firestore
+        res.json({
+            success: true,
+            data: {
+                studentId: studentId || '',
+                requestId: requestId || '',
+                name: fullNameArabic,
+                email: email,
+                nationalID: nationalID,
+                mobile: phone,
+                orderNumber: result.orderNumber || '',
+                serviceType: result.serviceType || 'دبلوم (2025 - 2026)',
+                entity: result.entity || 'كلية التربية',
+                status: result.status || 'NEW',
+                rawText: result.rawText || ''
+            }
+        });
+    } catch (error) {
+        console.error('❌ Electronic payment automation failed:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'فشل في أتمتة الدفع الإلكتروني'
+        });
     }
 });
 
@@ -1047,6 +1125,343 @@ async function runAutomation(data) {
     } catch (error) {
         console.log('❌ Fatal Error:', error);
         // await browser.close(); // Don't close immediately on error to debug? No, keep it clean.
+        await browser.close();
+        throw error;
+    }
+}
+
+// =====================================================
+// Electronic Payment Automation (USC payment.usc.edu.eg)
+// =====================================================
+
+async function runElectronicPaymentAutomation(data) {
+    const browser = await chromium.launch({
+        headless: false,
+        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--start-maximized']
+    });
+    const context = await browser.newContext({
+        viewport: null,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
+    const page = await context.newPage();
+
+    page.setDefaultTimeout(30000);
+    page.setDefaultNavigationTimeout(30000);
+
+    try {
+        console.log('🌍 [EP] Step 1: Navigating to payment portal...');
+        await page.goto('https://payment.usc.edu.eg/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => { });
+        await page.waitForTimeout(2000);
+
+        // -------- Selects: الجهة + نوع الخدمة (ثابت حسب تصميم الموقع) --------
+        // من اللوج السابق:
+        // Select 0: 0 options
+        // Select 1: إختر, كلية التربية, كلية الحقوق...
+        // إذن:
+        //   select[1] = الجهة (كلية التربية, كلية الحقوق, ...)
+        //   select[0] = نوع الخدمة (يتم تحميله بعد اختيار الكلية)
+
+        console.log('📋 [EP] Step 2: Selecting entity "كلية التربية"...');
+
+        const entitySelect = page.locator('select').nth(1);
+        const entityOptions = await entitySelect.locator('option').allInnerTexts();
+        console.log('[EP] Entity options:', entityOptions);
+
+        const wantedEntity = 'كلية التربية';
+        let entityIndex = entityOptions.findIndex(o => normalizeArabic(o).includes(normalizeArabic(wantedEntity)));
+        if (entityIndex <= 0 && entityOptions.length > 1) {
+            entityIndex = 1; // أول اختيار حقيقي بعد "إختر"
+        }
+
+        if (entityIndex > 0) {
+            await entitySelect.selectOption({ index: entityIndex });
+            console.log(`[EP] ✅ Selected entity: "${entityOptions[entityIndex]}"`);
+        } else {
+            throw new Error('لم يتم العثور على "كلية التربية" في قائمة الجهة');
+        }
+
+        // انتظر حتى يتم تحميل نوع الخدمة بعد اختيار الكلية
+        console.log('⏳ [EP] Waiting for service-type options to load...');
+        await page.waitForTimeout(4000);
+
+        console.log('📘 [EP] Step 2b: Selecting service type "دبلوم (2025 - 2026)"...');
+        const serviceSelect = page.locator('select').first();
+
+        let serviceOptions = await serviceSelect.locator('option').allInnerTexts();
+        console.log('[EP] Raw service options:', serviceOptions);
+
+        // أعد المحاولة حتى تظهر الخيارات (في حالة AJAX)
+        for (let i = 0; i < 5 && serviceOptions.length <= 1; i++) {
+            await page.waitForTimeout(2000);
+            serviceOptions = await serviceSelect.locator('option').allInnerTexts();
+            console.log(`[EP] Waiting service options... try ${i + 1}:`, serviceOptions);
+        }
+
+        if (serviceOptions.length <= 1) {
+            throw new Error('قائمة نوع الخدمة لم يتم تحميلها بعد اختيار الكلية');
+        }
+
+        const wantedService = 'دبلوم (2025 - 2026)';
+        let serviceIndex = serviceOptions.findIndex(o => normalizeArabic(o).includes(normalizeArabic(wantedService)));
+        if (serviceIndex <= 0) {
+            serviceIndex = serviceOptions.findIndex(o => normalizeArabic(o).includes('دبلوم'));
+        }
+        if (serviceIndex <= 0) {
+            serviceIndex = 1; // أول اختيار حقيقي بعد "إختر"
+        }
+
+        await serviceSelect.selectOption({ index: serviceIndex });
+        console.log(`[EP] ✅ Selected service: "${serviceOptions[serviceIndex]}"`);
+
+        // -------- تعبئة الحقول النصية --------
+        console.log('✉️ [EP] Step 3: Filling all text inputs...');
+        const allInputs = await page.locator('input:not([type="password"]):not([type="hidden"]):not([disabled])').all();
+        console.log(`[EP] Found ${allInputs.length} text inputs`);
+
+        const dataToFill = [data.email, data.fullNameArabic, data.nationalID, data.phone];
+        let dataIndex = 0;
+
+        for (let i = 0; i < allInputs.length && dataIndex < dataToFill.length; i++) {
+            try {
+                const input = allInputs[i];
+                const type = await input.getAttribute('type') || 'text';
+
+                // Skip non-text inputs
+                if (type !== 'text' && type !== 'email' && type !== 'tel' && type !== '') {
+                    continue;
+                }
+
+                await input.fill(dataToFill[dataIndex]);
+                console.log(`[EP] ✅ Filled input ${i}: "${dataToFill[dataIndex]}"`);
+                dataIndex++;
+
+                await page.waitForTimeout(500);
+            } catch (e) {
+                console.log(`[EP] Error with input ${i}:`, e.message);
+            }
+        }
+
+        await page.waitForTimeout(1000);
+
+        // Click "متابعة"
+        console.log('➡️ [EP] Step 4: Clicking متابعة...');
+        const continueButton = page.locator('button, input').filter({ hasText: /متابعه|متابعة/i }).first();
+        if (await continueButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await continueButton.click();
+            await page.waitForTimeout(3000);
+        } else {
+            throw new Error('لم يتم العثور على زر "متابعة"');
+        }
+
+        // Check for errors
+        const errorText = await page.locator('.alert, .error, .text-danger, [class*="alert"], [class*="error"]').first().innerText().catch(() => '');
+        if (errorText && errorText.length > 5) {
+            console.log(`[EP] ⚠️ Error found: ${errorText}`);
+            throw new Error(`خطأ من موقع الجامعة: ${errorText}`);
+        }
+
+        // Select Fawry Pay -> ادفع فورى -> تأكيد
+        console.log('💳 [EP] Step 5: Selecting Fawry Pay...');
+        await page.waitForTimeout(2000);
+
+        // أحياناً الأيقونة تكون صورة فقط بدون نص، لذلك نجرب عدّة طرق:
+        let fawryClicked = false;
+
+        // 5.0 المحاولة الأوضح: الـ input type="image" الخاص بـ FawryPay
+        const fawryInput = page.locator('input#xsrrs, input[type="image"][onclick*="FawryPay"]').first();
+        if (await fawryInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+            console.log('[EP] Found Fawry input image (xsrrs), clicking...');
+            await fawryInput.scrollIntoViewIfNeeded();
+            await page.waitForTimeout(500);
+            await fawryInput.click({ force: true });
+            fawryClicked = true;
+        }
+
+        // 5.1 ابحث عن زر / رابط يحتوي على النص (لو فشل الـ input)
+        const fawryBtnText = page.locator('button, a, div, span').filter({
+            hasText: /fawry|فورى|فوري/i
+        }).first();
+        if (!fawryClicked && await fawryBtnText.isVisible({ timeout: 5000 }).catch(() => false)) {
+            console.log('[EP] Found Fawry element by text, clicking...');
+            await fawryBtnText.scrollIntoViewIfNeeded();
+            await fawryBtnText.click({ force: true });
+            fawryClicked = true;
+        }
+
+        // 5.2 إن لم يُوجد نص، ابحث عن صورة شعار Fawry
+        if (!fawryClicked) {
+            const fawryImg = page.locator('img[src*="fawry" i], img[alt*="fawry" i], img[title*="fawry" i]').first();
+            if (await fawryImg.isVisible({ timeout: 5000 }).catch(() => false)) {
+                console.log('[EP] Found Fawry image, clicking parent button/link...');
+                const parent = fawryImg.locator('xpath=ancestor-or-self::button | ancestor-or-self::a | ancestor-or-self::div[1]');
+                if (await parent.isVisible({ timeout: 5000 }).catch(() => false)) {
+                    await parent.scrollIntoViewIfNeeded();
+                    await parent.click({ force: true });
+                    fawryClicked = true;
+                } else {
+                    await fawryImg.scrollIntoViewIfNeeded();
+                    await fawryImg.click({ force: true });
+                    fawryClicked = true;
+                }
+            }
+        }
+
+        // 5.3 كـ fallback أخير: اضغط آخر صورة في الصفحة (غالباً شعار Fawry أسفل الجدول)
+        if (!fawryClicked) {
+            const allImgs = await page.locator('img').all();
+            console.log(`[EP] No explicit Fawry element found, total images on page: ${allImgs.length}`);
+            if (allImgs.length > 0) {
+                console.log('[EP] Trying to click last image on page as Fawry fallback...');
+                const lastImg = allImgs[allImgs.length - 1];
+                try {
+                    const src = await lastImg.getAttribute('src');
+                    const alt = await lastImg.getAttribute('alt');
+                    console.log('[EP] Last image src:', src, 'alt:', alt);
+                } catch (e) { }
+
+                try {
+                    await lastImg.scrollIntoViewIfNeeded();
+                    await page.waitForTimeout(1000);
+                    await lastImg.click({ force: true });
+                    fawryClicked = true;
+                } catch (e) {
+                    console.log('[EP] Fallback last-image click failed:', e.message);
+                }
+            }
+        }
+
+        if (!fawryClicked) {
+            console.log('[EP] ⚠️ Could not find any Fawry Pay trigger, continuing anyway (will still try to read order number).');
+        }
+
+        if (fawryClicked) {
+            await page.waitForTimeout(2000);
+        }
+
+        // ----- داخل نافذة فوري: اختيار "ادفع فورى" ثم الضغط على "تأكيد" -----
+        // ملاحظة: عناصر فوري قد تكون داخل iframe، لذلك نبحث في جميع الـ frames
+        console.log('💳 [EP] Step 5b: Selecting "ادفع فورى" inside Fawry modal (frames-aware)...');
+
+        let fawryFrame = null;
+        for (let attempt = 0; attempt < 5 && !fawryFrame; attempt++) {
+            const frames = page.frames();
+            console.log(`[EP] Frames count (attempt ${attempt + 1}):`, frames.length);
+            for (const frame of frames) {
+                try {
+                    const label = frame.locator('#payment-step span.deliver.ng-binding', { hasText: 'ادفع فورى' }).first();
+                    if (await label.isVisible({ timeout: 1000 }).catch(() => false)) {
+                        fawryFrame = frame;
+                        console.log('[EP] ✅ Found Fawry frame containing "ادفع فورى".');
+                        break;
+                    }
+                } catch { }
+            }
+            if (!fawryFrame) {
+                await page.waitForTimeout(1000);
+            }
+        }
+
+        const frameCtx = fawryFrame || page;
+
+        // 5b.1 اختَر خيار "ادفع فورى"
+        const payFawryLabel = frameCtx.locator('#payment-step span.deliver.ng-binding', { hasText: 'ادفع فورى' }).first();
+        if (await payFawryLabel.isVisible({ timeout: 8000 }).catch(() => false)) {
+            try {
+                const payFawryRadio = payFawryLabel.locator('xpath=preceding::input[1]');
+                if (await payFawryRadio.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    await payFawryRadio.click({ force: true });
+                    console.log('[EP] ✅ Selected "ادفع فورى" by clicking radio.');
+                } else {
+                    await payFawryLabel.click({ force: true });
+                    console.log('[EP] ✅ Selected "ادفع فورى" by clicking label.');
+                }
+            } catch (e) {
+                console.log('[EP] ⚠️ Could not click radio for "ادفع فورى":', e.message);
+                await payFawryLabel.click({ force: true });
+            }
+            await frameCtx.waitForTimeout(1500);
+        } else {
+            console.log('[EP] ⚠️ Could not find "ادفع فورى" option inside any frame.');
+        }
+
+        // 5b.2 زر "تأكيد" داخل نافذة فوري
+        console.log('💳 [EP] Step 5c: Clicking Fawry "تأكيد" button...');
+        const confirmBtn = frameCtx.locator('#billUploadFormConfBTN').first();
+        if (await confirmBtn.isVisible({ timeout: 8000 }).catch(() => false)) {
+            await confirmBtn.scrollIntoViewIfNeeded();
+            await frameCtx.waitForTimeout(500);
+            await confirmBtn.click({ force: true });
+            console.log('[EP] ✅ Clicked Fawry confirm button.');
+        } else {
+            console.log('[EP] ⚠️ Could not find Fawry confirm button (#billUploadFormConfBTN) in any frame.');
+        }
+
+        // Wait for final Fawry payment reference number
+        console.log('⏳ [EP] Step 6: Waiting for final Fawry reference (رقم الطلب من فوري)...');
+        let orderNumber = '';
+        let bodyTextContent = '';
+
+        // انتظر تغيّر الصفحة / الـ URL بعد الضغط على تأكيد
+        await Promise.race([
+            page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => { }),
+            page.waitForTimeout(8000)
+        ]);
+
+        // نبحث عن رقم الطلب في الصفحة الرئيسية وكل الـ frames
+        const searchContexts = [page, ...page.frames()];
+
+        for (let attempt = 0; attempt < 5 && !orderNumber; attempt++) {
+            for (const ctx of searchContexts) {
+                try {
+                    bodyTextContent = await ctx.locator('body').innerText().catch(() => '');
+                    if (!bodyTextContent) continue;
+
+                    // 6.1 "رقم الطلب : XXXXX" كما في الصورة
+                    const orderMatch = bodyTextContent.match(/رقم الطلب\s*[:\-]?\s*([0-9]+)/);
+                    if (orderMatch && orderMatch[1]) {
+                        orderNumber = orderMatch[1];
+                        console.log('[EP] ✅ Found رقم الطلب:', orderNumber);
+                        break;
+                    }
+
+                    // 6.2 رقم مرجعي / رقم دفع
+                    const fawryMatch =
+                        bodyTextContent.match(/رقم المرجعي\s*[:\-]?\s*([0-9]+)/) ||
+                        bodyTextContent.match(/رقم الدفع\s*[:\-]?\s*([0-9]+)/);
+                    if (fawryMatch && fawryMatch[1]) {
+                        orderNumber = fawryMatch[1];
+                        console.log('[EP] ✅ Found Fawry reference number:', orderNumber);
+                        break;
+                    }
+                } catch { }
+            }
+
+            if (orderNumber) break;
+
+            console.log(`[EP] Fawry reference not found yet, retrying ${attempt + 1}/5...`);
+            await page.waitForTimeout(3000);
+        }
+
+        if (!orderNumber) {
+            console.log('[EP] ⚠️ Fawry reference number not found. Will return empty but include rawText for debugging.');
+        } else {
+            console.log(`[EP] ✅ Final Fawry reference number: ${orderNumber}`);
+        }
+
+        await browser.close();
+
+        return {
+            orderNumber,
+            entity: 'كلية التربية',
+            serviceType: 'دبلوم',
+            email: data.email,
+            nationalID: data.nationalID,
+            status: 'NEW',
+            rawText: bodyTextContent.substring(0, 2000)
+        };
+    } catch (error) {
+        console.error('[EP] ❌ Fatal Error:', error);
         await browser.close();
         throw error;
     }

@@ -1,3 +1,11 @@
+export interface AssignedFile {
+  id: string;
+  name: string;
+  url: string;
+  track: 'track1' | 'track2' | 'track3';
+  assignedAt?: string;
+}
+
 export interface StudentData {
   id?: string;
   fullNameArabic: string;
@@ -22,6 +30,7 @@ export interface StudentData {
   department?: string;
   grade?: string;
   track?: string;
+  assignedFile?: AssignedFile;
 }
 
 export interface Service {

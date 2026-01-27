@@ -140,8 +140,8 @@ export const SERVICES: Service[] = [
       { name: 'number_of_copies', label: 'عدد النسخ المطلوبة (من 1 إلى 10)', type: 'number', required: true },
       { name: 'phone_whatsapp', label: 'رقم هاتف للتواصل والشحن (واتساب وفون)', type: 'text', required: true },
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: DIPLOMA_TYPES },
-      { name: 'address_details', label: 'العنوان بالتفصيل (المحافظة / المدينة / اسم الشارع / علامة مميزة / رقم العقار)', type: 'textarea', required: true },
-      { name: 'payment_account', label: 'رقم الحساب أو الموبايل الذي حولت منه المبلغ', type: 'text', required: true }
+      { name: 'payment_account', label: 'رقم الحساب أو الموبايل الذي حولت منه المبلغ', type: 'text', required: true },
+      { name: 'address_details', label: 'العنوان بالتفصيل (المحافظة / المدينة / اسم الشارع / علامة مميزة / رقم العقار)', type: 'textarea', required: true }
     ],
     paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
   },

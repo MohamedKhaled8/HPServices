@@ -86,6 +86,18 @@
   align-items: center;
 }
 
+.assignments-link-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+}
+
+.assignments-link-button:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #6a3d8f 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
 .tab-button {
   padding: 10px 20px;
   border: 1px solid rgba(226, 232, 240, 0.8);
@@ -2065,6 +2077,334 @@
   background: #f8fafc;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
+}
+
+/* ================================
+   Assignments / Study Costs Folders
+   ================================ */
+
+.assignments-folders-section {
+  margin-bottom: 32px;
+  padding: 24px 24px 28px;
+  background: linear-gradient(135deg, #f9fafb 0%, #eef2ff 100%);
+  border-radius: 20px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+}
+
+.assignments-folders-section .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.assignments-folders-section .section-header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #111827;
+}
+
+.assignments-message {
+  padding: 8px 14px;
+  background: rgba(16, 185, 129, 0.07);
+  color: #047857;
+  border-radius: 999px;
+  font-size: 13px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.track-folders-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.track-folder {
+  position: relative;
+  border: none;
+  padding: 18px 16px 16px;
+  border-radius: 18px;
+  background: radial-gradient(circle at 0% 0%, #4f46e51a, #ffffff 58%);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-align: right;
+}
+
+.track-folder .folder-icon-wrapper {
+  width: 46px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #4f46e5, #6366f1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 10px 18px rgba(79, 70, 229, 0.5);
+}
+
+.track-folder .folder-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.track-folder .folder-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.track-folder::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.22), rgba(56, 189, 248, 0.22)) border-box;
+  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.track-folder.active,
+.track-folder:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.15);
+}
+
+.track-folder.active::after {
+  opacity: 1;
+}
+
+.track-files-panel {
+  background: white;
+  border-radius: 18px;
+  border: 1px solid #e5e7eb;
+  padding: 18px 18px 20px;
+}
+
+.track-files-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.track-files-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.track-files-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.select-toggle-button,
+.send-button {
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.select-toggle-button {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.select-toggle-button:hover {
+  background: #e0e7ff;
+}
+
+.send-button {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ecfdf5;
+  box-shadow: 0 10px 25px rgba(5, 150, 105, 0.35);
+}
+
+.send-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.send-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.track-files-body {
+  margin-top: 10px;
+}
+
+.upload-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 12px 14px;
+  border-radius: 14px;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  margin-bottom: 12px;
+}
+
+.upload-bar span {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.upload-control {
+  flex: 1;
+}
+
+.files-table-wrapper {
+  margin-top: 8px;
+}
+
+.inline-loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #4b5563;
+  margin-bottom: 8px;
+}
+
+.spinning-loader-small {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.files-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #f9fafb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.files-table thead {
+  background: #e5e7eb;
+}
+
+.files-table th,
+.files-table td {
+  padding: 10px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.files-table th {
+  text-align: right;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.files-table td {
+  color: #111827;
+}
+
+.file-link {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.file-link:hover {
+  text-decoration: underline;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  display: none;
+}
+
+.checkbox-custom {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 2px solid #9ca3af;
+  display: inline-block;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.checkbox-label input:checked + .checkbox-custom {
+  background: #4f46e5;
+  border-color: #4f46e5;
+}
+
+.checkbox-label input:checked + .checkbox-custom::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 4px;
+  width: 5px;
+  height: 9px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+@media (max-width: 900px) {
+  .track-folders-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .track-folders-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .upload-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .track-files-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .track-files-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
 }
 
 .certificate-thumbnail-small {

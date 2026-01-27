@@ -1,0 +1,427 @@
+/* ============================================ */
+/* REAL GEOMETRIC SHAPES - Throughout Body */
+/* ============================================ */
+.body-geometric-shapes {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+}
+
+.geo-shape {
+    position: absolute;
+    border: 3px solid;
+    animation: floatGeoShape 25s infinite ease-in-out;
+}
+
+/* ========== TOP SECTION (0-20%) - Hero Area ========== */
+
+/* Circle 1 - Purple */
+.geo-circle-1 {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    border-color: #8B5CF6;
+    background: transparent;
+    top: 5%;
+    left: 3%;
+    animation-delay: 0s;
+}
+
+/* Triangle 1 - Orange */
+.geo-triangle-1 {
+    width: 0;
+    height: 0;
+    border-left: 45px solid transparent;
+    border-right: 45px solid transparent;
+    border-bottom: 80px solid #F59E0B;
+    border-top: none;
+    background: transparent;
+    top: 10%;
+    right: 8%;
+    animation-delay: -3s;
+}
+
+/* Square 1 - Green */
+.geo-square-1 {
+    width: 65px;
+    height: 65px;
+    border-color: #10B981;
+    background: transparent;
+    border-radius: 8px;
+    top: 15%;
+    left: 92%;
+    animation-delay: -6s;
+    transform: rotate(25deg);
+}
+
+/* Diamond 1 - Indigo */
+.geo-diamond-1 {
+    width: 55px;
+    height: 55px;
+    border-color: #6366F1;
+    background: transparent;
+    transform: rotate(45deg);
+    top: 12%;
+    right: 45%;
+    animation-delay: -9s;
+}
+
+/* Circle 2 - Pink */
+.geo-circle-2 {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border-color: #EC4899;
+    background: transparent;
+    top: 18%;
+    left: 20%;
+    animation-delay: -12s;
+}
+
+/* ========== SERVICES SECTION (20-50%) ========== */
+
+/* Hexagon 1 - Blue */
+.geo-hexagon-1 {
+    width: 60px;
+    height: 34.64px;
+    background: transparent;
+    border-top: 3px solid #3B82F6;
+    border-bottom: 3px solid #3B82F6;
+    border-left: none;
+    border-right: none;
+    top: 28%;
+    right: 5%;
+    animation-delay: -15s;
+    position: relative;
+}
+
+.geo-hexagon-1::before {
+    content: "";
+    position: absolute;
+    top: -20.32px;
+    left: -3px;
+    width: 0;
+    height: 0;
+    border-left: 33px solid transparent;
+    border-right: 33px solid transparent;
+    border-bottom: 17.32px solid #3B82F6;
+}
+
+.geo-hexagon-1::after {
+    content: "";
+    position: absolute;
+    bottom: -20.32px;
+    left: -3px;
+    width: 0;
+    height: 0;
+    border-left: 33px solid transparent;
+    border-right: 33px solid transparent;
+    border-top: 17.32px solid #3B82F6;
+}
+
+/* Square 2 - Red */
+.geo-square-2 {
+    width: 70px;
+    height: 70px;
+    border-color: #EF4444;
+    background: transparent;
+    border-radius: 10px;
+    top: 32%;
+    left: 7%;
+    animation-delay: -18s;
+    transform: rotate(-15deg);
+}
+
+/* Triangle 2 - Cyan */
+.geo-triangle-2 {
+    width: 0;
+    height: 0;
+    border-left: 40px solid transparent;
+    border-right: 40px solid transparent;
+    border-bottom: 75px solid #06B6D4;
+    border-top: none;
+    background: transparent;
+    top: 35%;
+    right: 18%;
+    animation-delay: -21s;
+}
+
+/* Pentagon 1 - Amber */
+.geo-pentagon-1 {
+    width: 65px;
+    height: 61.27px;
+    background: transparent;
+    border: 3px solid #FBB024;
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    animation-delay: -24s;
+    clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+}
+
+/* Circle 3 - Teal */
+.geo-circle-3 {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    border-color: #14B8A6;
+    background: transparent;
+    top: 45%;
+    left: 85%;
+    animation-delay: -27s;
+}
+
+/* Square 3 - Violet */
+.geo-square-3 {
+    width: 68px;
+    height: 68px;
+    border-color: #7C3AED;
+    background: transparent;
+    border-radius: 12px;
+    top: 48%;
+    right: 40%;
+    animation-delay: -30s;
+    transform: rotate(30deg);
+}
+
+/* Circle 4 - Lime */
+.geo-circle-4 {
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    border-color: #84CC16;
+    background: transparent;
+    top: 25%;
+    left: 12%;
+    animation-delay: -33s;
+}
+
+/* ========== MIDDLE SECTION (50-70%) ========== */
+
+/* Triangle 3 - Rose */
+.geo-triangle-3 {
+    width: 0;
+    height: 0;
+    border-left: 42px solid transparent;
+    border-right: 42px solid transparent;
+    border-bottom: 78px solid #F43F5E;
+    border-top: none;
+    background: transparent;
+    top: 55%;
+    left: 25%;
+    animation-delay: -36s;
+}
+
+/* Diamond 2 - Sky */
+.geo-diamond-2 {
+    width: 60px;
+    height: 60px;
+    border-color: #0EA5E9;
+    background: transparent;
+    transform: rotate(45deg);
+    top: 60%;
+    right: 30%;
+    animation-delay: -39s;
+}
+
+/* Hexagon 2 - Emerald */
+.geo-hexagon-2 {
+    width: 55px;
+    height: 31.75px;
+    background: transparent;
+    border-top: 3px solid #10B981;
+    border-bottom: 3px solid #10B981;
+    border-left: none;
+    border-right: none;
+    top: 65%;
+    left: 60%;
+    animation-delay: -42s;
+    position: relative;
+}
+
+.geo-hexagon-2::before {
+    content: "";
+    position: absolute;
+    top: -18.62px;
+    left: -3px;
+    width: 0;
+    height: 0;
+    border-left: 30.5px solid transparent;
+    border-right: 30.5px solid transparent;
+    border-bottom: 15.87px solid #10B981;
+}
+
+.geo-hexagon-2::after {
+    content: "";
+    position: absolute;
+    bottom: -18.62px;
+    left: -3px;
+    width: 0;
+    height: 0;
+    border-left: 30.5px solid transparent;
+    border-right: 30.5px solid transparent;
+    border-top: 15.87px solid #10B981;
+}
+
+/* Circle 5 - Fuchsia */
+.geo-circle-5 {
+    width: 65px;
+    height: 65px;
+    border-radius: 50%;
+    border-color: #D946EF;
+    background: transparent;
+    top: 68%;
+    right: 10%;
+    animation-delay: -45s;
+}
+
+/* Square 4 - Yellow */
+.geo-square-4 {
+    width: 72px;
+    height: 72px;
+    border-color: #EAB308;
+    background: transparent;
+    border-radius: 8px;
+    top: 58%;
+    left: 8%;
+    animation-delay: -48s;
+    transform: rotate(-20deg);
+}
+
+/* ========== BOTTOM SECTION (70-100%) - Footer Area ========== */
+
+/* Triangle 4 - Purple */
+.geo-triangle-4 {
+    width: 0;
+    height: 0;
+    border-left: 38px solid transparent;
+    border-right: 38px solid transparent;
+    border-bottom: 70px solid #A855F7;
+    border-top: none;
+    background: transparent;
+    top: 75%;
+    right: 25%;
+    animation-delay: -51s;
+}
+
+/* Pentagon 2 - Orange */
+.geo-pentagon-2 {
+    width: 60px;
+    height: 56.27px;
+    background: transparent;
+    border: 3px solid #F97316;
+    position: absolute;
+    top: 80%;
+    left: 40%;
+    animation-delay: -54s;
+    clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+}
+
+/* Circle 6 - Blue */
+.geo-circle-6 {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    border-color: #3B82F6;
+    background: transparent;
+    top: 85%;
+    left: 15%;
+    animation-delay: -57s;
+}
+
+/* Additional shapes for better coverage */
+/* Star-like Diamond 3 - Cyan */
+.geo-diamond-3 {
+    width: 58px;
+    height: 58px;
+    border-color: #22D3EE;
+    background: transparent;
+    transform: rotate(45deg);
+    top: 90%;
+    right: 15%;
+    animation-delay: -60s;
+}
+
+/* Circle 7 - Amber */
+.geo-circle-7 {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border-color: #F59E0B;
+    background: transparent;
+    top: 72%;
+    left: 5%;
+    animation-delay: -63s;
+}
+
+/* Square 5 - Pink */
+.geo-square-5 {
+    width: 66px;
+    height: 66px;
+    border-color: #EC4899;
+    background: transparent;
+    border-radius: 10px;
+    top: 95%;
+    left: 70%;
+    animation-delay: -66s;
+    transform: rotate(15deg);
+}
+
+@keyframes floatGeoShape {
+
+    0%,
+    100% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+
+    20% {
+        transform: translate(20px, -25px) rotate(36deg);
+    }
+
+    40% {
+        transform: translate(-25px, 20px) rotate(72deg);
+    }
+
+    60% {
+        transform: translate(30px, 15px) rotate(108deg);
+    }
+
+    80% {
+        transform: translate(-15px, -20px) rotate(144deg);
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+
+    /* Make shapes smaller on mobile */
+    .geo-shape {
+        transform: scale(0.6);
+        opacity: 0.7;
+    }
+
+    .geo-circle-1,
+    .geo-circle-2,
+    .geo-circle-3,
+    .geo-circle-4,
+    .geo-circle-5,
+    .geo-circle-6,
+    .geo-circle-7 {
+        width: 45px;
+        height: 45px;
+    }
+
+    .geo-square-1,
+    .geo-square-2,
+    .geo-square-3,
+    .geo-square-4,
+    .geo-square-5 {
+        width: 40px;
+        height: 40px;
+    }
+}

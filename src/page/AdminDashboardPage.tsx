@@ -13,7 +13,6 @@ import {
   updateCertificatesServiceConfig,
   getDigitalTransformationConfig,
   updateDigitalTransformationConfig,
-  getDigitalTransformationCodes,
   getFinalReviewConfig,
   updateFinalReviewConfig,
   getGraduationProjectConfig,
@@ -24,7 +23,9 @@ import {
   searchStudent,
   updateStudentData,
   saveDigitalTransformationCode,
-  subscribeToDigitalTransformationCodes
+  subscribeToDigitalTransformationCodes,
+  saveElectronicPaymentCode,
+  subscribeToElectronicPaymentCodes,
 } from '../services/firebaseService';
 import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, AssignmentItem, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice } from '../types';
 import {
@@ -49,22 +50,29 @@ import {
   Search,
   Pencil,
   Zap,
-  Image
+  Image,
+  Folder,
+  Send,
+  Loader2,
+  CheckSquare,
+  Square
 } from 'lucide-react';
+import FileUpload from '../components/FileUpload';
 import { SERVICES } from '../constants/services';
 import '../styles/AdminDashboardPage.css';
 
 interface AdminDashboardPageProps {
   onLogout: () => void;
   onBack: () => void;
+  onAssignmentsClick?: () => void;
 }
 
-const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBack }) => {
+const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBack, onAssignmentsClick }) => {
   const { student } = useStudent();
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [students, setStudents] = useState<Record<string, StudentData>>({});
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'assignments' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'finalReview' | 'graduationProject' | 'users'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users'>('requests');
   const [bookConfig, setBookConfig] = useState<BookServiceConfig | null>(null);
   const [feesConfig, setFeesConfig] = useState<FeesServiceConfig | null>(null);
   const [assignmentsConfig, setAssignmentsConfig] = useState<AssignmentsServiceConfig | null>(null);
@@ -84,6 +92,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newTransformationTypePrice, setNewTransformationTypePrice] = useState<string>('');
   const [newExamLanguage, setNewExamLanguage] = useState<string>('');
   const [dtCodes, setDtCodes] = useState<any[]>([]);
+  const [epCodes, setEpCodes] = useState<any[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
@@ -102,6 +111,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newGradProjectPriceAmount, setNewGradProjectPriceAmount] = useState<string>('');
   const [newGradProjectFeature, setNewGradProjectFeature] = useState<string>('');
   const [isSaving, setIsSaving] = useState<string | null>(null);
+
 
   useEffect(() => {
     if (!student?.id) return;
@@ -346,6 +356,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       setDtCodes(codes);
     });
 
+    // Subscribe to electronic payment codes (Real-time)
+    const unsubscribeEpCodes = subscribeToElectronicPaymentCodes((codes) => {
+      console.log('Real-time update: Electronic Payment Codes loaded:', codes.length);
+      setEpCodes(codes);
+    });
+
     // Load final review config
     const loadFinalReviewConfig = async () => {
       try {
@@ -425,6 +441,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return () => {
       unsubscribe();
       if (unsubscribeDtCodes) unsubscribeDtCodes();
+      if (unsubscribeEpCodes) unsubscribeEpCodes();
     };
   }, [isLoading]);
 
@@ -455,7 +472,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     try {
       await updateServiceRequestStatus(requestId, status, serviceId);
 
-      // Trigger Automation Service (Node.js Backend)
+      // Trigger Automation Service (Node.js Backend) - Digital Transformation
       if (serviceId === '7' && status === 'completed') {
         const request = serviceRequests.find(r => r.id === requestId);
         if (request) {
@@ -547,6 +564,71 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               .catch(err => {
                 console.error('Connection Error:', err);
                 alert('⚠️ لا يمكن الاتصال بخدمة الأتمتة (Backend Service).\nتأكد من تشغيل: node server.js');
+              });
+          }
+        }
+      }
+
+      // Trigger Automation Service for Electronic Payment Codes (service 4 - دفع المصروفات الدراسية)
+      if (serviceId === '4' && status === 'completed') {
+        const request = serviceRequests.find(r => r.id === requestId);
+        if (request) {
+          const studentData = students[request.studentId];
+          if (studentData) {
+            alert('💳 جاري بدء أتمتة الدفع الإلكتروني...\nسيقوم السيرفر بإنشاء عملية الدفع وجلب رقم الطلب تلقائياً.');
+
+            const payload = {
+              requestId: requestId,
+              studentId: request.studentId,
+              email: request.data.email || studentData.email,
+              fullNameArabic: request.data.full_name_arabic || studentData.fullNameArabic,
+              nationalID: request.data.national_id || studentData.nationalID,
+              phone: request.data.whatsapp_number || studentData.whatsappNumber
+            };
+
+            console.log('📤 [EP] Sending Payload to Backend:', payload);
+
+            fetch('/api/electronic-payment/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            })
+              .then(async (res) => {
+                const data = await res.json();
+                if (data.success) {
+                  const ep = data.data || {};
+                  alert(`✅ تمت عملية الدفع الإلكتروني بنجاح!\nرقم الطلب: ${ep.orderNumber || 'غير متوفر'}`);
+
+                  try {
+                    const codeData = {
+                      studentId: ep.studentId || '',
+                      requestId: ep.requestId || '',
+                      name: ep.name || '',
+                      email: ep.email || '',
+                      nationalID: ep.nationalID || '',
+                      mobile: ep.mobile || '',
+                      entity: ep.entity || 'كلية التربية',
+                      serviceType: ep.serviceType || 'دبلوم (2025 - 2026)',
+                      orderNumber: ep.orderNumber || '',
+                      status: ep.status || 'NEW',
+                      rawText: ep.rawText || '',
+                      createdAt: new Date().toISOString()
+                    };
+
+                    await saveElectronicPaymentCode(codeData);
+                    alert('🎉 تم الحفظ في "أكواد الدفع الإلكتروني" بنجاح!');
+                  } catch (saveError) {
+                    console.error('[EP] Save Error:', saveError);
+                    alert('⚠️ نجحت الأتمتة ولكن فشل الحفظ في "أكواد الدفع الإلكتروني".');
+                  }
+                } else {
+                  console.error('[EP] Automation Error:', data.error);
+                  alert(`❌ فشلت أتمتة الدفع الإلكتروني:\n${data.error}`);
+                }
+              })
+              .catch(err => {
+                console.error('[EP] Connection Error:', err);
+                alert('⚠️ لا يمكن الاتصال بخدمة أتمتة الدفع الإلكتروني.\nتأكد من تشغيل: node server.js');
               });
           }
         }
@@ -1051,13 +1133,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <CreditCard size={18} />
           المصروفات السن الدراسية للدبلومة
         </button>
-        <button
-          className={`tab-button ${activeTab === 'assignments' ? 'active' : ''}`}
-          onClick={() => setActiveTab('assignments')}
-        >
-          <FileCheck size={18} />
-          إدارة التكليفات
-        </button>
+        {onAssignmentsClick && (
+          <button
+            className="tab-button assignments-link-button"
+            onClick={onAssignmentsClick}
+            title="فتح صفحة إدارة التكليفات الدراسية الجزئية"
+          >
+            <FileCheck size={18} />
+            إدارة التكليفات الدراسية الجزئية
+          </button>
+        )}
         <button
           className={`tab-button ${activeTab === 'certificates' ? 'active' : ''}`}
           onClick={() => setActiveTab('certificates')}
@@ -1078,6 +1163,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         >
           <Zap size={18} />
           أكواد التحول الرقمي
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'electronicPaymentCodes' ? 'active' : ''}`}
+          onClick={() => setActiveTab('electronicPaymentCodes')}
+        >
+          <CreditCard size={18} />
+          أكواد الدفع الإلكتروني
         </button>
         <button
           className={`tab-button ${activeTab === 'finalReview' ? 'active' : ''}`}
@@ -1493,124 +1585,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       </div>
                     </div>
                   )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'assignments' && (
-        <div className="admin-content">
-          <div className="books-section">
-            <div className="section-header">
-              <h2>إعدادات خدمة التكليفات</h2>
-              <button type="button" onClick={handleSaveAssignmentsConfig} className="save-button" disabled={isSaving === 'assignments'}>
-                <Save size={18} />
-                {isSaving === 'assignments' ? 'جاري الحفظ...' : 'حفظ'}
-              </button>
-            </div>
-
-            {assignmentsConfig && (
-              <div className="book-config-form">
-                <div className="form-group">
-                  <label>اسم الخدمة</label>
-                  <input
-                    type="text"
-                    value={assignmentsConfig.serviceName}
-                    onChange={(e) => setAssignmentsConfig({ ...assignmentsConfig, serviceName: e.target.value })}
-                    className="config-input"
-                    placeholder="حل وتسليم تكاليف الترم الاول"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>التكليفات المتاحة</label>
-                  <div className="assignments-list">
-                    {assignmentsConfig.assignments.length === 0 ? (
-                      <div className="no-assignments-message">
-                        <p>لا توجد تكليفات مضافة</p>
-                      </div>
-                    ) : (
-                      assignmentsConfig.assignments.map((assignment) => (
-                        <div key={assignment.id} className="assignment-item">
-                          <div className="assignment-info">
-                            <span className="assignment-name">{assignment.name}</span>
-                            <span className="assignment-price">{assignment.price} جنيه</span>
-                          </div>
-                          <button
-                            onClick={() => handleRemoveAssignment(assignment.id)}
-                            className="remove-assignment-button"
-                            title="حذف"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="add-assignment-section">
-                    <div className="add-assignment-form">
-                      <input
-                        type="text"
-                        placeholder="اسم التكليف"
-                        value={newAssignmentName}
-                        onChange={(e) => setNewAssignmentName(e.target.value)}
-                        className="config-input"
-                        style={{ width: '300px' }}
-                      />
-                      <input
-                        type="number"
-                        placeholder="السعر بالجنيه"
-                        value={newAssignmentPrice}
-                        onChange={(e) => setNewAssignmentPrice(e.target.value)}
-                        className="config-input"
-                        style={{ width: '200px' }}
-                        min="0"
-                        step="0.01"
-                      />
-                      <button onClick={handleAddAssignment} className="add-price-button">
-                        إضافة تكليف
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>أرقام الدفع</label>
-                  <div className="payment-numbers">
-                    <div className="payment-item">
-                      <label>instaPay</label>
-                      <input
-                        type="text"
-                        value={assignmentsConfig.paymentMethods.instaPay}
-                        onChange={(e) => setAssignmentsConfig({
-                          ...assignmentsConfig,
-                          paymentMethods: {
-                            ...assignmentsConfig.paymentMethods,
-                            instaPay: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                    <div className="payment-item">
-                      <label>محفظة الكاش</label>
-                      <input
-                        type="text"
-                        value={assignmentsConfig.paymentMethods.cashWallet}
-                        onChange={(e) => setAssignmentsConfig({
-                          ...assignmentsConfig,
-                          paymentMethods: {
-                            ...assignmentsConfig.paymentMethods,
-                            cashWallet: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                  </div>
                 </div>
               </div>
             )}
@@ -2735,22 +2709,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 <thead>
                   <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                     <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>رقم فوري</th>
                     <th style={{ padding: '12px', textAlign: 'center' }}>موبايل</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>Whatsapp</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>البريد</th>
                     <th style={{ padding: '12px', textAlign: 'right' }}>النوع</th>
                     <th style={{ padding: '12px', textAlign: 'center' }}>القيمة</th>
                     <th style={{ padding: '12px', textAlign: 'center' }}>الحالة</th>
                     <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الحفظ</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>رقم فوري</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dtCodes.map((code, index) => (
                     <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
                       <td style={{ padding: '12px' }}>{code.name}</td>
-                      <td style={{ padding: '12px', fontWeight: 'bold', color: '#2563eb' }}>{code.fawryCode}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.whatsapp}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile || code.phone}</td>
+                      <td style={{ padding: '12px', fontSize: '0.85rem' }}>{code.email}</td>
                       <td style={{ padding: '12px' }}>{code.type}</td>
                       <td style={{ padding: '12px', textAlign: 'center' }}>{code.value}</td>
                       <td style={{ padding: '12px', textAlign: 'center' }}>
@@ -2767,6 +2740,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
                         {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}
                       </td>
+                      <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff' }}>{code.fawryCode}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2774,6 +2748,70 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             ) : (
               <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
                 لا توجد أكواد محفوظة حتى الآن
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'electronicPaymentCodes' && (
+        <div className="admin-content">
+          <div className="section-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2>أكواد الدفع الإلكتروني ({epCodes.length})</h2>
+              <span style={{
+                fontSize: '0.8rem',
+                background: '#dcfce7',
+                color: '#166534',
+                padding: '4px 8px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                <span style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', display: 'inline-block' }}></span>
+                مباشر (Real-time)
+              </span>
+            </div>
+          </div>
+
+          <div className="table-container" style={{ overflowX: 'auto' }}>
+            {epCodes.length > 0 ? (
+              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>الموبايل</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>البريد الإلكتروني</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>الرقم القومي</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>الجهة</th>
+                    <th style={{ padding: '12px', textAlign: 'right' }}>نوع الخدمة</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الإنشاء</th>
+                    <th style={{ padding: '12px', textAlign: 'center' }}>رقم الطلب</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {epCodes.map((code, index) => (
+                    <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px' }}>{code.name}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile}</td>
+                      <td style={{ padding: '12px', fontSize: '0.85rem' }}>{code.email}</td>
+                      <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem' }}>{code.nationalID}</td>
+                      <td style={{ padding: '12px' }}>{code.entity}</td>
+                      <td style={{ padding: '12px' }}>{code.serviceType}</td>
+                      <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
+                        {code.createdAt?.seconds
+                          ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG')
+                          : (code.createdAt || 'الان')}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff' }}>{code.orderNumber}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                لا توجد أكواد دفع إلكتروني محفوظة حتى الآن
               </div>
             )}
           </div>

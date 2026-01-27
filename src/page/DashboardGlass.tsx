@@ -4,8 +4,8 @@ import { SERVICES } from '../constants/services';
 import { checkIsAdmin } from '../services/firebaseService';
 import '../styles/DashboardPage.css';
 import {
-  User, LogOut, Users, Settings, Bell,
-  Search, ArrowLeft, Star, Clock,
+  LogOut, Users, Settings,
+  ArrowLeft, Star, Clock,
   CheckCircle, Zap, Shield, BookOpen
 } from 'lucide-react';
 import * as Icons from 'lucide-react';

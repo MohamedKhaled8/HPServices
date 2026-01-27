@@ -15,11 +15,25 @@ import {
   where,
   onSnapshot,
   serverTimestamp,
-  orderBy
+  orderBy,
+  deleteDoc
 } from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
+import { ref, deleteObject } from 'firebase/storage';
+import { auth, db, storage } from '../config/firebase';
+import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
-import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
+import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile } from '../types';
+
+export type TrackKey = 'track1' | 'track2' | 'track3';
+
+interface AssignmentFileMeta {
+  id: string;
+  name: string;
+  url: string;
+  track: TrackKey;
+  storagePath: string;
+  uploadedAt?: any;
+}
 
 // Auth Functions
 export const registerUser = async (email: string, password: string, studentData: StudentData): Promise<FirebaseUser> => {
@@ -132,6 +146,220 @@ export const updateStudentData = async (userId: string, data: Partial<StudentDat
     );
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء تحديث البيانات');
+  }
+};
+
+// ============================================
+// Assignments (Study Costs) - Files per track
+// ============================================
+
+const trackToKey = (track?: string | null): TrackKey | null => {
+  if (!track) return null;
+  const normalized = track.toLowerCase();
+  if (normalized.includes('1') || normalized.includes('الأول')) return 'track1';
+  if (normalized.includes('2') || normalized.includes('الثاني')) return 'track2';
+  if (normalized.includes('3') || normalized.includes('الثالث')) return 'track3';
+  return null;
+};
+
+// ... (code continues)
+
+export const uploadAssignmentFilesForTrack = async (
+  track: TrackKey,
+  files: File[],
+  adminId: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<AssignmentFileMeta[]> => {
+  try {
+    if (!adminId) {
+      console.warn('Admin ID missing in upload, using fallback or anonymous');
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        adminId = currentUser.uid;
+      } else {
+        throw new Error('يجب تسجيل الدخول كمسؤول لرفع الملفات');
+      }
+    }
+
+    let completedCount = 0;
+    const totalCount = files.length;
+
+    // Use Promise.all to upload files in parallel (Faster)
+    const uploadPromises = files.map(async (file) => {
+      const timestamp = Date.now();
+      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const filePath = `${track}/${timestamp}_${safeName}`;
+
+      // 1. رفع الملف إلى Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from(ASSIGNMENTS_BUCKET)
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Supabase Upload Error:', uploadError);
+        throw new Error(`خطأ في رفع الملف ${file.name}: ${uploadError.message}`);
+      }
+
+      // 2. الحصول على الرابط العام
+      const { data: { publicUrl } } = supabase.storage
+        .from(ASSIGNMENTS_BUCKET)
+        .getPublicUrl(filePath);
+
+      // 3. حفظ الميتاداتا في Firebase Firestore
+      const filesCollection = collection(db, 'assignments', track, 'files');
+      const fileDocRef = doc(filesCollection);
+
+      const meta: AssignmentFileMeta = {
+        id: fileDocRef.id,
+        name: file.name,
+        url: publicUrl,
+        track,
+        storagePath: filePath,
+        uploadedAt: serverTimestamp()
+      };
+
+      await setDoc(fileDocRef, {
+        ...meta,
+        adminId,
+        provider: 'supabase',
+        bucket: ASSIGNMENTS_BUCKET,
+        uploadedAt: serverTimestamp()
+      });
+
+      completedCount++;
+      if (onProgress) onProgress(completedCount, totalCount);
+
+      return meta;
+    });
+
+    const results = await Promise.all(uploadPromises);
+
+    return results;
+  } catch (error: any) {
+    console.error('Error uploading assignment files:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء رفع ملفات التكاليف');
+  }
+};
+
+export const getAssignmentFilesForTrack = async (track: TrackKey): Promise<AssignmentFileMeta[]> => {
+  try {
+    const filesCollection = collection(db, 'assignments', track, 'files');
+    const snapshot = await getDocs(filesCollection);
+
+    return snapshot.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        name: data.name,
+        url: data.url,
+        track: data.track as TrackKey,
+        storagePath: data.storagePath,
+        uploadedAt: data.uploadedAt
+      };
+    });
+  } catch (error: any) {
+    console.error('Error fetching assignment files:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء جلب ملفات التكاليف');
+  }
+};
+
+export const distributeAssignmentsForTrack = async (track: TrackKey, fileIds?: string[]): Promise<void> => {
+  try {
+    // 1) Get all files for this track (or only selected ones)
+    let files = await getAssignmentFilesForTrack(track);
+    if (fileIds && fileIds.length > 0) {
+      const fileIdSet = new Set(fileIds);
+      files = files.filter((f) => fileIdSet.has(f.id));
+    }
+    if (files.length === 0) {
+      throw new Error('لا توجد ملفات مرفوعة لهذا المسار');
+    }
+
+    // 2) Get all students for this track
+    const studentsRef = collection(db, 'students');
+    const studentsSnap = await getDocs(studentsRef);
+    const students: { id: string; data: StudentData }[] = [];
+
+    studentsSnap.forEach((docSnap) => {
+      const data = docSnap.data() as StudentData;
+      const studentTrackKey = trackToKey(data.track || null);
+      if (studentTrackKey === track) {
+        students.push({ id: docSnap.id, data });
+      }
+    });
+
+    if (students.length === 0) {
+      throw new Error('لا يوجد طلاب في هذا المسار حالياً');
+    }
+
+    // 3) Shuffle files randomly
+    const shuffledFiles = [...files].sort(() => Math.random() - 0.5);
+
+    // 4) Assign one file per student (allow reuse if files < students)
+    let fileIndex = 0;
+    for (const student of students) {
+      const file = shuffledFiles[fileIndex];
+      const assigned: AssignedFile = {
+        id: file.id,
+        name: file.name,
+        url: file.url,
+        track,
+        assignedAt: new Date().toISOString()
+      };
+
+      await updateStudentData(student.id, {
+        assignedFile: assigned
+      } as any);
+
+      fileIndex = (fileIndex + 1) % shuffledFiles.length;
+    }
+  } catch (error: any) {
+    console.error('Error distributing assignments:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء توزيع ملفات التكاليف على الطلاب');
+  }
+};
+
+export const deleteAssignmentFilesForTrack = async (
+  track: TrackKey,
+  fileIds: string[]
+): Promise<void> => {
+  try {
+    const filesCollection = collection(db, 'assignments', track, 'files');
+
+    const deletePromises = fileIds.map(async (fileId) => {
+      const fileDocRef = doc(filesCollection, fileId);
+      const snap = await getDoc(fileDocRef);
+      if (!snap.exists()) return;
+
+      const data = snap.data() as any;
+      const storagePath = data?.storagePath as string | undefined;
+      const provider = data?.provider as string | undefined;
+
+      await deleteDoc(fileDocRef);
+
+      if (storagePath) {
+        try {
+          if (provider === 'supabase') {
+            const { error } = await supabase.storage
+              .from(ASSIGNMENTS_BUCKET)
+              .remove([storagePath]);
+            if (error) console.error('Error removing from Supabase:', error);
+          } else {
+            await deleteObject(ref(storage, storagePath));
+          }
+        } catch (storageError) {
+          console.error('Error deleting file from storage:', storageError);
+        }
+      }
+    });
+
+    await Promise.all(deletePromises);
+  } catch (error: any) {
+    console.error('Error deleting assignment files:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء حذف ملفات التكاليف');
   }
 };
 
@@ -1007,6 +1235,80 @@ export const subscribeToDigitalTransformationCodes = (
     return unsubscribe;
   } catch (error) {
     console.error('Error setting up subscription:', error);
+    if (onError) onError(error);
+    return () => { };
+  }
+};
+
+// ============================================
+// Electronic Payment Codes (أكواد الدفع الإلكتروني)
+// ============================================
+
+// Save Electronic Payment Code
+export const saveElectronicPaymentCode = async (data: any): Promise<void> => {
+  try {
+    const collectionRef = collection(db, 'electronicPaymentCodes');
+    const docRef = doc(collectionRef); // Auto-generate ID
+
+    await setDoc(docRef, {
+      ...data,
+      id: docRef.id,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('Electronic payment code saved successfully');
+  } catch (error: any) {
+    console.error('Error saving electronic payment code:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء حفظ كود الدفع الإلكتروني');
+  }
+};
+
+// Get Electronic Payment Codes
+export const getElectronicPaymentCodes = async (): Promise<any[]> => {
+  try {
+    const q = query(collection(db, 'electronicPaymentCodes'), orderBy('updatedAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error: any) {
+    console.error('Error fetching electronic payment codes:', error);
+    return [];
+  }
+};
+
+// Subscribe to Electronic Payment Codes (Real-time)
+export const subscribeToElectronicPaymentCodes = (
+  onUpdate: (codes: any[]) => void,
+  onError?: (error: any) => void
+) => {
+  try {
+    const q = query(
+      collection(db, 'electronicPaymentCodes'),
+      orderBy('updatedAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const codes = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        onUpdate(codes);
+      },
+      (error) => {
+        console.error('Error subscribing to electronic payment codes:', error);
+        if (onError) onError(error);
+      }
+    );
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('Error setting up subscription (electronic payment codes):', error);
     if (onError) onError(error);
     return () => { };
   }

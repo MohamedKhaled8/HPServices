@@ -709,31 +709,40 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                           if (inputValue === '') {
                             handleServiceDataChange(field.name, '');
                             if (service.id === '3' && field.name === 'number_of_copies') {
-                              setServiceData(prev => ({
-                                ...prev,
-                                names_array: [],
-                                tracks_array: []
-                              }));
+                              // Don't clear arrays immediately to prevent data loss on accidental clear
+                              // Just keep them, they will be sliced when render happens or updated when number comes back
                             }
                             return;
                           }
 
-                          const value = parseInt(inputValue);
-                          // التحقق من أن القيمة صحيحة بين 1 و 10
-                          if (!isNaN(value) && value >= 1 && value <= 10) {
+                          let value = parseInt(inputValue);
+                          if (!isNaN(value)) {
+                            // Clamp value between 1 and 10
+                            if (value > 10) value = 10;
+                            if (value < 1) value = 1;
+
                             handleServiceDataChange(field.name, value);
-                            // إذا كانت خدمة الكتب، نعيد تهيئة مصفوفات الأسماء والمسارات فوراً
+
+                            // تحديث المصفوفات فقط إذا كان الرقم مختلفاً وصحيحاً
                             if (service.id === '3' && field.name === 'number_of_copies') {
-                              const namesArray = Array.from({ length: value }, (_, i) => serviceData.names_array?.[i] || '');
-                              const tracksArray = Array.from({ length: value }, (_, i) => serviceData.tracks_array?.[i] || '');
-                              setServiceData(prev => ({
-                                ...prev,
-                                [field.name]: value,
-                                names_array: namesArray,
-                                tracks_array: tracksArray,
-                                names: namesArray.join('\n'), // Sync string representation
-                                tracks: tracksArray.join('\n') // Sync string representation
-                              }));
+                              // Preserve existing data while resizing
+                              setServiceData(prev => {
+                                const currentNames = prev.names_array || [];
+                                const currentTracks = prev.tracks_array || [];
+
+                                // Create new arrays preserving existing data
+                                const newNames = Array.from({ length: value }, (_, i) => currentNames[i] || '');
+                                const newTracks = Array.from({ length: value }, (_, i) => currentTracks[i] || '');
+
+                                return {
+                                  ...prev,
+                                  [field.name]: value,
+                                  names_array: newNames,
+                                  tracks_array: newTracks,
+                                  names: newNames.join('\n'),
+                                  tracks: newTracks.join('\n')
+                                };
+                              });
                             }
                           }
                         }}
@@ -991,67 +1000,99 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
               {/* Dynamic Names and Tracks Fields for Books Service - داخل نفس القسم */}
               {service.id === '3' && serviceData.number_of_copies && serviceData.number_of_copies !== '' && parseInt(serviceData.number_of_copies) > 0 && (
-                <>
+                <div style={{ gridColumn: '1 / -1', width: '100%', marginTop: '20px' }}>
                   <div className="dynamic-fields-section">
-                    <h3 className="dynamic-fields-title">الأسماء الرباعية</h3>
-                    <div className="dynamic-fields-container">
-                      {Array.from({ length: Math.min(parseInt(serviceData.number_of_copies) || 1, 10) }, (_, index) => (
-                        <div key={index} className="form-group">
-                          <label htmlFor={`name_${index}`}>
-                            الاسم الرباعي للنسخة {index + 1}
-                            <span className="required">*</span>
-                          </label>
-                          <input
-                            id={`name_${index}`}
-                            type="text"
-                            value={serviceData.names_array?.[index] || ''}
-                            onChange={(e) => {
-                              const namesArray = [...(serviceData.names_array || [])];
-                              namesArray[index] = e.target.value;
-                              setServiceData(prev => ({
-                                ...prev,
-                                names_array: namesArray,
-                                names: namesArray.join('\n') // حفظ كـ textarea أيضاً للتوافق
-                              }));
-                            }}
-                            placeholder={`اكتب الاسم الرباعي للنسخة ${index + 1}`}
-                            required
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                    <h3 className="dynamic-fields-title" style={{ marginBottom: '15px', color: '#4F46E5', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
+                      تفاصيل النسخ ({serviceData.number_of_copies})
+                    </h3>
 
-                  <div className="dynamic-fields-section">
-                    <h3 className="dynamic-fields-title">المسارات والتخصصات</h3>
-                    <div className="dynamic-fields-container">
-                      {Array.from({ length: Math.min(parseInt(serviceData.number_of_copies) || 1, 10) }, (_, index) => (
-                        <div key={index} className="form-group">
-                          <label htmlFor={`track_${index}`}>
-                            المسار/التخصص للنسخة {index + 1}
-                            <span className="required">*</span>
-                          </label>
-                          <input
-                            id={`track_${index}`}
-                            type="text"
-                            value={serviceData.tracks_array?.[index] || ''}
-                            onChange={(e) => {
-                              const tracksArray = [...(serviceData.tracks_array || [])];
-                              tracksArray[index] = e.target.value;
-                              setServiceData(prev => ({
-                                ...prev,
-                                tracks_array: tracksArray,
-                                tracks: tracksArray.join('\n') // حفظ كـ textarea أيضاً للتوافق
-                              }));
-                            }}
-                            placeholder={`اكتب المسار/التخصص للنسخة ${index + 1}`}
-                            required
-                          />
-                        </div>
-                      ))}
+                    <div className="dynamic-fields-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {Array.from({ length: Math.min(parseInt(serviceData.number_of_copies) || 1, 10) }, (_, index) => {
+                        const numberNames = ['الأول', 'الثاني', 'الثالث', 'الرابع', 'الخامس', 'السادس', 'السابع', 'الثامن', 'التاسع', 'العاشر'];
+                        const ordName = numberNames[index] || (index + 1);
+
+                        return (
+                          <div key={index} className="copy-row-container" style={{
+                            display: 'flex',
+                            gap: '15px',
+                            alignItems: 'flex-start',
+                            background: '#f8fafc',
+                            padding: '15px',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0'
+                          }}>
+                            {/* رقم النسخة */}
+                            <div style={{
+                              minWidth: '30px',
+                              height: '30px',
+                              background: '#4F46E5',
+                              color: 'white',
+                              borderRadius: '50%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 'bold',
+                              marginTop: '25px',
+                              flexShrink: 0
+                            }}>
+                              {index + 1}
+                            </div>
+
+                            {/* حقل الاسم */}
+                            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                              <label htmlFor={`name_${index}`} style={{ fontSize: '14px' }}>
+                                الاسم {ordName} رباعي
+                                <span className="required">*</span>
+                              </label>
+                              <input
+                                id={`name_${index}`}
+                                type="text"
+                                value={serviceData.names_array?.[index] || ''}
+                                onChange={(e) => {
+                                  const namesArray = [...(serviceData.names_array || [])];
+                                  namesArray[index] = e.target.value;
+                                  setServiceData(prev => ({
+                                    ...prev,
+                                    names_array: namesArray,
+                                    names: namesArray.join('\n')
+                                  }));
+                                }}
+                                placeholder={`اكتب الاسم ${ordName} رباعي`}
+                                required
+                                style={{ width: '100%' }}
+                              />
+                            </div>
+
+                            {/* حقل المسار */}
+                            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                              <label htmlFor={`track_${index}`} style={{ fontSize: '14px' }}>
+                                المسار / التخصص
+                                <span className="required">*</span>
+                              </label>
+                              <input
+                                id={`track_${index}`}
+                                type="text"
+                                value={serviceData.tracks_array?.[index] || ''}
+                                onChange={(e) => {
+                                  const tracksArray = [...(serviceData.tracks_array || [])];
+                                  tracksArray[index] = e.target.value;
+                                  setServiceData(prev => ({
+                                    ...prev,
+                                    tracks_array: tracksArray,
+                                    tracks: tracksArray.join('\n')
+                                  }));
+                                }}
+                                placeholder="اكتب المسار أو التخصص"
+                                required
+                                style={{ width: '100%' }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </section>
