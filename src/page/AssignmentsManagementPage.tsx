@@ -581,7 +581,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                       id={`upload-input-${openedTrack}`}
                       style={{ display: 'none' }}
                       multiple
-                      accept=".pdf,.png,.jpg,.jpeg"
+                      accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.bmp,.gif"
                       disabled={isUploadingAssignments[openedTrack]}
                       onChange={(e) => {
                         if (e.target.files && e.target.files.length > 0) {

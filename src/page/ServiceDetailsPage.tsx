@@ -1581,7 +1581,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               <FileUpload
                 onFilesSelected={setReceiptFiles}
                 maxFileSize={5 * 1024 * 1024}
-                acceptedFormats={['JPEG', 'PNG', 'PDF']}
+                acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF']}
               />
             </section>
           )}
