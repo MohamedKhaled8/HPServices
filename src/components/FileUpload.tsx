@@ -62,18 +62,10 @@ const FileUpload: React.FC<FileUploadProps> = ({
       };
     }
 
-    // Security: Additional validation - check MIME type
-    const allowedMimeTypes = [
-      'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
-      'image/heic', 'image/heif', 'image/bmp', 'image/gif',
-      'application/pdf'
-    ];
-    if (!allowedMimeTypes.includes(file.type)) {
-      return {
-        valid: false,
-        error: `نوع الملف غير مدعوم. يرجى رفع صور (JPEG, PNG) أو ملفات PDF فقط`
-      };
-    }
+
+    // Note: MIME type validation removed for mobile compatibility
+    // Mobile browsers (especially iOS) often send incorrect or empty MIME types
+    // We rely on file extension validation above for security
 
     return { valid: true };
   };
