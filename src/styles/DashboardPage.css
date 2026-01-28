@@ -1428,10 +1428,7 @@ body {
     margin-bottom: 30px;
   }
 
-  .mobile-menu-close {
-    display: none !important;
-    /* Hide duplicate close button */
-  }
+
 
   .stats-container {
     flex-direction: column;
@@ -1515,5 +1512,98 @@ body {
     width: 100% !important;
     padding: 20px !important;
     text-align: center;
+  }
+}
+
+/* FIXED MOBILE MENU OVERLAY */
+.mobile-menu-overlay {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.98);
+  z-index: 99999 !important;
+  /* Extremely high Z-Index */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.mobile-menu-content {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 20px;
+  overflow-y: auto;
+  max-height: 80vh;
+}
+
+.mobile-menu-close {
+  position: absolute;
+  top: 30px;
+  left: 30px;
+  /* Left side for Arabic layout close button usually */
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100000;
+  transition: all 0.3s;
+}
+
+.mobile-menu-close:active {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(0.9);
+}
+
+.mobile-nav-link {
+  color: white;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Center text */
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.mobile-nav-link:active {
+  background: var(--primary);
+  color: white;
+  transform: scale(0.98);
+}
+
+.mobile-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 10px 0;
+  width: 100%;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }
