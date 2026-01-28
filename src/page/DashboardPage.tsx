@@ -377,12 +377,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
           <div className="promo-banner-card">
             <div className="promo-image-side">
-              <img
-                key={currentImageIndex}
-                src={promoImages[currentImageIndex]}
-                alt="Study Success"
-                className="promo-carousel-img"
-              />
+              {promoImages.map((src, index) => (
+                <img
+                  key={index}
+                  src={src}
+                  alt={`Study Success ${index + 1}`}
+                  className={`promo-carousel-img ${index === currentImageIndex ? 'active' : ''}`}
+                />
+              ))}
             </div>
             <div className="promo-content-side">
               <h2>طريقك نحو التميز الدراسي يبدأ بخطوة واحدة معنا</h2>

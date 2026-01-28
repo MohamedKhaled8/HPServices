@@ -1455,3 +1455,36 @@ body {
     gap: 40px;
   }
 }
+/* Promo Banner Styles for Smooth Fade */
+.promo-image-side {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 20px; /* Optional rounded corners */
+}
+
+.promo-carousel-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 1s ease-in-out; /* Smooth fade transition */
+  z-index: 1;
+}
+
+.promo-carousel-img.active {
+  opacity: 1;
+  z-index: 2;
+}
+
+/* Ensure the container has height if it doesn't already */
+.promo-banner-card {
+  display: flex;
+  overflow: hidden;
+  /* Add other styles if needed, assuming they exist elsewhere */
+}
+
