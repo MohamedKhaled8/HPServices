@@ -2975,11 +2975,19 @@
     align-items: stretch;
   }
 
-  /* Header Actions - Stack logout/back */
+  /* Header Actions - Stack logout/back vertically */
   .admin-actions {
     width: 100%;
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .logout-button,
+  .back-button {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
   }
 
   /* Tabs Scroll Fix */
@@ -3096,7 +3104,6 @@
 
   .search-input-wrapper {
     flex-direction: column;
-
   }
 
   .search-input {
@@ -3205,6 +3212,8 @@
     padding: 10px;
     justify-content: center;
     display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .user-details-grid {
@@ -3224,6 +3233,7 @@
     flex-direction: column;
     width: 100%;
     justify-content: center;
+    gap: 8px;
   }
 
   .view-request-button {
@@ -3261,5 +3271,16 @@
   .flex-row,
   .row {
     flex-direction: column !important;
+  }
+
+  /* Additional safety for small screens overflow */
+  .admin-dashboard-page {
+    overflow-x: hidden;
+  }
+
+  .book-config-form,
+  .form-group {
+    width: 100%;
+    box-sizing: border-box;
   }
 }
