@@ -170,7 +170,11 @@ const FileUpload: React.FC<FileUploadProps> = ({
         ref={fileInputRef}
         type="file"
         multiple
-        accept={acceptedFormats.map(f => `.${f.toLowerCase()}`).join(',')}
+        accept={
+          acceptedFormats.some(f => ['JPEG', 'JPG', 'PNG'].includes(f))
+            ? "image/*,.pdf"
+            : acceptedFormats.map(f => `.${f.toLowerCase()}`).join(',')
+        }
         onChange={(e) => handleFileSelect(e.target.files)}
         style={{ display: 'none' }}
         disabled={isProcessing}
