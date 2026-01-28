@@ -1455,13 +1455,15 @@ body {
     gap: 40px;
   }
 }
+
 /* Promo Banner Styles for Smooth Fade */
 .promo-image-side {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  border-radius: 20px; /* Optional rounded corners */
+  border-radius: 20px;
+  /* Optional rounded corners */
 }
 
 .promo-carousel-img {
@@ -1472,7 +1474,8 @@ body {
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 1s ease-in-out; /* Smooth fade transition */
+  transition: opacity 1s ease-in-out;
+  /* Smooth fade transition */
   z-index: 1;
 }
 
@@ -1488,3 +1491,29 @@ body {
   /* Add other styles if needed, assuming they exist elsewhere */
 }
 
+
+/* Mobile adjustments for promo slider */
+@media (max-width: 768px) {
+  .promo-banner-card {
+    flex-direction: column !important;
+  }
+
+  .promo-image-side {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 16/9;
+    /* Maintain aspect ratio to prevent cropping */
+    border-radius: 20px 20px 0 0 !important;
+  }
+
+  .promo-carousel-img {
+    object-fit: cover !important;
+    /* Cover works well with fixed aspect ratio */
+  }
+
+  .promo-content-side {
+    width: 100% !important;
+    padding: 20px !important;
+    text-align: center;
+  }
+}
