@@ -3096,6 +3096,7 @@
 
   .search-input-wrapper {
     flex-direction: column;
+
   }
 
   .search-input {
@@ -3119,12 +3120,22 @@
     align-items: stretch;
   }
 
+  .transformation-type-item>*,
+  .exam-language-item>*,
+  .feature-admin-item>* {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
+
+  /* Ensure text is centered and readable */
   .type-info,
   .assignment-info,
   .certificate-info {
     flex-direction: column;
     align-items: center;
     text-align: center;
+    gap: 8px;
   }
 
   .certificate-info {
@@ -3139,6 +3150,8 @@
   .remove-price-button,
   .remove-assignment-button {
     width: 100%;
+    margin-top: 8px;
+    justify-content: center;
   }
 
   /* Upload Bars */
@@ -3156,11 +3169,67 @@
 
   .track-files-actions {
     width: 100%;
-    justify-content: space-between;
+    display: flex;
+    flex-direction: column;
+    /* Stacking actions vertically as requested */
+    gap: 10px;
+  }
+
+  .select-toggle-button,
+  .send-button {
+    width: 100%;
+    justify-content: center;
   }
 
   .track-folders-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* User Cards adjustments for mobile */
+  .user-card {
+    padding: 16px;
+  }
+
+  .user-card-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+    text-align: center;
+  }
+
+  .edit-user-button {
+    width: 100%;
+    margin-top: 8px;
+    background-color: #f3f4f6;
+    /* Make it visible */
+    padding: 10px;
+    justify-content: center;
+    display: flex;
+  }
+
+  .user-details-grid {
+    grid-template-columns: 1fr;
+    /* Stack user details */
+    gap: 16px;
+    text-align: center;
+  }
+
+  .user-request-item {
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+  }
+
+  .request-item-header {
+    flex-direction: column;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .view-request-button {
+    width: 100%;
+    justify-content: center;
+    padding: 10px;
   }
 }
 
@@ -3170,16 +3239,27 @@
     gap: 10px;
   }
 
+  .admin-header h1 {
+    font-size: 20px;
+  }
+
   .edit-user-button {
-    align-self: flex-end;
+    align-self: stretch;
   }
 
   .tab-button {
     font-size: 12px;
+    padding: 8px 16px;
   }
 
   /* Ensure very small screens don't overflow */
   .modal-actions {
     flex-direction: column-reverse;
+  }
+
+  /* Force all flex-rows to be columns on very small screens */
+  .flex-row,
+  .row {
+    flex-direction: column !important;
   }
 }
