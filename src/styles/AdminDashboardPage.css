@@ -2856,3 +2856,112 @@
   margin-right: auto;
   /* Push to left end if needed, but space-between handles it */
 }
+/* ==========================================
+   MOBILE RESPONSIVE FIXES (Global Overrides)
+   ========================================== */
+
+@media (max-width: 900px) {
+  .admin-header-content {
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .admin-actions {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .admin-header h1 {
+    font-size: 22px;
+    text-align: center;
+  }
+
+  .admin-tabs {
+    padding: 15px 20px;
+    justify-content: flex-start; /* Ensure scroll starts from beginning */
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-content {
+    padding: 20px 16px;
+  }
+
+  /* Force single column for all major grids */
+  .services-files-grid,
+  .users-grid,
+  .track-folders-grid,
+  .digital-transformation-section .transformation-types-list,
+  .digital-transformation-section .exam-languages-list,
+  .digital-transformation-section .payment-numbers,
+  .form-row {
+    grid-template-columns: 1fr !important;
+    gap: 16px;
+  }
+
+  .services-files-grid {
+    padding: 16px;
+  }
+
+  /* Adjust Cards */
+  .service-file,
+  .user-card,
+  .digital-transformation-section .form-group {
+    padding: 20px;
+  }
+
+  /* Adjust Forms */
+  .digital-transformation-section .add-transformation-type-form,
+  .digital-transformation-section .add-exam-language-form {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px;
+  }
+
+  .input-group {
+    min-width: 100%;
+  }
+
+  .add-price-button-enhanced,
+  .save-button {
+    width: 100%;
+    justify-content: center;
+    margin-top: 10px;
+  }
+
+  /* Modal Actions */
+  .modal-actions {
+    flex-direction: column-reverse;
+    gap: 12px;
+  }
+
+  .cancel-button,
+  .save-button {
+    width: 100%;
+  }
+
+  /* Hide huge decorative elements specifically if needed */
+  /* But keeping them is fine if they don't overflow */
+}
+
+@media (max-width: 480px) {
+  .tab-button span {
+    display: none; /* Hide text on very small screens, keep icons */
+  }
+  
+  .tab-button.active span {
+    display: inline; /* Show text for active tab only */
+  }
+
+  .user-card-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .edit-user-button {
+    align-self: flex-end;
+  }
+}
+
