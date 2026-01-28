@@ -2948,17 +2948,73 @@
   /* But keeping them is fine if they don't overflow */
 }
 
+
+/* Responsive Admin Dashboard */
+@media (max-width: 768px) {
+  .admin-header {
+    padding: 16px 16px;
+  }
+
+  .admin-header-content {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .admin-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .admin-tabs {
+    padding: 10px 16px;
+    gap: 8px;
+    margin: 0;
+    width: 100%;
+    box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  .tab-button {
+    padding: 8px 14px;
+    font-size: 13px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .admin-content {
+    padding: 20px 16px;
+  }
+
+  .services-files-grid,
+  .users-grid {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .search-bar {
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+
+  .search-input-wrapper {
+    flex-direction: column;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+
+  .search-button {
+    width: 100%;
+    margin-top: 10px;
+  }
+}
+
 @media (max-width: 480px) {
-  .tab-button span {
-    display: none;
-    /* Hide text on very small screens, keep icons */
-  }
-
-  .tab-button.active span {
-    display: inline;
-    /* Show text for active tab only */
-  }
-
   .user-card-header {
     flex-direction: column;
     gap: 10px;
@@ -2966,5 +3022,10 @@
 
   .edit-user-button {
     align-self: flex-end;
+  }
+
+  .tab-button {
+    font-size: 12px;
+    padding: 6px 12px;
   }
 }

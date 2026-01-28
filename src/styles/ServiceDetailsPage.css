@@ -132,11 +132,62 @@
   width: 100%;
 }
 
+
 @media (max-width: 768px) {
   .service-fields {
     grid-template-columns: 1fr;
   }
+
+  .details-header {
+    padding: 15px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .details-header h1 {
+    font-size: 20px;
+  }
+
+  .details-form {
+    padding: 20px 10px;
+  }
+
+  .form-section {
+    padding: 15px;
+  }
+
+  .book-prices-list {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .dynamic-fields-container {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .graduation-price-item strong,
+  .price-item-row strong {
+    font-size: 14px;
+  }
+
+  .price-item-row {
+    padding: 10px;
+  }
+
+  .form-actions {
+    flex-direction: column-reverse;
+    /* Stack buttons, submit on top usually or preserve order but stack */
+  }
+
+  .cancel-button,
+  .submit-button {
+    width: 100%;
+    padding: 14px;
+  }
 }
+
 
 .form-group {
   display: flex;
@@ -1659,17 +1710,87 @@
   transform: none;
 }
 
+
 @media (max-width: 768px) {
+
+  /* Track Confirmation Styles */
   .track-confirmation-modal {
-    padding: 30px 20px;
+    padding: 24px 16px;
     max-width: 95%;
   }
 
   .track-confirmation-header h2 {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .confirm-track-button {
     width: 100%;
+  }
+
+  /* General Page Styles */
+  .details-header {
+    padding: 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .details-header h1 {
+    font-size: 20px;
+    line-height: 1.4;
+  }
+
+  .details-form {
+    padding: 20px 12px;
+  }
+
+  .form-section {
+    padding: 16px;
+  }
+
+  .book-prices-list {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .dynamic-fields-container {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  /* Make inputs take full width and handle box model correctly */
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    box-sizing: border-box;
+    max-width: 100%;
+    /* Prevent overflow */
+  }
+
+  .graduation-price-item strong,
+  .price-item-row strong {
+    font-size: 14px;
+  }
+
+  .price-item-row {
+    padding: 12px;
+    /* On very narrow screens, maybe stack, but row is usually fine if 1fr */
+  }
+
+  .form-actions {
+    flex-direction: column-reverse;
+    gap: 12px;
+  }
+
+  .cancel-button,
+  .submit-button {
+    width: 100%;
+    padding: 14px;
+    margin: 0;
+  }
+
+  .service-fields {
+    grid-template-columns: 1fr;
   }
 }
