@@ -1790,25 +1790,7 @@
   color: #718096;
 }
 
-@media (max-width: 768px) {
-  .admin-header-content {
-    flex-direction: column;
-    gap: 16px;
-    align-items: flex-start;
-  }
 
-  .requests-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .prices-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .payment-numbers {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* Assignments Section */
 .assignments-list {
@@ -3011,37 +2993,51 @@
     min-width: auto;
   }
 
+
   /* Section Headers - Stack Title and Config Buttons */
   .section-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-    padding: 16px;
-    height: auto;
+    flex-direction: column !important;
+    gap: 16px !important;
+    align-items: stretch !important;
+    padding: 16px !important;
+    height: auto !important;
+    width: 100% !important;
+    box-sizing: border-box;
   }
 
   .section-header h2 {
-    text-align: center;
-    order: 1;
-    margin-bottom: 0;
+    text-align: center !important;
+    order: 1 !important;
+    margin-bottom: 0 !important;
+    white-space: normal !important;
+    /* Allow wrapping */
+    font-size: 18px !important;
+    /* Slightly smaller to fit */
   }
 
   .section-header .edit-button,
   .section-header .save-button,
   .section-header .edit-actions {
-    order: 2;
-    width: 100%;
-    justify-content: center;
-    min-width: unset;
+    order: 2 !important;
+    width: 100% !important;
+    justify-content: center !important;
+    min-width: unset !important;
+    margin: 0 !important;
   }
 
   .edit-actions {
-    flex-direction: column;
-    width: 100%;
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    margin-top: 10px !important;
+    gap: 10px !important;
   }
 
   .edit-actions button {
-    width: 100%;
+    width: 100% !important;
+    margin: 0 !important;
+    display: flex !important;
+    justify-content: center !important;
   }
 
   /* Grids - Force 1 column on mobile */
@@ -3070,6 +3066,7 @@
     padding: 16px;
   }
 
+
   /* Complex Forms Stacking */
   .add-transformation-type-form,
   .add-exam-language-form,
@@ -3079,6 +3076,59 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  /* Fix for Tuition Fees Items and Features */
+  .price-item {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center;
+    width: 100%;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+
+  .price-item-edit {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .price-item-edit input,
+  .price-item-edit .price-input {
+    width: 100% !important;
+    box-sizing: border-box;
+    text-align: center;
+  }
+
+  .remove-price-button {
+    width: 100%;
+    justify-content: center;
+    margin-top: 5px;
+    padding: 10px;
+  }
+
+  .features-admin-list {
+    width: 100%;
+  }
+
+  .feature-admin-item {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .feature-admin-item span {
+    width: 100%;
+    white-space: normal;
+    word-break: break-word;
   }
 
   /* Buttons in forms */
