@@ -1139,7 +1139,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           onClick={() => setActiveTab('fees')}
         >
           <CreditCard size={18} />
-          المصروفات السن الدراسية للدبلومة
+          مصروفات السنة الدراسية للدبلومة
         </button>
         {onAssignmentsClick && (
           <button
