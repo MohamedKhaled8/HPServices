@@ -3473,3 +3473,114 @@
 .no-requests {
   display: none !important;
 }
+
+/* ===== Admin Panel — Mobile-first button placement rules =====
+   Goal: On narrow screens (mobile) force any action buttons related to
+   content (edit/save/update/confirm/remove) to appear below their
+   associated text/fields, full-width (or near full), with clear spacing.
+   These rules are intentionally specific and use !important where
+   necessary to override inline/grouped header styles without changing markup.
+*/
+@media (max-width: 600px) {
+  /* Make section headers stack vertically so title is above actions */
+  .admin-content .section-header,
+  .books-section .section-header,
+  .digital-transformation-section .section-header,
+  .assignments-folders-section .section-header {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 10px 12px !important;
+  }
+
+  /* Ensure the title sits above and spans full width */
+  .admin-content .section-header h2 {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  /* Edit/save/cancel/update buttons inside section headers */
+  .admin-content .section-header .edit-actions,
+  .admin-content .section-header .edit-actions > * {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  .admin-content .section-header .edit-actions button,
+  .admin-content .section-header .edit-button,
+  .admin-content .section-header .save-button,
+  .admin-content .section-header .cancel-edit-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px 14px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+  }
+
+  /* Editable field containers: put the action button under the field */
+  .editable-field-container,
+  .editable-field-display {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  .editable-field-container .edit-field-button,
+  .editable-field-container .edit-field-button.cancel-edit,
+  .editable-field-container .edit-button {
+    width: 100% !important;
+    padding: 10px 12px !important;
+    margin-top: 0 !important;
+  }
+
+  /* Price items or rows that had inline controls */
+  .price-item,
+  .price-item .price-item-edit,
+  .price-item .price-display,
+  .price-item .remove-price-button {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  .price-item .remove-price-button {
+    width: 100% !important;
+    padding: 10px 12px !important;
+  }
+
+  /* Form actions that normally sit inline: stack and full width */
+  .form-actions,
+  .form-actions > button,
+  .add-price-section,
+  .add-price-section .config-input,
+  .add-price-section button {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  .form-actions > button,
+  .add-price-section button {
+    width: 100% !important;
+    padding: 12px 14px !important;
+  }
+
+  /* Prevent overlap with content / ensure normal flow */
+  .admin-content button {
+    position: relative !important;
+    z-index: 1 !important;
+  }
+
+  /* Add visual separation from the text/fields */
+  .admin-content .section-header + .book-config-form,
+  .admin-content .section-header + .form-group,
+  .admin-content .section-header + .prices-grid {
+    margin-top: 8px !important;
+  }
+}

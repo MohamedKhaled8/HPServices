@@ -57,7 +57,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           } else {
             // Default config
             setBookConfig({
-              serviceName: 'شحن الكتب الدراسية الترم الأول',
+              serviceName: 'شحن الكتب الدراسية',
               prices: {
                 '1': 1750,
                 '2': 3440,

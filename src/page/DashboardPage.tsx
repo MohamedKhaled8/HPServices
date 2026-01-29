@@ -152,7 +152,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
         {/* Right Side: Brand */}
         <div className="nav-brand">
-          <BookOpen size={32} />
+          <img src="/لوجو اتش بي .jpg.jpeg" alt="HP" className="nav-logo-img" onError={(e)=>{(e.currentTarget as HTMLImageElement).style.display='none'}} />
           <span>HP Services</span>
         </div>
 

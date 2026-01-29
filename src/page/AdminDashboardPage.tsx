@@ -158,7 +158,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         } else {
           // Default config
           setBookConfig({
-            serviceName: 'شحن الكتب الدراسية الترم الأول',
+            serviceName: 'شحن الكتب الدراسية',
             prices: {
               '1': 1750,
               '2': 3440,

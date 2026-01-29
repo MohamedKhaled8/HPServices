@@ -28,6 +28,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const { student } = useStudent();
   const [isAdmin, setIsAdmin] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [logoLoaded, setLogoLoaded] = useState(true);
   const [greeting, setGreeting] = useState('');
 
   // Handle scroll effect for navbar
@@ -78,7 +79,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Modern Navbar */}
       <nav className={`dashboard-navbar ${scrolled ? 'scrolled' : ''}`}>
         <div className="nav-brand">
-          <div className="nav-logo-icon">HP</div>
+          {logoLoaded ? (
+            <img
+              src="/images/hp-logo.jpg"
+              alt="HP"
+              className="nav-logo-img"
+              onError={() => setLogoLoaded(false)}
+              onLoad={() => setLogoLoaded(true)}
+            />
+          ) : (
+            <div className="nav-logo-icon">HP</div>
+          )}
           <span className="nav-logo-text">HP Services</span>
         </div>
 

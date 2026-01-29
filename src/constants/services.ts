@@ -130,7 +130,7 @@ export const SERVICES: Service[] = [
   {
     id: '3',
     nameEn: 'School Books Shipping',
-    nameAr: 'شحن الكتب الدراسية الترم الأول', // سيتم تحديثه من Admin Dashboard
+    nameAr: 'شحن الكتب الدراسية', // سيتم تحديثه من Admin Dashboard
     descriptionEn: 'Order and ship your school books',
     descriptionAr: 'اطلب وشحن كتبك الدراسية',
     icon: 'package',
