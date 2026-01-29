@@ -1498,7 +1498,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         <div className="admin-content">
           <div className="books-section">
             <div className="section-header">
-              <h2>المصروفات السن الدراسية للدبلومة</h2>
+              <h2>مصروفات السنة الدراسية للدبلومة</h2>
               <div className="edit-actions">
                 {!isEditingFees ? (
                   <button type="button" onClick={() => setIsEditingFees(true)} className="edit-button">
