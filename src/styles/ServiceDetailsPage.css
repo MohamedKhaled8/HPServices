@@ -209,12 +209,33 @@
 .form-group input,
 .form-group select,
 .form-group textarea {
-  padding: 10px 12px;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: 12px 16px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 15px;
   font-family: inherit;
-  transition: all 0.3s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: #ffffff;
+  color: #1a202c;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Premium Dropdown Styling */
+.form-group select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23667eea' stroke-width='2.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19.5 8.25l-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 12px center;
+  background-size: 16px;
+  padding-left: 40px;
+  /* Space for the custom arrow on the left for Arabic */
+  cursor: pointer;
+}
+
+.form-group select:hover {
+  border-color: #cbd5e1;
+  background-color: #f8fafc;
 }
 
 .form-group input:focus,
@@ -222,7 +243,9 @@
 .form-group textarea:focus {
   outline: none;
   border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  background-color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+  transform: translateY(-1px);
 }
 
 .form-group textarea {
@@ -497,33 +520,34 @@
   gap: 12px;
 }
 
-.feature-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
-  transition: all 0.3s ease;
-  border-right: 4px solid #667eea;
+.section-features .feature-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 14px 18px !important;
+  background: white !important;
+  border-radius: 10px !important;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1) !important;
+  transition: all 0.3s ease !important;
+  border-right: 4px solid #667eea !important;
+  border-left: none !important;
 }
 
-.feature-item:hover {
-  transform: translateX(-5px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+.section-features .feature-item:hover {
+  transform: translateX(-5px) !important;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2) !important;
 }
 
-.feature-icon {
-  color: #667eea;
-  flex-shrink: 0;
+.section-features .feature-icon {
+  color: #667eea !important;
+  flex-shrink: 0 !important;
 }
 
-.feature-item span {
-  color: #2d3748;
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.5;
+.section-features .feature-item span {
+  color: #1e293b !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  line-height: 1.5 !important;
 }
 
 /* Graduation Project Prices */
@@ -1485,29 +1509,47 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
-/* Premium Client Features Styling */
+/* Premium Client Features Styling - FIXED COLORS & VISIBILITY */
 .premium-features {
-  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
-  border: 1px solid #FCD34D;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  border: 1px solid #667eea !important;
+  padding: 30px !important;
 }
 
 .premium-features h2 {
-  color: #B45309;
-  border-bottom-color: #FDE68A;
+  color: #1e293b !important;
+  border-bottom-color: #e2e8f0 !important;
+  text-align: right !important;
+}
+
+.premium-features .features-list {
+  gap: 16px !important;
 }
 
 .premium-features .feature-item {
-  border-right: 4px solid #F59E0B;
-  background: #ffffff;
-}
-
-.premium-features .feature-item:hover {
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
-  transform: translateX(-5px);
+  background: white !important;
+  border-right: 5px solid #2563eb !important;
+  border-left: none !important;
+  padding: 20px !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
 }
 
 .premium-features .feature-icon {
-  color: #F59E0B;
+  color: #2563eb !important;
+}
+
+.premium-features .feature-item span {
+  color: #1e293b !important;
+  font-weight: 600 !important;
+  font-size: 16px !important;
+}
+
+.premium-features .feature-item:hover {
+  background: #f8fafc !important;
+  transform: translateX(-5px) !important;
 }
 
 /* Calculated Track Field Styling */
@@ -1785,7 +1827,16 @@
     width: 100%;
     box-sizing: border-box;
     max-width: 100%;
-    /* Prevent overflow */
+    padding: 14px;
+    font-size: 16px;
+    /* Better for mobile touch and prevents auto-zoom on iOS */
+    border-radius: 12px;
+  }
+
+  .form-group select {
+    background-position: left 15px center;
+    background-size: 18px;
+    padding-left: 45px;
   }
 
   .graduation-price-item strong,

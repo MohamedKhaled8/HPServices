@@ -137,6 +137,29 @@
   background-color: white;
 }
 
+.password-wrapper {
+  position: relative;
+}
+
+.password-wrapper input {
+  padding-left: 44px; /* space for the toggle icon on the left (RTL) */
+}
+
+.password-toggle {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+}
+
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {

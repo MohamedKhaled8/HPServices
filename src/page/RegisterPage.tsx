@@ -4,7 +4,7 @@ import { validateStudentData } from '../utils/validation';
 import { GOVERNORATES, DIPLOMA_YEARS, COURSES, DIPLOMA_TYPES } from '../constants/services';
 import { useStudent } from '../context';
 import { registerUser } from '../services/firebaseService';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import '../styles/RegisterPage.css';
 
 const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: () => void }> = ({ onRegistrationSuccess, onGoToLogin }) => {
@@ -23,6 +23,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const getFieldError = (fieldName: string): string | undefined => {
     return errors.find(e => e.field === fieldName)?.message;
@@ -128,7 +129,10 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="register-form">
+        <form onSubmit={handleSubmit} className="register-form" autoComplete="off">
+          {/* hidden dummy fields to prevent browser autofill */}
+          <input type="text" name="fake-username" autoComplete="username" style={{ position: 'absolute', left: '-9999px', top: '0', opacity: 0 }} />
+          <input type="password" name="fake-password" autoComplete="new-password" style={{ position: 'absolute', left: '-9999px', top: '0', opacity: 0 }} />
           <div className="form-section">
             <h2>البيانات الشخصية</h2>
 
@@ -363,8 +367,12 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
               <label htmlFor="email">البريد الإلكتروني *</label>
               <input
                 id="email"
+                name="register-email"
                 type="email"
                 placeholder="example@example.com"
+                autoComplete="off"
+                readOnly={true}
+                onFocus={(e) => (e.currentTarget.readOnly = false)}
                 value={formData.email || ''}
                 onChange={(e) => handleInputChange('email', e.target.value)}
                 className={getFieldError('email') ? 'error' : ''}
@@ -376,14 +384,28 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
 
             <div className="form-group">
               <label htmlFor="password">كلمة المرور *</label>
-              <input
-                id="password"
-                type="password"
-                placeholder="أدخل كلمة المرور"
-                value={formData.password || ''}
-                onChange={(e) => handleInputChange('password', e.target.value)}
-                className={getFieldError('password') ? 'error' : ''}
-              />
+              <div className="password-wrapper">
+                <input
+                  id="password"
+                  name="register-password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="أدخل كلمة المرور"
+                  autoComplete="new-password"
+                  readOnly={true}
+                  onFocus={(e) => (e.currentTarget.readOnly = false)}
+                  value={formData.password || ''}
+                  onChange={(e) => handleInputChange('password', e.target.value)}
+                  className={getFieldError('password') ? 'error' : ''}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                  onClick={() => setShowPassword(prev => !prev)}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
               {getFieldError('password') && (
                 <span className="error-message">{getFieldError('password')}</span>
               )}

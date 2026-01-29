@@ -93,9 +93,11 @@
 }
 
 .assignments-link-button:hover {
-  background: linear-gradient(135deg, #5568d3 0%, #6a3d8f 100%);
+  color: #1e293b;
+  border-color: #cbd5e1;
+  background: white;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
 .tab-button {
@@ -3365,21 +3367,19 @@
 @media (max-width: 520px) {
   .section-header {
     flex-direction: row !important;
-    /* Restore row */
-    justify-content: space-between !important;
+    justify-content: flex-start !important;
+    /* Keep buttons next to title on the right */
     align-items: center !important;
     text-align: right;
-    /* RTL consistency */
-    gap: 12px !important;
+    gap: 16px !important;
     padding: 12px 16px !important;
   }
 
   .edit-actions {
     display: flex !important;
     flex-direction: row !important;
-    justify-content: flex-end !important;
+    justify-content: flex-start !important;
     width: auto !important;
-    /* Not full width */
     gap: 8px !important;
   }
 
@@ -3387,13 +3387,10 @@
   .save-button,
   .cancel-edit-button {
     padding: 6px 12px !important;
-    /* Smaller padding */
     font-size: 13px !important;
     min-width: 0 !important;
-    /* Allow it to shrink */
     width: auto !important;
     flex: none !important;
-    /* Don't grow */
     height: 34px !important;
   }
 
@@ -3475,35 +3472,4 @@
 
 .no-requests {
   display: none !important;
-}
-
-/* Strong override: force books-section header to stack on narrow screens */
-@media (max-width: 520px) {
-  .books-section .section-header {
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    justify-content: flex-start !important;
-    gap: 8px !important;
-    padding: 10px 12px !important;
-  }
-
-  .books-section .section-header h2 {
-    margin: 0 0 8px 0 !important;
-    width: 100% !important;
-  }
-
-  .books-section .section-header .edit-actions {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    gap: 8px !important;
-  }
-
-  .books-section .section-header .edit-actions button {
-    width: 100% !important;
-    min-width: 0 !important;
-    padding: 10px 12px !important;
-    justify-content: center !important;
-  }
 }
