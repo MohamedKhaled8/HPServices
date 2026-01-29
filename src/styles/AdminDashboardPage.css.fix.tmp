@@ -1,0 +1,119 @@
+
+@media (max-width: 768px) {
+  .admin-header {
+    padding: 16px 20px;
+  }
+  
+  .admin-tabs {
+    padding: 12px 20px;
+  }
+  
+  .admin-content {
+    padding: 20px;
+  }
+  
+  .users-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .section-header {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center;
+    gap: 12px !important;
+  }
+
+  .edit-actions {
+    justify-content: center !important;
+    width: 100% !important;
+  }
+
+  .edit-button,
+  .save-button,
+  .cancel-edit-button {
+    padding: 8px 12px !important;
+    font-size: 13px !important;
+    min-width: 80px !important;
+    flex: 1;
+    max-width: 120px;
+  }
+
+  .prices-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .price-item {
+    background: white !important;
+    padding: 12px 16px !important;
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border: 1px solid rgba(226, 232, 240, 0.6) !important;
+  }
+
+  .price-display-bubble {
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+  }
+}
+
+/* Premium Modal Grids & Aligned Items */
+.premium-grid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  padding: 16px !important;
+  background: #f8fafc !important;
+  border-radius: 12px !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.info-item.aligned,
+.data-item.aligned {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  width: 100% !important;
+  padding: 8px 0 !important;
+  border-bottom: 1px dashed #cbd5e1 !important;
+  flex-direction: row !important;
+}
+
+.info-item.aligned:last-child,
+.data-item.aligned:last-child {
+  border-bottom: none !important;
+}
+
+.info-label,
+.data-label {
+  font-weight: 700 !important;
+  color: #64748b !important;
+  font-size: 14px !important;
+}
+
+.info-value,
+.data-value {
+  color: #1e293b !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  text-align: left !important;
+}
+
+.price-display-bubble {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 50px;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+}
+
+.no-requests {
+  display: none !important;
+}

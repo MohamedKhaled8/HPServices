@@ -595,34 +595,42 @@
 
 .user-details-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
 .detail-item {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(226, 232, 240, 0.5);
+}
+
+.detail-item:last-child {
+  border-bottom: none;
 }
 
 .detail-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  color: #64748b;
+  min-width: 120px;
 }
 
 .detail-value {
   font-size: 14px;
-  color: #1f2937;
+  color: #1e293b;
   font-weight: 500;
+  text-align: left;
 }
 
 .user-requests-section {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid #f3f4f6;
+  display: block;
+  /* Ensure it stays block but we can hide inner content */
 }
 
 .user-requests-section h4 {
@@ -632,10 +640,14 @@
   color: #1f2937;
 }
 
+.user-requests-section:empty,
+.user-requests-section.no-data {
+  display: none;
+}
+
 .no-requests {
-  color: #6b7280;
-  font-size: 13px;
-  font-style: italic;
+  display: none;
+  /* Hide 'no requests' text to keep card compact as requested */
 }
 
 .user-requests-list {
@@ -752,19 +764,19 @@
 }
 
 .save-button {
-  padding: 14px 28px;
+  padding: 10px 20px;
   background: #2563eb;
   color: white;
   border: none;
   border-radius: 8px;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
   transition: all 0.3s ease;
-  min-width: 120px;
+  min-width: 100px;
   justify-content: center;
   box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
 }
@@ -788,16 +800,16 @@
 }
 
 .cancel-button {
-  padding: 14px 28px;
+  padding: 10px 20px;
   background: #f3f4f6;
   color: #374151;
   border: none;
   border-radius: 8px;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   transition: all 0.3s ease;
-  min-width: 120px;
+  min-width: 100px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1172,17 +1184,17 @@
 .edit-button,
 .save-button,
 .cancel-edit-button {
-  padding: 14px 28px;
+  padding: 8px 16px;
   border: none;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
   transition: all 0.3s ease;
-  min-width: 120px;
+  min-width: 100px;
   justify-content: center;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -3335,86 +3347,130 @@
   }
 }
 
-/* On small screens, stack header title and actions vertically so the edit button appears below the title */
-@media (max-width: 480px) {
-  .section-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 12px 16px;
+
+/* Cleaned up Mobile Responsiveness */
+@media (max-width: 768px) {
+  .admin-header {
+    padding: 16px 20px;
   }
 
-  .section-header h2 {
-    order: 1;
-    font-size: 18px;
+  .admin-tabs {
+    padding: 12px 20px;
   }
 
-  .section-header .edit-button,
-  .section-header .edit-actions,
-  .section-header .save-button {
-    order: 2;
-    width: auto;
-    min-width: 0;
-    align-self: stretch;
-    display: flex;
-    justify-content: flex-start;
+  .admin-content {
+    padding: 20px;
   }
 
-  .section-header .edit-button {
-    padding: 10px 14px;
+  .users-grid {
+    grid-template-columns: 1fr;
   }
 }
 
-/* More specific: ensure fees/books tab header stacks and buttons go under the title on small phones */
-@media (max-width: 480px) {
-  .books-section .section-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 12px 16px;
-  }
-
-  .books-section .section-header h2 {
-    width: 100%;
-  }
-
-  .books-section .section-header .edit-actions {
-    display: flex !important;
-    flex-direction: column;
-    gap: 8px;
-    width: 100%;
-  }
-
-  .books-section .section-header .edit-actions button {
-    width: 100%;
-    justify-content: center;
-    padding: 10px 12px;
-  }
-}
-
-/* Stronger override to ensure stacking even if other rules exist */
 @media (max-width: 520px) {
-  .books-section .section-header,
-  .section-header.books-section,
-  .books-section .section-header[data-role="header"] {
-    display: flex !important;
+  .section-header {
     flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 8px !important;
-    padding: 10px 12px !important;
+    align-items: center !important;
+    text-align: center;
+    gap: 12px !important;
+    padding: 16px !important;
   }
 
-  .books-section .section-header .edit-actions,
-  .books-section .section-header .edit-actions * {
+  .edit-actions {
     display: flex !important;
-    flex-direction: column !important;
+    flex-direction: row !important;
+    justify-content: center !important;
     width: 100% !important;
     gap: 8px !important;
   }
 
-  .books-section .section-header .edit-actions button {
-    width: 100% !important;
-    min-width: 0 !important;
-    padding: 10px 12px !important;
+  .edit-button,
+  .save-button,
+  .cancel-edit-button {
+    padding: 8px 12px !important;
+    font-size: 13px !important;
+    min-width: 80px !important;
+    flex: 1;
+    max-width: 120px;
+    height: 38px !important;
   }
+
+  .prices-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .price-item {
+    background: white !important;
+    padding: 12px 16px !important;
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border: 1px solid rgba(226, 232, 240, 0.6) !important;
+    flex-direction: row !important;
+  }
+
+  .price-display-bubble {
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+    min-width: 70px;
+  }
+}
+
+/* Premium Modal Grids & Aligned Items */
+.premium-grid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  padding: 16px !important;
+  background: #f8fafc !important;
+  border-radius: 12px !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.info-item.aligned,
+.data-item.aligned {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  width: 100% !important;
+  padding: 8px 0 !important;
+  border-bottom: 1px dashed #cbd5e1 !important;
+  flex-direction: row !important;
+}
+
+.info-item.aligned:last-child,
+.data-item.aligned:last-child {
+  border-bottom: none !important;
+}
+
+.info-label,
+.data-label {
+  font-weight: 700 !important;
+  color: #64748b !important;
+  font-size: 14px !important;
+}
+
+.info-value,
+.data-value {
+  color: #1e293b !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  text-align: left !important;
+}
+
+.price-display-bubble {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 50px;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+}
+
+.no-requests {
+  display: none !important;
 }

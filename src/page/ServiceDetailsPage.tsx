@@ -1371,7 +1371,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   )}
                 </div>
               )}
-                {service.id === '4' && feesConfig && serviceData.diploma_year && feesConfig.prices[serviceData.diploma_year] && (
+              {service.id === '4' && feesConfig && serviceData.diploma_year && feesConfig.prices[serviceData.diploma_year] && (
                 <div className="payment-amount">
                   <div className="selected-price">
                     <strong>

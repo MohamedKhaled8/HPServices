@@ -1560,7 +1560,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               </button>
                             </div>
                           ) : (
-                            <div className="price-display">{price} جنيه</div>
+                            <div className="price-display-bubble">{price} جنيه</div>
                           )}
                         </div>
                       ))}
@@ -1597,913 +1597,924 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               </div>
             )}
           </div>
-        </div>
+        </div >
       )}
 
-      {activeTab === 'certificates' && (
-        <div className="admin-content">
-          <div className="books-section">
-            <div className="section-header">
-              <h2>إعدادات خدمة الشهادات</h2>
-              <button type="button" onClick={handleSaveCertificatesConfig} className="save-button" disabled={isSaving === 'certificates'}>
-                <Save size={18} />
-                {isSaving === 'certificates' ? 'جاري الحفظ...' : 'حفظ'}
-              </button>
-            </div>
+      {
+        activeTab === 'certificates' && (
+          <div className="admin-content">
+            <div className="books-section">
+              <div className="section-header">
+                <h2>إعدادات خدمة الشهادات</h2>
+                <button type="button" onClick={handleSaveCertificatesConfig} className="save-button" disabled={isSaving === 'certificates'}>
+                  <Save size={18} />
+                  {isSaving === 'certificates' ? 'جاري الحفظ...' : 'حفظ'}
+                </button>
+              </div>
 
-            {certificatesConfig && (
-              <div className="book-config-form">
-                <div className="form-group">
-                  <label>الشهادات المتاحة</label>
-                  <div className="certificates-list">
-                    {certificatesConfig.certificates.map((certificate) => (
-                      <div key={certificate.id} className="certificate-item-admin">
-                        {editingCertificate?.id === certificate.id ? (
-                          <div className="certificate-edit-form">
-                            <div className="form-row">
-                              <div className="form-group">
-                                <label>اسم الشهادة</label>
-                                <input
-                                  type="text"
-                                  value={editingCertificate.name}
-                                  onChange={(e) => setEditingCertificate({ ...editingCertificate, name: e.target.value })}
-                                  className="config-input"
-                                />
+              {certificatesConfig && (
+                <div className="book-config-form">
+                  <div className="form-group">
+                    <label>الشهادات المتاحة</label>
+                    <div className="certificates-list">
+                      {certificatesConfig.certificates.map((certificate) => (
+                        <div key={certificate.id} className="certificate-item-admin">
+                          {editingCertificate?.id === certificate.id ? (
+                            <div className="certificate-edit-form">
+                              <div className="form-row">
+                                <div className="form-group">
+                                  <label>اسم الشهادة</label>
+                                  <input
+                                    type="text"
+                                    value={editingCertificate.name}
+                                    onChange={(e) => setEditingCertificate({ ...editingCertificate, name: e.target.value })}
+                                    className="config-input"
+                                  />
+                                </div>
+                                <div className="form-group">
+                                  <label>السعر (جنيه)</label>
+                                  <input
+                                    type="number"
+                                    value={editingCertificate.price}
+                                    onChange={(e) => setEditingCertificate({ ...editingCertificate, price: parseFloat(e.target.value) || 0 })}
+                                    className="config-input"
+                                    min="0"
+                                    step="0.01"
+                                  />
+                                </div>
                               </div>
                               <div className="form-group">
-                                <label>السعر (جنيه)</label>
-                                <input
-                                  type="number"
-                                  value={editingCertificate.price}
-                                  onChange={(e) => setEditingCertificate({ ...editingCertificate, price: parseFloat(e.target.value) || 0 })}
+                                <label>الصورة</label>
+                                <div className="image-upload-section">
+                                  <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
+                                    {editingCertificate.imageUrl ? (
+                                      <>
+                                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                                          <img src={editingCertificate.imageUrl} alt={editingCertificate.name} className="certificate-preview-image" />
+                                        </div>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                              handleImageUpload(editingCertificate.id, file);
+                                            }
+                                            if (e.target) {
+                                              (e.target as HTMLInputElement).value = '';
+                                            }
+                                          }}
+                                          className="file-input"
+                                          id={`certificate-image-input-${editingCertificate.id}`}
+                                          style={{ display: 'none' }}
+                                        />
+                                        <label
+                                          htmlFor={`certificate-image-input-${editingCertificate.id}`}
+                                          className="change-image-button"
+                                          title="تغيير الصورة"
+                                        >
+                                          <Pencil size={16} />
+                                          تغيير الصورة
+                                        </label>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div className="no-image-placeholder">
+                                          <Image size={48} />
+                                          <span>لا توجد صورة</span>
+                                        </div>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                              handleImageUpload(editingCertificate.id, file);
+                                            }
+                                            if (e.target) {
+                                              (e.target as HTMLInputElement).value = '';
+                                            }
+                                          }}
+                                          className="file-input"
+                                          id={`certificate-image-input-new-${editingCertificate.id}`}
+                                          style={{ display: 'none' }}
+                                        />
+                                        <label
+                                          htmlFor={`certificate-image-input-new-${editingCertificate.id}`}
+                                          className="change-image-button"
+                                          title="اختر صورة"
+                                        >
+                                          <Image size={16} />
+                                          اختر صورة
+                                        </label>
+                                      </>
+                                    )}
+                                  </div>
+                                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '8px', display: 'block' }}>
+                                    JPEG, PNG, JPG - الحد الأقصى 5 ميجابايت
+                                  </small>
+                                </div>
+                              </div>
+                              <div className="form-group">
+                                <label>النص الوصفي (اختياري)</label>
+                                <textarea
+                                  value={editingCertificate.description || ''}
+                                  onChange={(e) => setEditingCertificate({ ...editingCertificate, description: e.target.value })}
                                   className="config-input"
-                                  min="0"
-                                  step="0.01"
+                                  rows={4}
+                                  placeholder="النص الذي يظهر للمستخدم عند اختيار الشهادة"
                                 />
+                              </div>
+                              <div className="edit-actions">
+                                <button type="button" onClick={handleUpdateCertificate} className="save-button" disabled={isSaving === 'updateCertificate'}>
+                                  <Save size={16} />
+                                  {isSaving === 'updateCertificate' ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+                                </button>
+                                <button type="button" onClick={() => setEditingCertificate(null)} className="cancel-edit-button">
+                                  <X size={16} />
+                                  إلغاء
+                                </button>
                               </div>
                             </div>
-                            <div className="form-group">
-                              <label>الصورة</label>
-                              <div className="image-upload-section">
-                                <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
-                                  {editingCertificate.imageUrl ? (
-                                    <>
-                                      <div style={{ position: 'relative', display: 'inline-block' }}>
-                                        <img src={editingCertificate.imageUrl} alt={editingCertificate.name} className="certificate-preview-image" />
-                                      </div>
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            handleImageUpload(editingCertificate.id, file);
-                                          }
-                                          if (e.target) {
-                                            (e.target as HTMLInputElement).value = '';
-                                          }
-                                        }}
-                                        className="file-input"
-                                        id={`certificate-image-input-${editingCertificate.id}`}
-                                        style={{ display: 'none' }}
-                                      />
-                                      <label
-                                        htmlFor={`certificate-image-input-${editingCertificate.id}`}
-                                        className="change-image-button"
-                                        title="تغيير الصورة"
-                                      >
-                                        <Pencil size={16} />
-                                        تغيير الصورة
-                                      </label>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <div className="no-image-placeholder">
-                                        <Image size={48} />
-                                        <span>لا توجد صورة</span>
-                                      </div>
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            handleImageUpload(editingCertificate.id, file);
-                                          }
-                                          if (e.target) {
-                                            (e.target as HTMLInputElement).value = '';
-                                          }
-                                        }}
-                                        className="file-input"
-                                        id={`certificate-image-input-new-${editingCertificate.id}`}
-                                        style={{ display: 'none' }}
-                                      />
-                                      <label
-                                        htmlFor={`certificate-image-input-new-${editingCertificate.id}`}
-                                        className="change-image-button"
-                                        title="اختر صورة"
-                                      >
-                                        <Image size={16} />
-                                        اختر صورة
-                                      </label>
-                                    </>
+                          ) : (
+                            <>
+                              <div className="certificate-info">
+                                {certificate.imageUrl && (
+                                  <img src={certificate.imageUrl} alt={certificate.name} className="certificate-thumbnail" />
+                                )}
+                                <div className="certificate-details">
+                                  <h3>{certificate.name}</h3>
+                                  <div className="certificate-price">{certificate.price} جنيه</div>
+                                  {certificate.description && (
+                                    <div className="certificate-description-preview">
+                                      {certificate.description.substring(0, 100)}...
+                                    </div>
                                   )}
                                 </div>
-                                <small style={{ color: '#64748b', fontSize: '12px', marginTop: '8px', display: 'block' }}>
-                                  JPEG, PNG, JPG - الحد الأقصى 5 ميجابايت
-                                </small>
                               </div>
-                            </div>
-                            <div className="form-group">
-                              <label>النص الوصفي (اختياري)</label>
-                              <textarea
-                                value={editingCertificate.description || ''}
-                                onChange={(e) => setEditingCertificate({ ...editingCertificate, description: e.target.value })}
-                                className="config-input"
-                                rows={4}
-                                placeholder="النص الذي يظهر للمستخدم عند اختيار الشهادة"
-                              />
-                            </div>
-                            <div className="edit-actions">
-                              <button type="button" onClick={handleUpdateCertificate} className="save-button" disabled={isSaving === 'updateCertificate'}>
-                                <Save size={16} />
-                                {isSaving === 'updateCertificate' ? 'جاري الحفظ...' : 'حفظ التعديلات'}
-                              </button>
-                              <button type="button" onClick={() => setEditingCertificate(null)} className="cancel-edit-button">
-                                <X size={16} />
-                                إلغاء
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="certificate-info">
-                              {certificate.imageUrl && (
-                                <img src={certificate.imageUrl} alt={certificate.name} className="certificate-thumbnail" />
-                              )}
-                              <div className="certificate-details">
-                                <h3>{certificate.name}</h3>
-                                <div className="certificate-price">{certificate.price} جنيه</div>
-                                {certificate.description && (
-                                  <div className="certificate-description-preview">
-                                    {certificate.description.substring(0, 100)}...
-                                  </div>
-                                )}
+                              <div className="certificate-actions">
+                                <button
+                                  onClick={() => handleEditCertificate(certificate)}
+                                  className="edit-button"
+                                  title="تعديل"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveCertificate(certificate.id)}
+                                  className="remove-assignment-button"
+                                  title="حذف"
+                                >
+                                  <X size={16} />
+                                </button>
                               </div>
-                            </div>
-                            <div className="certificate-actions">
-                              <button
-                                onClick={() => handleEditCertificate(certificate)}
-                                className="edit-button"
-                                title="تعديل"
-                              >
-                                <Edit2 size={16} />
-                              </button>
-                              <button
-                                onClick={() => handleRemoveCertificate(certificate.id)}
-                                className="remove-assignment-button"
-                                title="حذف"
-                              >
-                                <X size={16} />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="add-certificate-section">
-                    <h3>إضافة شهادة جديدة</h3>
-                    <div className="add-certificate-form">
-                      <div className="form-row">
-                        <div className="form-group">
-                          <label>اسم الشهادة</label>
-                          <input
-                            type="text"
-                            placeholder="اسم الشهادة"
-                            value={newCertificateName}
-                            onChange={(e) => setNewCertificateName(e.target.value)}
-                            className="config-input"
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>السعر (جنيه)</label>
-                          <input
-                            type="number"
-                            placeholder="السعر"
-                            value={newCertificatePrice}
-                            onChange={(e) => setNewCertificatePrice(e.target.value)}
-                            className="config-input"
-                            min="0"
-                            step="0.01"
-                          />
-                        </div>
-                      </div>
-                      <div className="form-group">
-                        <label>النص الوصفي (اختياري)</label>
-                        <textarea
-                          placeholder="النص الذي يظهر للمستخدم"
-                          value={newCertificateDescription}
-                          onChange={(e) => setNewCertificateDescription(e.target.value)}
-                          className="config-input"
-                          rows={3}
-                        />
-                      </div>
-                      <button onClick={handleAddCertificate} className="add-price-button">
-                        إضافة شهادة
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>أرقام الدفع</label>
-                  <div className="payment-numbers">
-                    <div className="payment-item">
-                      <label>instaPay</label>
-                      <input
-                        type="text"
-                        value={certificatesConfig.paymentMethods.instaPay}
-                        onChange={(e) => setCertificatesConfig({
-                          ...certificatesConfig,
-                          paymentMethods: {
-                            ...certificatesConfig.paymentMethods,
-                            instaPay: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                    <div className="payment-item">
-                      <label>محفظة الكاش</label>
-                      <input
-                        type="text"
-                        value={certificatesConfig.paymentMethods.cashWallet}
-                        onChange={(e) => setCertificatesConfig({
-                          ...certificatesConfig,
-                          paymentMethods: {
-                            ...certificatesConfig.paymentMethods,
-                            cashWallet: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'finalReview' && (
-        <div className="admin-content">
-          <div className="books-section">
-            <div className="section-header">
-              <h2>إعدادات المراجعة النهائية</h2>
-              <button type="button" onClick={handleSaveFinalReviewConfig} className="save-button" disabled={isSaving === 'finalReview'}>
-                <Save size={18} />
-                {isSaving === 'finalReview' ? 'جاري الحفظ...' : 'حفظ'}
-              </button>
-            </div>
-
-            {finalReviewConfig && (
-              <div className="book-config-form">
-                <div className="form-group">
-                  <label>اسم السيكشن</label>
-                  <input
-                    type="text"
-                    value={finalReviewConfig.serviceName}
-                    onChange={(e) => setFinalReviewConfig({ ...finalReviewConfig, serviceName: e.target.value })}
-                    className="config-input"
-                    placeholder="المراجعة النهائية"
-                  />
-                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
-                    يمكنك تغيير اسم السيكشن ليظهر للمستخدمين
-                  </small>
-                </div>
-
-                <div className="form-group">
-                  <label>مبلغ الدفع (جنيه)</label>
-                  <input
-                    type="number"
-                    value={finalReviewConfig.paymentAmount}
-                    onChange={(e) => setFinalReviewConfig({
-                      ...finalReviewConfig,
-                      paymentAmount: parseFloat(e.target.value) || 0
-                    })}
-                    className="config-input"
-                    min="0"
-                    step="0.01"
-                    placeholder="500"
-                  />
-                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
-                    المبلغ المطلوب دفعه للمراجعة النهائية
-                  </small>
-                </div>
-
-                <div className="form-group">
-                  <label>أرقام الدفع</label>
-                  <div className="payment-numbers">
-                    <div className="payment-item">
-                      <label>instaPay</label>
-                      <input
-                        type="text"
-                        value={finalReviewConfig.paymentMethods.instaPay}
-                        onChange={(e) => setFinalReviewConfig({
-                          ...finalReviewConfig,
-                          paymentMethods: {
-                            ...finalReviewConfig.paymentMethods,
-                            instaPay: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                    <div className="payment-item">
-                      <label>محفظة الكاش</label>
-                      <input
-                        type="text"
-                        value={finalReviewConfig.paymentMethods.cashWallet}
-                        onChange={(e) => setFinalReviewConfig({
-                          ...finalReviewConfig,
-                          paymentMethods: {
-                            ...finalReviewConfig.paymentMethods,
-                            cashWallet: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group" style={{ marginTop: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#1e293b' }}>
-                    البيانات المطلوبة من المستخدم
-                  </h3>
-                  <div style={{ display: 'grid', gap: '8px', fontSize: '14px', color: '#475569' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#ef4444' }}>*</span>
-                      <span>الاسم الرباعي</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#ef4444' }}>*</span>
-                      <span>رقم هاتف (واتس اب)</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#ef4444' }}>*</span>
-                      <span>المسار</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#ef4444' }}>*</span>
-                      <span>العنوان</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
-                      <span style={{ color: '#10b981' }}>✓</span>
-                      <span>رفع إيصال الدفع</span>
-                    </div>
-                  </div>
-                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '12px', display: 'block' }}>
-                    هذه البيانات ثابتة ويتم جمعها تلقائياً من المستخدم عند التقديم
-                  </small>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'graduationProject' && (
-        <div className="admin-content">
-          <div className="books-section">
-            <div className="section-header">
-              <h2>إعدادات مشروع التخرج</h2>
-              <button type="button" onClick={handleSaveGraduationProjectConfig} className="save-button" disabled={isSaving === 'graduationProject'}>
-                <Save size={18} />
-                {isSaving === 'graduationProject' ? 'جاري الحفظ...' : 'حفظ'}
-              </button>
-            </div>
-
-            {graduationProjectConfig && (
-              <div className="book-config-form">
-                <div className="form-group">
-                  <label>اسم السيكشن</label>
-                  <input
-                    type="text"
-                    value={graduationProjectConfig.serviceName}
-                    onChange={(e) => setGraduationProjectConfig({ ...graduationProjectConfig, serviceName: e.target.value })}
-                    className="config-input"
-                    placeholder="مشروع التخرج"
-                  />
-                </div>
-
-                {/* Features Section */}
-                <div className="form-group">
-                  <label>المميزات</label>
-                  <div className="features-admin-list">
-                    {graduationProjectConfig.features.map((feature, index) => (
-                      <div key={index} className="feature-admin-item">
-                        <span>{feature}</span>
-                        <button
-                          onClick={() => handleRemoveGraduationProjectFeature(index)}
-                          className="remove-price-button"
-                          title="حذف"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="add-price-form" style={{ marginTop: '12px' }}>
-                    <input
-                      type="text"
-                      placeholder="أضف ميزة جديدة"
-                      value={newGradProjectFeature}
-                      onChange={(e) => setNewGradProjectFeature(e.target.value)}
-                      className="config-input"
-                    />
-                    <button onClick={handleAddGraduationProjectFeature} className="add-price-button">
-                      إضافة ميزة
-                    </button>
-                  </div>
-                </div>
-
-                {/* Prices Section */}
-                <div className="form-group">
-                  <label>الأسعار</label>
-                  <div className="prices-grid">
-                    {(graduationProjectConfig.prices || []).map((priceItem) => (
-                      <div key={priceItem.id} className="price-item">
-                        <div className="price-item-info">
-                          <span className="price-amount">{priceItem.price} جنيه</span>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveGraduationProjectPrice(priceItem.id)}
-                          className="remove-price-button"
-                          title="حذف"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="add-price-section" style={{ marginTop: '16px' }}>
-                    <div className="add-price-form">
-                      <input
-                        type="number"
-                        placeholder="السعر (جنيه)"
-                        value={newGradProjectPriceAmount}
-                        onChange={(e) => setNewGradProjectPriceAmount(e.target.value)}
-                        className="config-input"
-                        min="0"
-                      />
-                      <button onClick={handleAddGraduationProjectPrice} className="add-price-button">
-                        إضافة سعر
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Payment Methods */}
-                <div className="form-group">
-                  <label>أرقام الدفع</label>
-                  <div className="payment-numbers">
-                    <div className="payment-item">
-                      <label>instaPay</label>
-                      <input
-                        type="text"
-                        value={graduationProjectConfig.paymentMethods.instaPay}
-                        onChange={(e) => setGraduationProjectConfig({
-                          ...graduationProjectConfig,
-                          paymentMethods: {
-                            ...graduationProjectConfig.paymentMethods,
-                            instaPay: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                    <div className="payment-item">
-                      <label>محفظة الكاش</label>
-                      <input
-                        type="text"
-                        value={graduationProjectConfig.paymentMethods.cashWallet}
-                        onChange={(e) => setGraduationProjectConfig({
-                          ...graduationProjectConfig,
-                          paymentMethods: {
-                            ...graduationProjectConfig.paymentMethods,
-                            cashWallet: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'users' && (
-        <div className="admin-content">
-          <div className="users-section">
-            <h2>المستخدمين ({allStudents.length})</h2>
-
-            {/* Search Bar */}
-            <div className="search-bar">
-              <div className="search-input-wrapper">
-                <Search size={20} className="search-icon" />
-                <input
-                  type="text"
-                  placeholder="ابحث بأي بيانات: الاسم، الإيميل، رقم الهاتف، الرقم القومي، نوع الدبلومة، المسار، العنوان..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="search-input"
-                />
-              </div>
-            </div>
-
-            {/* Users List */}
-            <div className="users-grid">
-              {allStudents.length === 0 ? (
-                <div className="no-users-message">
-                  <p>لا يوجد مستخدمين</p>
-                </div>
-              ) : (
-                allStudents.map((student) => {
-                  const studentRequests = getStudentRequests(student.id || '');
-                  // Check if this student matches the search criteria
-                  const isExactMatch = searchTerm.trim() && (
-                    (student.nationalID && student.nationalID === searchTerm.trim()) ||
-                    (student.whatsappNumber && student.whatsappNumber.includes(searchTerm.trim())) ||
-                    (student.email && student.email.toLowerCase() === searchTerm.trim().toLowerCase())
-                  );
-                  return (
-                    <div key={student.id} className={`user-card ${isExactMatch ? 'highlighted-match' : ''}`}>
-                      <div className="user-card-header">
-                        <div className="user-info">
-                          <h3>{student.fullNameArabic}</h3>
-                          <span className="user-email">{student.email}</span>
-                        </div>
-                        <button
-                          onClick={() => handleEditStudent(student)}
-                          className="edit-user-button"
-                          title="تعديل البيانات"
-                        >
-                          <Edit2 size={18} />
-                        </button>
-                      </div>
-
-                      <div className="user-card-body">
-                        <div className="user-details-grid">
-                          <div className="detail-item">
-                            <span className="detail-label">الاسم بالإنجليزية:</span>
-                            <span className="detail-value">{student.vehicleNameEnglish || 'غير متاح'}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">رقم الواتساب:</span>
-                            <span className="detail-value">{student.whatsappNumber || 'غير متاح'}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">الرقم القومي:</span>
-                            <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">نوع الدبلومة:</span>
-                            <span className="detail-value">{student.diplomaType || 'غير متاح'}</span>
-                          </div>
-
-                          <div className="detail-item">
-                            <span className="detail-label">سنة الدبلومة:</span>
-                            <span className="detail-value">{student.diplomaYear || 'غير متاح'}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">المحافظة:</span>
-                            <span className="detail-value">{student.address?.governorate || 'غير متاح'}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">المدينة:</span>
-                            <span className="detail-value">{student.address?.city || 'غير متاح'}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">الشارع:</span>
-                            <span className="detail-value">{student.address?.street || 'غير متاح'}</span>
-                          </div>
-                          <div className="detail-item">
-                            <span className="detail-label">رقم المبنى:</span>
-                            <span className="detail-value">{student.address?.building || 'غير متاح'}</span>
-                          </div>
-                        </div>
-
-                        <div className="user-requests-section">
-                          <h4>الطلبات ({studentRequests.length})</h4>
-                          {studentRequests.length === 0 ? (
-                            <p className="no-requests">لا توجد طلبات</p>
-                          ) : (
-                            <div className="user-requests-list">
-                              {studentRequests.map((request) => (
-                                <div key={request.id} className="user-request-item">
-                                  <div className="request-item-header">
-                                    <span className="request-service-name">
-                                      {getServiceName(request.serviceId)}
-                                    </span>
-                                    {getStatusBadge(request.status)}
-                                  </div>
-                                  <div className="request-item-date">
-                                    {request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : 'غير متاح'}
-                                  </div>
-                                  <button
-                                    onClick={() => setSelectedRequest(request)}
-                                    className="view-request-button"
-                                  >
-                                    <Eye size={16} />
-                                    عرض التفاصيل
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
+                            </>
                           )}
                         </div>
+                      ))}
+                    </div>
+
+                    <div className="add-certificate-section">
+                      <h3>إضافة شهادة جديدة</h3>
+                      <div className="add-certificate-form">
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label>اسم الشهادة</label>
+                            <input
+                              type="text"
+                              placeholder="اسم الشهادة"
+                              value={newCertificateName}
+                              onChange={(e) => setNewCertificateName(e.target.value)}
+                              className="config-input"
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>السعر (جنيه)</label>
+                            <input
+                              type="number"
+                              placeholder="السعر"
+                              value={newCertificatePrice}
+                              onChange={(e) => setNewCertificatePrice(e.target.value)}
+                              className="config-input"
+                              min="0"
+                              step="0.01"
+                            />
+                          </div>
+                        </div>
+                        <div className="form-group">
+                          <label>النص الوصفي (اختياري)</label>
+                          <textarea
+                            placeholder="النص الذي يظهر للمستخدم"
+                            value={newCertificateDescription}
+                            onChange={(e) => setNewCertificateDescription(e.target.value)}
+                            className="config-input"
+                            rows={3}
+                          />
+                        </div>
+                        <button onClick={handleAddCertificate} className="add-price-button">
+                          إضافة شهادة
+                        </button>
                       </div>
                     </div>
-                  );
-                })
+                  </div>
+
+                  <div className="form-group">
+                    <label>أرقام الدفع</label>
+                    <div className="payment-numbers">
+                      <div className="payment-item">
+                        <label>instaPay</label>
+                        <input
+                          type="text"
+                          value={certificatesConfig.paymentMethods.instaPay}
+                          onChange={(e) => setCertificatesConfig({
+                            ...certificatesConfig,
+                            paymentMethods: {
+                              ...certificatesConfig.paymentMethods,
+                              instaPay: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      </div>
+                      <div className="payment-item">
+                        <label>محفظة الكاش</label>
+                        <input
+                          type="text"
+                          value={certificatesConfig.paymentMethods.cashWallet}
+                          onChange={(e) => setCertificatesConfig({
+                            ...certificatesConfig,
+                            paymentMethods: {
+                              ...certificatesConfig.paymentMethods,
+                              cashWallet: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
+
+      {
+        activeTab === 'finalReview' && (
+          <div className="admin-content">
+            <div className="books-section">
+              <div className="section-header">
+                <h2>إعدادات المراجعة النهائية</h2>
+                <button type="button" onClick={handleSaveFinalReviewConfig} className="save-button" disabled={isSaving === 'finalReview'}>
+                  <Save size={18} />
+                  {isSaving === 'finalReview' ? 'جاري الحفظ...' : 'حفظ'}
+                </button>
+              </div>
+
+              {finalReviewConfig && (
+                <div className="book-config-form">
+                  <div className="form-group">
+                    <label>اسم السيكشن</label>
+                    <input
+                      type="text"
+                      value={finalReviewConfig.serviceName}
+                      onChange={(e) => setFinalReviewConfig({ ...finalReviewConfig, serviceName: e.target.value })}
+                      className="config-input"
+                      placeholder="المراجعة النهائية"
+                    />
+                    <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                      يمكنك تغيير اسم السيكشن ليظهر للمستخدمين
+                    </small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>مبلغ الدفع (جنيه)</label>
+                    <input
+                      type="number"
+                      value={finalReviewConfig.paymentAmount}
+                      onChange={(e) => setFinalReviewConfig({
+                        ...finalReviewConfig,
+                        paymentAmount: parseFloat(e.target.value) || 0
+                      })}
+                      className="config-input"
+                      min="0"
+                      step="0.01"
+                      placeholder="500"
+                    />
+                    <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                      المبلغ المطلوب دفعه للمراجعة النهائية
+                    </small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>أرقام الدفع</label>
+                    <div className="payment-numbers">
+                      <div className="payment-item">
+                        <label>instaPay</label>
+                        <input
+                          type="text"
+                          value={finalReviewConfig.paymentMethods.instaPay}
+                          onChange={(e) => setFinalReviewConfig({
+                            ...finalReviewConfig,
+                            paymentMethods: {
+                              ...finalReviewConfig.paymentMethods,
+                              instaPay: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      </div>
+                      <div className="payment-item">
+                        <label>محفظة الكاش</label>
+                        <input
+                          type="text"
+                          value={finalReviewConfig.paymentMethods.cashWallet}
+                          onChange={(e) => setFinalReviewConfig({
+                            ...finalReviewConfig,
+                            paymentMethods: {
+                              ...finalReviewConfig.paymentMethods,
+                              cashWallet: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginTop: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', color: '#1e293b' }}>
+                      البيانات المطلوبة من المستخدم
+                    </h3>
+                    <div style={{ display: 'grid', gap: '8px', fontSize: '14px', color: '#475569' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: '#ef4444' }}>*</span>
+                        <span>الاسم الرباعي</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: '#ef4444' }}>*</span>
+                        <span>رقم هاتف (واتس اب)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: '#ef4444' }}>*</span>
+                        <span>المسار</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: '#ef4444' }}>*</span>
+                        <span>العنوان</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
+                        <span style={{ color: '#10b981' }}>✓</span>
+                        <span>رفع إيصال الدفع</span>
+                      </div>
+                    </div>
+                    <small style={{ color: '#64748b', fontSize: '12px', marginTop: '12px', display: 'block' }}>
+                      هذه البيانات ثابتة ويتم جمعها تلقائياً من المستخدم عند التقديم
+                    </small>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {
+        activeTab === 'graduationProject' && (
+          <div className="admin-content">
+            <div className="books-section">
+              <div className="section-header">
+                <h2>إعدادات مشروع التخرج</h2>
+                <button type="button" onClick={handleSaveGraduationProjectConfig} className="save-button" disabled={isSaving === 'graduationProject'}>
+                  <Save size={18} />
+                  {isSaving === 'graduationProject' ? 'جاري الحفظ...' : 'حفظ'}
+                </button>
+              </div>
+
+              {graduationProjectConfig && (
+                <div className="book-config-form">
+                  <div className="form-group">
+                    <label>اسم السيكشن</label>
+                    <input
+                      type="text"
+                      value={graduationProjectConfig.serviceName}
+                      onChange={(e) => setGraduationProjectConfig({ ...graduationProjectConfig, serviceName: e.target.value })}
+                      className="config-input"
+                      placeholder="مشروع التخرج"
+                    />
+                  </div>
+
+                  {/* Features Section */}
+                  <div className="form-group">
+                    <label>المميزات</label>
+                    <div className="features-admin-list">
+                      {graduationProjectConfig.features.map((feature, index) => (
+                        <div key={index} className="feature-admin-item">
+                          <span>{feature}</span>
+                          <button
+                            onClick={() => handleRemoveGraduationProjectFeature(index)}
+                            className="remove-price-button"
+                            title="حذف"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="add-price-form" style={{ marginTop: '12px' }}>
+                      <input
+                        type="text"
+                        placeholder="أضف ميزة جديدة"
+                        value={newGradProjectFeature}
+                        onChange={(e) => setNewGradProjectFeature(e.target.value)}
+                        className="config-input"
+                      />
+                      <button onClick={handleAddGraduationProjectFeature} className="add-price-button">
+                        إضافة ميزة
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Prices Section */}
+                  <div className="form-group">
+                    <label>الأسعار</label>
+                    <div className="prices-grid">
+                      {(graduationProjectConfig.prices || []).map((priceItem) => (
+                        <div key={priceItem.id} className="price-item">
+                          <div className="price-item-info">
+                            <span className="price-amount">{priceItem.price} جنيه</span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveGraduationProjectPrice(priceItem.id)}
+                            className="remove-price-button"
+                            title="حذف"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="add-price-section" style={{ marginTop: '16px' }}>
+                      <div className="add-price-form">
+                        <input
+                          type="number"
+                          placeholder="السعر (جنيه)"
+                          value={newGradProjectPriceAmount}
+                          onChange={(e) => setNewGradProjectPriceAmount(e.target.value)}
+                          className="config-input"
+                          min="0"
+                        />
+                        <button onClick={handleAddGraduationProjectPrice} className="add-price-button">
+                          إضافة سعر
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Payment Methods */}
+                  <div className="form-group">
+                    <label>أرقام الدفع</label>
+                    <div className="payment-numbers">
+                      <div className="payment-item">
+                        <label>instaPay</label>
+                        <input
+                          type="text"
+                          value={graduationProjectConfig.paymentMethods.instaPay}
+                          onChange={(e) => setGraduationProjectConfig({
+                            ...graduationProjectConfig,
+                            paymentMethods: {
+                              ...graduationProjectConfig.paymentMethods,
+                              instaPay: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      </div>
+                      <div className="payment-item">
+                        <label>محفظة الكاش</label>
+                        <input
+                          type="text"
+                          value={graduationProjectConfig.paymentMethods.cashWallet}
+                          onChange={(e) => setGraduationProjectConfig({
+                            ...graduationProjectConfig,
+                            paymentMethods: {
+                              ...graduationProjectConfig.paymentMethods,
+                              cashWallet: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {
+        activeTab === 'users' && (
+          <div className="admin-content">
+            <div className="users-section">
+              <h2>المستخدمين ({allStudents.length})</h2>
+
+              {/* Search Bar */}
+              <div className="search-bar">
+                <div className="search-input-wrapper">
+                  <Search size={20} className="search-icon" />
+                  <input
+                    type="text"
+                    placeholder="ابحث بأي بيانات: الاسم، الإيميل، رقم الهاتف، الرقم القومي، نوع الدبلومة، المسار، العنوان..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="search-input"
+                  />
+                </div>
+              </div>
+
+              {/* Users List */}
+              <div className="users-grid">
+                {allStudents.length === 0 ? (
+                  <div className="no-users-message">
+                    <p>لا يوجد مستخدمين</p>
+                  </div>
+                ) : (
+                  allStudents.map((student) => {
+                    const studentRequests = getStudentRequests(student.id || '');
+                    // Check if this student matches the search criteria
+                    const isExactMatch = searchTerm.trim() && (
+                      (student.nationalID && student.nationalID === searchTerm.trim()) ||
+                      (student.whatsappNumber && student.whatsappNumber.includes(searchTerm.trim())) ||
+                      (student.email && student.email.toLowerCase() === searchTerm.trim().toLowerCase())
+                    );
+                    return (
+                      <div key={student.id} className={`user-card ${isExactMatch ? 'highlighted-match' : ''}`}>
+                        <div className="user-card-header">
+                          <div className="user-info">
+                            <h3>{student.fullNameArabic}</h3>
+                            <span className="user-email">{student.email}</span>
+                          </div>
+                          <button
+                            onClick={() => handleEditStudent(student)}
+                            className="edit-user-button"
+                            title="تعديل البيانات"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                        </div>
+
+                        <div className="user-card-body">
+                          <div className="user-details-grid">
+                            <div className="detail-item">
+                              <span className="detail-label">الاسم بالإنجليزية:</span>
+                              <span className="detail-value">{student.vehicleNameEnglish || 'غير متاح'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">رقم الواتساب:</span>
+                              <span className="detail-value">{student.whatsappNumber || 'غير متاح'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">الرقم القومي:</span>
+                              <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">نوع الدبلومة:</span>
+                              <span className="detail-value">{student.diplomaType || 'غير متاح'}</span>
+                            </div>
+
+                            <div className="detail-item">
+                              <span className="detail-label">سنة الدبلومة:</span>
+                              <span className="detail-value">{student.diplomaYear || 'غير متاح'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">المحافظة:</span>
+                              <span className="detail-value">{student.address?.governorate || 'غير متاح'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">المدينة:</span>
+                              <span className="detail-value">{student.address?.city || 'غير متاح'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">الشارع:</span>
+                              <span className="detail-value">{student.address?.street || 'غير متاح'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">رقم المبنى:</span>
+                              <span className="detail-value">{student.address?.building || 'غير متاح'}</span>
+                            </div>
+                          </div>
+
+                          <div className={`user-requests-section ${studentRequests.length === 0 ? 'no-data' : ''}`}>
+                            {studentRequests.length > 0 && (
+                              <>
+                                <h4>الطلبات ({studentRequests.length})</h4>
+                                <div className="user-requests-list">
+                                  {studentRequests.map((request) => (
+                                    <div key={request.id} className="user-request-item">
+                                      <div className="request-item-header">
+                                        <span className="request-service-name">
+                                          {getServiceName(request.serviceId)}
+                                        </span>
+                                        {getStatusBadge(request.status)}
+                                      </div>
+                                      <div className="request-item-date">
+                                        {request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : 'غير متاح'}
+                                      </div>
+                                      <button
+                                        onClick={() => setSelectedRequest(request)}
+                                        className="view-request-button"
+                                      >
+                                        <Eye size={16} />
+                                        عرض التفاصيل
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       {/* Edit Student Modal */}
-      {isEditingStudent && editedStudentData && (
-        <div className="request-modal-overlay" onClick={() => {
-          setIsEditingStudent(false);
-        }}>
-          <div className="request-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>تعديل بيانات المستخدم</h2>
-              <button
-                onClick={() => {
-                  setIsEditingStudent(false);
-                }}
-                className="close-button"
-              >
-                <X size={24} />
-              </button>
-            </div>
+      {
+        isEditingStudent && editedStudentData && (
+          <div className="request-modal-overlay" onClick={() => {
+            setIsEditingStudent(false);
+          }}>
+            <div className="request-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>تعديل بيانات المستخدم</h2>
+                <button
+                  onClick={() => {
+                    setIsEditingStudent(false);
+                  }}
+                  className="close-button"
+                >
+                  <X size={24} />
+                </button>
+              </div>
 
-            <div className="modal-content">
-              <div className="edit-student-form">
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>الاسم بالعربية *</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.fullNameArabic || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        fullNameArabic: e.target.value
-                      })}
-                      className="form-input"
-                    />
+              <div className="modal-content">
+                <div className="edit-student-form">
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>الاسم بالعربية *</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.fullNameArabic || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          fullNameArabic: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>الاسم بالإنجليزية</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.vehicleNameEnglish || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          vehicleNameEnglish: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>الاسم بالإنجليزية</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.vehicleNameEnglish || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        vehicleNameEnglish: e.target.value
-                      })}
-                      className="form-input"
-                    />
-                  </div>
-                </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>رقم الواتساب *</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.whatsappNumber || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        whatsappNumber: e.target.value
-                      })}
-                      className="form-input"
-                    />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>رقم الواتساب *</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.whatsappNumber || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          whatsappNumber: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>الرقم القومي *</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.nationalID || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          nationalID: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>الرقم القومي *</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.nationalID || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        nationalID: e.target.value
-                      })}
-                      className="form-input"
-                    />
-                  </div>
-                </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>الإيميل *</label>
-                    <input
-                      type="email"
-                      value={editedStudentData.email || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        email: e.target.value
-                      })}
-                      className="form-input"
-                    />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>الإيميل *</label>
+                      <input
+                        type="email"
+                        value={editedStudentData.email || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          email: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>نوع الدبلومة</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.diplomaType || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          diplomaType: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>نوع الدبلومة</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.diplomaType || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        diplomaType: e.target.value
-                      })}
-                      className="form-input"
-                    />
-                  </div>
-                </div>
 
-                <div className="form-row">
+                  <div className="form-row">
 
-                  <div className="form-group">
-                    <label>سنة الدبلومة</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.diplomaYear || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        diplomaYear: e.target.value
-                      })}
-                      className="form-input"
-                    />
+                    <div className="form-group">
+                      <label>سنة الدبلومة</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.diplomaYear || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          diplomaYear: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>المحافظة</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.address?.governorate || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        address: {
-                          ...editedStudentData.address,
-                          governorate: e.target.value
-                        }
-                      })}
-                      className="form-input"
-                    />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>المحافظة</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.address?.governorate || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          address: {
+                            ...editedStudentData.address,
+                            governorate: e.target.value
+                          }
+                        })}
+                        className="form-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>المدينة</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.address?.city || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          address: {
+                            ...editedStudentData.address,
+                            city: e.target.value
+                          }
+                        })}
+                        className="form-input"
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>المدينة</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.address?.city || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        address: {
-                          ...editedStudentData.address,
-                          city: e.target.value
-                        }
-                      })}
-                      className="form-input"
-                    />
-                  </div>
-                </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>الشارع</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.address?.street || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        address: {
-                          ...editedStudentData.address,
-                          street: e.target.value
-                        }
-                      })}
-                      className="form-input"
-                    />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>الشارع</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.address?.street || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          address: {
+                            ...editedStudentData.address,
+                            street: e.target.value
+                          }
+                        })}
+                        className="form-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>رقم المبنى</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.address?.building || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          address: {
+                            ...editedStudentData.address,
+                            building: e.target.value
+                          }
+                        })}
+                        className="form-input"
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>رقم المبنى</label>
-                    <input
-                      type="text"
-                      value={editedStudentData.address?.building || ''}
-                      onChange={(e) => setEditedStudentData({
-                        ...editedStudentData,
-                        address: {
-                          ...editedStudentData.address,
-                          building: e.target.value
-                        }
-                      })}
-                      className="form-input"
-                    />
-                  </div>
-                </div>
 
-                <div className="modal-actions">
-                  <button type="button" onClick={handleSaveStudent} className="save-button" disabled={isSaving === 'student'}>
-                    <Save size={18} />
-                    {isSaving === 'student' ? 'جاري الحفظ...' : 'حفظ التغييرات'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditingStudent(false);
-                    }}
-                    className="cancel-button"
-                  >
-                    إلغاء
-                  </button>
+                  <div className="modal-actions">
+                    <button type="button" onClick={handleSaveStudent} className="save-button" disabled={isSaving === 'student'}>
+                      <Save size={18} />
+                      {isSaving === 'student' ? 'جاري الحفظ...' : 'حفظ التغييرات'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingStudent(false);
+                      }}
+                      className="cancel-button"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {selectedRequest && (
-        <div className="request-modal-overlay" onClick={() => setSelectedRequest(null)}>
-          <div className="request-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>تفاصيل الطلب</h2>
-              <button onClick={() => setSelectedRequest(null)} className="close-button">
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="modal-content">
-              <div className="modal-section">
-                <h3>معلومات المستخدم</h3>
-                {students[selectedRequest.studentId] && (
-                  <div className="user-info-grid">
-                    <div className="info-item">
-                      <span className="info-label">الاسم:</span>
-                      <span className="info-value">{students[selectedRequest.studentId].fullNameArabic}</span>
-                    </div>
-                    <div className="info-item">
-                      <span className="info-label">البريد:</span>
-                      <span className="info-value">{students[selectedRequest.studentId].email}</span>
-                    </div>
-                    <div className="info-item">
-                      <span className="info-label">واتساب:</span>
-                      <span className="info-value">{students[selectedRequest.studentId].whatsappNumber}</span>
-                    </div>
-                  </div>
-                )}
+      {
+        selectedRequest && (
+          <div className="request-modal-overlay" onClick={() => setSelectedRequest(null)}>
+            <div className="request-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>تفاصيل الطلب</h2>
+                <button onClick={() => setSelectedRequest(null)} className="close-button">
+                  <X size={24} />
+                </button>
               </div>
 
-              <div className="modal-section">
-                <h3>بيانات الطلب</h3>
-                <div className="request-data-grid">
-                  {Object.entries(selectedRequest.data).map(([key, value]) => (
-                    <div key={key} className="data-item">
-                      <span className="data-label">{key}:</span>
-                      <span className="data-value">{String(value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {selectedRequest.documents && selectedRequest.documents.length > 0 && (
+              <div className="modal-content">
                 <div className="modal-section">
-                  <h3>المرفقات ({selectedRequest.documents.length})</h3>
-                  <div className="documents-grid">
-                    {selectedRequest.documents.map((doc, index) => (
-                      <div key={index} className="document-item">
-                        {doc.type !== 'PDF' && doc.url ? (
-                          <img
-                            src={doc.url}
-                            alt={doc.name}
-                            className="document-image"
-                            onClick={() => {
-                              const img = document.createElement('img');
-                              img.src = doc.url;
-                              img.onload = () => {
-                                const newWindow = window.open('', '_blank');
-                                if (newWindow) {
-                                  newWindow.document.write(`
+                  <h3>معلومات المستخدم</h3>
+                  {students[selectedRequest.studentId] && (
+                    <div className="user-info-grid premium-grid">
+                      <div className="info-item aligned">
+                        <span className="info-label">الاسم:</span>
+                        <span className="info-value">{students[selectedRequest.studentId].fullNameArabic}</span>
+                      </div>
+                      <div className="info-item aligned">
+                        <span className="info-label">البريد:</span>
+                        <span className="info-value">{students[selectedRequest.studentId].email}</span>
+                      </div>
+                      <div className="info-item aligned">
+                        <span className="info-label">واتساب:</span>
+                        <span className="info-value">{students[selectedRequest.studentId].whatsappNumber}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="modal-section">
+                  <h3>بيانات الطلب</h3>
+                  <div className="request-data-grid premium-grid">
+                    {Object.entries(selectedRequest.data).map(([key, value]) => (
+                      <div key={key} className="data-item aligned">
+                        <span className="data-label">{key}:</span>
+                        <span className="data-value">{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedRequest.documents && selectedRequest.documents.length > 0 && (
+                  <div className="modal-section">
+                    <h3>المرفقات ({selectedRequest.documents.length})</h3>
+                    <div className="documents-grid">
+                      {selectedRequest.documents.map((doc, index) => (
+                        <div key={index} className="document-item">
+                          {doc.type !== 'PDF' && doc.url ? (
+                            <img
+                              src={doc.url}
+                              alt={doc.name}
+                              className="document-image"
+                              onClick={() => {
+                                const img = document.createElement('img');
+                                img.src = doc.url;
+                                img.onload = () => {
+                                  const newWindow = window.open('', '_blank');
+                                  if (newWindow) {
+                                    newWindow.document.write(`
                                     <html>
                                       <head>
                                         <title>${doc.name}</title>
@@ -2517,315 +2528,322 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       </body>
                                     </html>
                                   `);
-                                }
-                              };
-                            }}
-                            style={{ cursor: 'pointer' }}
+                                  }
+                                };
+                              }}
+                              style={{ cursor: 'pointer' }}
+                            />
+                          ) : (
+                            <div className="document-placeholder">PDF</div>
+                          )}
+                          <span className="document-name">{doc.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {
+        activeTab === 'digitalTransformation' && (
+          <div className="admin-content digital-transformation-section">
+            <div className="books-section">
+              <div className="section-header">
+                <h2>إعدادات خدمة التحول الرقمي</h2>
+                <button type="button" onClick={handleSaveDigitalTransformationConfig} className="save-button" disabled={isSaving === 'digitalTransformation'}>
+                  <Save size={18} />
+                  {isSaving === 'digitalTransformation' ? 'جاري الحفظ...' : 'حفظ'}
+                </button>
+              </div>
+
+              {digitalTransformationConfig && (
+                <div className="book-config-form">
+                  <div className="form-group">
+                    <label>أنواع التحول الرقمي</label>
+                    <div className="transformation-types-list">
+                      {digitalTransformationConfig.transformationTypes.length > 0 ? (
+                        digitalTransformationConfig.transformationTypes.map((type) => (
+                          <div key={type.id} className="transformation-type-item">
+                            <div className="type-info">
+                              <div className="type-name">{type.name}</div>
+                              <div className="type-price">{type.price} جنيه</div>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveTransformationType(type.id)}
+                              className="remove-assignment-button"
+                              title="حذف"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="no-items-message">لا توجد أنواع مضافة</div>
+                      )}
+                    </div>
+
+                    <div className="add-transformation-type-section">
+                      <div className="add-transformation-type-form">
+                        <div className="input-group">
+                          <label>اسم المدينة أو النص المخصص</label>
+                          <input
+                            type="text"
+                            placeholder="أدخل اسم المدينة أو النص المخصص"
+                            value={newTransformationTypeName}
+                            onChange={(e) => setNewTransformationTypeName(e.target.value)}
+                            className="config-input-enhanced"
                           />
-                        ) : (
-                          <div className="document-placeholder">PDF</div>
-                        )}
-                        <span className="document-name">{doc.name}</span>
+                        </div>
+                        <div className="input-group">
+                          <label>السعر بالجنيه</label>
+                          <input
+                            type="number"
+                            placeholder="أدخل السعر"
+                            value={newTransformationTypePrice}
+                            onChange={(e) => setNewTransformationTypePrice(e.target.value)}
+                            className="config-input-enhanced"
+                            min="0"
+                            step="0.01"
+                          />
+                        </div>
+                        <button onClick={handleAddTransformationType} className="add-price-button-enhanced">
+                          <span>إضافة نوع</span>
+                        </button>
                       </div>
-                    ))}
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>أنواع التدريب المتاحة (كانت تسمى لغات الامتحان)</label>
+                    <div className="exam-languages-list">
+                      {digitalTransformationConfig.examLanguage.length > 0 ? (
+                        digitalTransformationConfig.examLanguage.map((language, index) => (
+                          <div key={index} className="exam-language-item">
+                            <div className="language-name">{language}</div>
+                            <button
+                              onClick={() => handleRemoveExamLanguage(index)}
+                              className="remove-assignment-button"
+                              title="حذف"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="no-items-message">لا توجد أنواع مضافة</div>
+                      )}
+                    </div>
+
+                    <div className="add-exam-language-section">
+                      <div className="add-exam-language-form">
+                        <div className="input-group">
+                          <label>إضافة نوع تدريب جديد</label>
+                          <input
+                            type="text"
+                            placeholder="أدخل نوع التدريب (مثال: اختبار فقط)"
+                            value={newExamLanguage}
+                            onChange={(e) => setNewExamLanguage(e.target.value)}
+                            className="config-input-enhanced"
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                handleAddExamLanguage();
+                              }
+                            }}
+                          />
+                        </div>
+                        <button onClick={handleAddExamLanguage} className="add-price-button-enhanced">
+                          <span>إضافة</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>أرقام الدفع</label>
+                    <div className="payment-numbers">
+                      <div className="payment-item">
+                        <label>instaPay</label>
+                        <input
+                          type="text"
+                          value={digitalTransformationConfig.paymentMethods.instaPay}
+                          onChange={(e) => setDigitalTransformationConfig({
+                            ...digitalTransformationConfig,
+                            paymentMethods: {
+                              ...digitalTransformationConfig.paymentMethods,
+                              instaPay: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      </div>
+                      <div className="payment-item">
+                        <label>محفظة الكاش</label>
+                        <input
+                          type="text"
+                          value={digitalTransformationConfig.paymentMethods.cashWallet}
+                          onChange={(e) => setDigitalTransformationConfig({
+                            ...digitalTransformationConfig,
+                            paymentMethods: {
+                              ...digitalTransformationConfig.paymentMethods,
+                              cashWallet: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {activeTab === 'digitalTransformation' && (
-        <div className="admin-content digital-transformation-section">
-          <div className="books-section">
+      {
+        activeTab === 'digitalTransformationCodes' && (
+          <div className="admin-content">
             <div className="section-header">
-              <h2>إعدادات خدمة التحول الرقمي</h2>
-              <button type="button" onClick={handleSaveDigitalTransformationConfig} className="save-button" disabled={isSaving === 'digitalTransformation'}>
-                <Save size={18} />
-                {isSaving === 'digitalTransformation' ? 'جاري الحفظ...' : 'حفظ'}
-              </button>
-            </div>
-
-            {digitalTransformationConfig && (
-              <div className="book-config-form">
-                <div className="form-group">
-                  <label>أنواع التحول الرقمي</label>
-                  <div className="transformation-types-list">
-                    {digitalTransformationConfig.transformationTypes.length > 0 ? (
-                      digitalTransformationConfig.transformationTypes.map((type) => (
-                        <div key={type.id} className="transformation-type-item">
-                          <div className="type-info">
-                            <div className="type-name">{type.name}</div>
-                            <div className="type-price">{type.price} جنيه</div>
-                          </div>
-                          <button
-                            onClick={() => handleRemoveTransformationType(type.id)}
-                            className="remove-assignment-button"
-                            title="حذف"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="no-items-message">لا توجد أنواع مضافة</div>
-                    )}
-                  </div>
-
-                  <div className="add-transformation-type-section">
-                    <div className="add-transformation-type-form">
-                      <div className="input-group">
-                        <label>اسم المدينة أو النص المخصص</label>
-                        <input
-                          type="text"
-                          placeholder="أدخل اسم المدينة أو النص المخصص"
-                          value={newTransformationTypeName}
-                          onChange={(e) => setNewTransformationTypeName(e.target.value)}
-                          className="config-input-enhanced"
-                        />
-                      </div>
-                      <div className="input-group">
-                        <label>السعر بالجنيه</label>
-                        <input
-                          type="number"
-                          placeholder="أدخل السعر"
-                          value={newTransformationTypePrice}
-                          onChange={(e) => setNewTransformationTypePrice(e.target.value)}
-                          className="config-input-enhanced"
-                          min="0"
-                          step="0.01"
-                        />
-                      </div>
-                      <button onClick={handleAddTransformationType} className="add-price-button-enhanced">
-                        <span>إضافة نوع</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>أنواع التدريب المتاحة (كانت تسمى لغات الامتحان)</label>
-                  <div className="exam-languages-list">
-                    {digitalTransformationConfig.examLanguage.length > 0 ? (
-                      digitalTransformationConfig.examLanguage.map((language, index) => (
-                        <div key={index} className="exam-language-item">
-                          <div className="language-name">{language}</div>
-                          <button
-                            onClick={() => handleRemoveExamLanguage(index)}
-                            className="remove-assignment-button"
-                            title="حذف"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="no-items-message">لا توجد أنواع مضافة</div>
-                    )}
-                  </div>
-
-                  <div className="add-exam-language-section">
-                    <div className="add-exam-language-form">
-                      <div className="input-group">
-                        <label>إضافة نوع تدريب جديد</label>
-                        <input
-                          type="text"
-                          placeholder="أدخل نوع التدريب (مثال: اختبار فقط)"
-                          value={newExamLanguage}
-                          onChange={(e) => setNewExamLanguage(e.target.value)}
-                          className="config-input-enhanced"
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                              handleAddExamLanguage();
-                            }
-                          }}
-                        />
-                      </div>
-                      <button onClick={handleAddExamLanguage} className="add-price-button-enhanced">
-                        <span>إضافة</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>أرقام الدفع</label>
-                  <div className="payment-numbers">
-                    <div className="payment-item">
-                      <label>instaPay</label>
-                      <input
-                        type="text"
-                        value={digitalTransformationConfig.paymentMethods.instaPay}
-                        onChange={(e) => setDigitalTransformationConfig({
-                          ...digitalTransformationConfig,
-                          paymentMethods: {
-                            ...digitalTransformationConfig.paymentMethods,
-                            instaPay: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                    <div className="payment-item">
-                      <label>محفظة الكاش</label>
-                      <input
-                        type="text"
-                        value={digitalTransformationConfig.paymentMethods.cashWallet}
-                        onChange={(e) => setDigitalTransformationConfig({
-                          ...digitalTransformationConfig,
-                          paymentMethods: {
-                            ...digitalTransformationConfig.paymentMethods,
-                            cashWallet: e.target.value
-                          }
-                        })}
-                        className="config-input"
-                      />
-                    </div>
-                  </div>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h2>أكواد التحول الرقمي المحفوظة ({dtCodes.length})</h2>
+                <span style={{
+                  fontSize: '0.8rem',
+                  background: '#dcfce7',
+                  color: '#166534',
+                  padding: '4px 8px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <span style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', display: 'inline-block' }}></span>
+                  مباشر (Real-time)
+                </span>
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'digitalTransformationCodes' && (
-        <div className="admin-content">
-          <div className="section-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h2>أكواد التحول الرقمي المحفوظة ({dtCodes.length})</h2>
-              <span style={{
-                fontSize: '0.8rem',
-                background: '#dcfce7',
-                color: '#166534',
-                padding: '4px 8px',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}>
-                <span style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', display: 'inline-block' }}></span>
-                مباشر (Real-time)
-              </span>
             </div>
-          </div>
 
-          <div className="table-container" style={{ overflowX: 'auto' }}>
-            {dtCodes.length > 0 ? (
-              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>موبايل</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>البريد</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>النوع</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>القيمة</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>الحالة</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الحفظ</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>رقم فوري</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dtCodes.map((code, index) => (
-                    <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px' }}>{code.name}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile || code.phone}</td>
-                      <td style={{ padding: '12px', fontSize: '0.85rem' }}>{code.email}</td>
-                      <td style={{ padding: '12px' }}>{code.type}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.value}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>
-                        <span style={{
-                          padding: '4px 8px',
-                          borderRadius: '12px',
-                          fontSize: '0.85rem',
-                          background: code.status === 'NEW' ? '#dcfce7' : '#f1f5f9',
-                          color: code.status === 'NEW' ? '#166534' : '#64748b'
-                        }}>
-                          {code.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
-                        {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}
-                      </td>
-                      <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff' }}>{code.fawryCode}</td>
+            <div className="table-container" style={{ overflowX: 'auto' }}>
+              {dtCodes.length > 0 ? (
+                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>موبايل</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>البريد</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>النوع</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>القيمة</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>الحالة</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الحفظ</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>رقم فوري</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                لا توجد أكواد محفوظة حتى الآن
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'electronicPaymentCodes' && (
-        <div className="admin-content">
-          <div className="section-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h2>أكواد الدفع الإلكتروني ({epCodes.length})</h2>
-              <span style={{
-                fontSize: '0.8rem',
-                background: '#dcfce7',
-                color: '#166534',
-                padding: '4px 8px',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}>
-                <span style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', display: 'inline-block' }}></span>
-                مباشر (Real-time)
-              </span>
+                  </thead>
+                  <tbody>
+                    {dtCodes.map((code, index) => (
+                      <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '12px' }}>{code.name}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile || code.phone}</td>
+                        <td style={{ padding: '12px', fontSize: '0.85rem' }}>{code.email}</td>
+                        <td style={{ padding: '12px' }}>{code.type}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>{code.value}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          <span style={{
+                            padding: '4px 8px',
+                            borderRadius: '12px',
+                            fontSize: '0.85rem',
+                            background: code.status === 'NEW' ? '#dcfce7' : '#f1f5f9',
+                            color: code.status === 'NEW' ? '#166534' : '#64748b'
+                          }}>
+                            {code.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
+                          {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff' }}>{code.fawryCode}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                  لا توجد أكواد محفوظة حتى الآن
+                </div>
+              )}
             </div>
           </div>
+        )
+      }
 
-          <div className="table-container" style={{ overflowX: 'auto' }}>
-            {epCodes.length > 0 ? (
-              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>الموبايل</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>البريد الإلكتروني</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>الرقم القومي</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>الجهة</th>
-                    <th style={{ padding: '12px', textAlign: 'right' }}>نوع الخدمة</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الإنشاء</th>
-                    <th style={{ padding: '12px', textAlign: 'center' }}>رقم الطلب</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {epCodes.map((code, index) => (
-                    <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px' }}>{code.name}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile}</td>
-                      <td style={{ padding: '12px', fontSize: '0.85rem' }}>{code.email}</td>
-                      <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem' }}>{code.nationalID}</td>
-                      <td style={{ padding: '12px' }}>{code.entity}</td>
-                      <td style={{ padding: '12px' }}>{code.serviceType}</td>
-                      <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
-                        {code.createdAt?.seconds
-                          ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG')
-                          : (code.createdAt || 'الان')}
-                      </td>
-                      <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff' }}>{code.orderNumber}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                لا توجد أكواد دفع إلكتروني محفوظة حتى الآن
+      {
+        activeTab === 'electronicPaymentCodes' && (
+          <div className="admin-content">
+            <div className="section-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h2>أكواد الدفع الإلكتروني ({epCodes.length})</h2>
+                <span style={{
+                  fontSize: '0.8rem',
+                  background: '#dcfce7',
+                  color: '#166534',
+                  padding: '4px 8px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <span style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', display: 'inline-block' }}></span>
+                  مباشر (Real-time)
+                </span>
               </div>
-            )}
+            </div>
+
+            <div className="table-container" style={{ overflowX: 'auto' }}>
+              {epCodes.length > 0 ? (
+                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>الموبايل</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>البريد الإلكتروني</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>الرقم القومي</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>الجهة</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>نوع الخدمة</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الإنشاء</th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>رقم الطلب</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {epCodes.map((code, index) => (
+                      <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '12px' }}>{code.name}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile}</td>
+                        <td style={{ padding: '12px', fontSize: '0.85rem' }}>{code.email}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem' }}>{code.nationalID}</td>
+                        <td style={{ padding: '12px' }}>{code.entity}</td>
+                        <td style={{ padding: '12px' }}>{code.serviceType}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
+                          {code.createdAt?.seconds
+                            ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG')
+                            : (code.createdAt || 'الان')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff' }}>{code.orderNumber}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                  لا توجد أكواد دفع إلكتروني محفوظة حتى الآن
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 };
 
