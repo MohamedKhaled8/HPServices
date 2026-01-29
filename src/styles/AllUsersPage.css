@@ -67,9 +67,22 @@
   width: 100%;
 }
 
+.search-input-wrapper {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  right: 12px; /* inside the field on RTL layouts */
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9aa4b2;
+  pointer-events: none;
+}
+
 .search-input {
   width: 100%;
-  padding: 12px 20px;
+  padding: 12px 44px 12px 20px; /* reserve space on the right for the icon */
   border: 2px solid #e0e0e0;
   border-radius: 8px;
   font-size: 16px;

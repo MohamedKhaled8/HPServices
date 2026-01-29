@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StudentData } from '../types';
 import { subscribeToAllStudents } from '../services/firebaseService';
-import { ArrowRight, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
 import '../styles/AllUsersPage.css';
 
 interface AllUsersPageProps {
@@ -82,13 +82,17 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
 
       <div className="users-controls">
         <div className="search-box">
-          <input
-            type="text"
-            placeholder="ابحث بالاسم، البريد الإلكتروني، رقم الواتس، أو رقم الهوية..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="search-input"
-          />
+          <div className="search-input-wrapper">
+            <Search className="search-icon" size={18} />
+            <input
+              type="text"
+              placeholder="ابحث بالاسم، البريد الإلكتروني، رقم الواتس، أو رقم الهوية..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="search-input"
+              aria-label="بحث المستخدمين"
+            />
+          </div>
         </div>
       </div>
 
