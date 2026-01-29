@@ -73,7 +73,8 @@
 
 .search-icon {
   position: absolute;
-  right: 12px; /* inside the field on RTL layouts */
+  right: 12px;
+  /* inside the field on RTL layouts */
   top: 50%;
   transform: translateY(-50%);
   color: #9aa4b2;
@@ -82,7 +83,8 @@
 
 .search-input {
   width: 100%;
-  padding: 12px 44px 12px 20px; /* reserve space on the right for the icon */
+  padding: 12px 44px 12px 20px;
+  /* reserve space on the right for the icon */
   border: 2px solid #e0e0e0;
   border-radius: 8px;
   font-size: 16px;
@@ -267,6 +269,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -287,4 +290,3 @@
     font-size: 22px;
   }
 }
-

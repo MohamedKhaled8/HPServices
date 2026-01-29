@@ -142,7 +142,8 @@
 }
 
 .password-wrapper input {
-  padding-left: 44px; /* space for the toggle icon on the left (RTL) */
+  padding-left: 44px;
+  /* space for the toggle icon on the left (RTL) */
 }
 
 .password-toggle {
@@ -262,6 +263,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -272,6 +274,7 @@
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -283,6 +286,7 @@
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -294,13 +298,16 @@
     opacity: 0;
     transform: scale(0.3);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.05);
   }
+
   70% {
     transform: scale(0.9);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -308,12 +315,16 @@
 }
 
 @keyframes shake {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateX(0);
   }
+
   25% {
     transform: translateX(-5px);
   }
+
   75% {
     transform: translateX(5px);
   }
@@ -323,9 +334,11 @@
   0% {
     box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
   }
+
   50% {
     box-shadow: 0 4px 20px rgba(59, 130, 246, 0.5);
   }
+
   100% {
     box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
   }
