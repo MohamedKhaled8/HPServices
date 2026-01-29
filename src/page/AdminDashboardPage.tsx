@@ -507,7 +507,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             alert('🔍 فحص البيانات:\n\n' + debugInfo + '\n\nسيتم بدء الأتمتة الآن...');
 
             // Call Node.js Backend
-            const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+            const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
+            console.log('Using API_BASE_URL:', API_BASE_URL);
             const apiUrl = `${API_BASE_URL}/api/digital-transformation/register`;
 
             fetch(apiUrl, {
@@ -585,7 +586,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
             console.log('📤 [EP] Sending Payload to Backend:', payload);
 
-            const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+            const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
+            console.log('Using API_BASE_URL:', API_BASE_URL);
             const apiUrl = `${API_BASE_URL}/api/electronic-payment/create`;
 
             fetch(apiUrl, {
