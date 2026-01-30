@@ -6,9 +6,8 @@ import '../styles/DashboardPage.css';
 import '../styles/GeometricShapes.css';
 import {
   User, LogOut, Settings, Book,
-  Search, Star,
-  CheckCircle, Zap, Shield, BookOpen, Menu, X,
-  Library, GraduationCap, ClipboardList, Package, CreditCard, CheckSquare, Award, FileCheck, Phone, Mail, MapPin, ChevronRight
+  Search, Star, Zap, Menu, X, CheckCircle, Shield,
+  GraduationCap, ClipboardList, Package, CreditCard, CheckSquare, Award, FileCheck, Phone, Mail, MapPin, ChevronRight
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -48,7 +47,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-
+  const [isScrolling, setIsScrolling] = useState(false);
   const promoImages = [
     "/images/1.jpg",
     "/images/2.jpg",
@@ -72,9 +71,23 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   }, [promoImages.length]);
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 20);
+    let scrollTimeout: any;
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
+      setIsScrolling(true);
+
+      // Reset isScrolling after stop
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        setIsScrolling(false);
+      }, 150);
+    };
+
     window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
   }, []);
 
   useEffect(() => {
@@ -113,29 +126,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   return (
     <div className="dashboard-page">
       {/* Real Geometric Shapes Throughout Body */}
-      <div className="body-geometric-shapes">
-        {/* Top Section */}
+      <div className={`body-geometric-shapes ${isScrolling ? 'is-scrolling' : ''}`}>
+        {/* Richer Geometric Background - Floating on scroll */}
         <div className="geo-shape geo-circle-1"></div>
         <div className="geo-shape geo-triangle-1"></div>
         <div className="geo-shape geo-square-1"></div>
         <div className="geo-shape geo-diamond-1"></div>
         <div className="geo-shape geo-circle-2"></div>
 
-        {/* Upper-Middle Section */}
         <div className="geo-shape geo-hexagon-1"></div>
         <div className="geo-shape geo-square-2"></div>
         <div className="geo-shape geo-triangle-2"></div>
-        <div className="geo-shape geo-pentagon-1"></div>
         <div className="geo-shape geo-circle-3"></div>
-
-        {/* Lower-Middle Section */}
         <div className="geo-shape geo-square-3"></div>
-        <div className="geo-shape geo-circle-4"></div>
+
         <div className="geo-shape geo-triangle-3"></div>
+        <div className="geo-shape geo-circle-4"></div>
         <div className="geo-shape geo-diamond-2"></div>
         <div className="geo-shape geo-hexagon-2"></div>
 
-        {/* Bottom Section */}
         <div className="geo-shape geo-circle-5"></div>
         <div className="geo-shape geo-square-4"></div>
         <div className="geo-shape geo-triangle-4"></div>
@@ -143,7 +152,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="geo-shape geo-circle-6"></div>
         <div className="geo-shape geo-diamond-3"></div>
         <div className="geo-shape geo-circle-7"></div>
-        <div className="geo-shape geo-square-5"></div>
       </div>
 
       {/* Navbar */}
@@ -152,7 +160,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
         {/* Right Side: Brand */}
         <div className="nav-brand">
-          <img src="/لوجو اتش بي .jpg.jpeg" alt="HP" className="nav-logo-img" onError={(e)=>{(e.currentTarget as HTMLImageElement).style.display='none'}} />
+          <img src="/لوجو اتش بي .jpg.jpeg" alt="HP" className="nav-logo-img" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
           <span>HP Services</span>
         </div>
 
@@ -298,8 +306,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         )}
       </nav>
 
-      {/* Clipper Hero */}
+      {/* Clipper Hero with Slideshow Background */}
       <header className="hero-pure">
+        <div className="hero-slides">
+          {promoImages.map((src, index) => (
+            <div
+              key={index}
+              className={`hero-slide ${index === currentImageIndex ? 'active' : ''}`}
+              style={{ backgroundImage: `url(${src})` }}
+            ></div>
+          ))}
+        </div>
         <div className="hero-content">
           <h1 className="hero-title">
             {greeting}، {student?.fullNameArabic ? getFirstName(student.fullNameArabic) : 'عزيزي الطالب'}
@@ -310,43 +327,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       </header>
 
-      {/* Stats */}
-      <div className="stats-container">
-        <div className="stat-box">
-          <div className="stat-icon-wrapper" style={{ color: '#10B981', background: '#ECFDF5' }}>
-            <CheckCircle size={24} />
-          </div>
-          <div>
-            <span style={{ display: 'block', fontWeight: 700 }}>نشط</span>
-            <span style={{ fontSize: 13, color: '#64748b' }}>حالة الحساب</span>
-          </div>
-        </div>
-        <div className="stat-box">
-          <div className="stat-icon-wrapper" style={{ color: '#3B82F6', background: '#EFF6FF' }}>
-            <Library size={24} />
-          </div>
-          <div>
-            <span style={{ display: 'block', fontWeight: 700 }}>{student?.course || 'التخصص غير محدد'}</span>
-            <span style={{ fontSize: 13, color: '#64748b' }}>
-              مسارك: <strong style={{ color: '#4F46E5' }}>{student?.track || 'غير محدد'}</strong>
-            </span>
-          </div>
-        </div>
-        <div className="stat-box">
-          <div className="stat-icon-wrapper" style={{ color: '#F59E0B', background: '#FFFBEB' }}>
-            <Shield size={24} />
-          </div>
-          <div>
-            <span style={{ display: 'block', fontWeight: 700 }}>أساسي</span>
-            <span style={{ fontSize: 13, color: '#64748b' }}>نوع العضوية</span>
-          </div>
-        </div>
-      </div>
+      {/* stats removed per request */}
 
       {/* Services Grid */}
       <main className="services-section" id="services">
         <div className="section-header">
-          <h2 className="section-title">الخدمات المتاحة</h2>
+          <h2 className="section-title">اختر خدماتك من هنا</h2>
           <div className="title-decoration"></div>
         </div>
 
@@ -371,30 +357,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           ))}
         </div>
 
-        {/* New Added Section based on User Image */}
-        <div className="additional-info-section">
-
-
-          <div className="promo-banner-card">
-            <div className="promo-image-side">
-              {promoImages.map((src, index) => (
-                <img
-                  key={index}
-                  src={src}
-                  alt={`Study Success ${index + 1}`}
-                  className={`promo-carousel-img ${index === currentImageIndex ? 'active' : ''}`}
-                />
-              ))}
-            </div>
-            <div className="promo-content-side">
-              <h2>طريقك نحو التميز الدراسي يبدأ بخطوة واحدة معنا</h2>
-              <p>
-                انضم إلى آلاف الطلاب الذين وثقوا في خدماتنا التعليمية. نحن نوفر لك البيئة المثالية
-                والخبرات اللازمة لتطوير مهاراتك والتميز في مسارك التعليمي بكل سهولة واحترافية.
-              </p>
-            </div>
-          </div>
-        </div>
       </main>
 
       {/* Footer & About */}
@@ -425,9 +387,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
             <div className="footer-contact-card">
               <h3 style={{ marginBottom: 20 }}>تواصل معنا</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 16 }}>
-                <Phone size={20} color="#F59E0B" /> <span>01050889596</span>
-              </div>
+              <a
+                href="https://wa.me/201050889596?text=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="contact-item-link"
+                style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 16, textDecoration: 'none', color: 'inherit' }}
+              >
+                <Phone size={20} color="#F59E0B" /> <span>01050889596 (واتساب)</span>
+              </a>
               <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 16 }}>
                 <Mail size={20} color="#F59E0B" /> <span>support@hpservices.com</span>
               </div>

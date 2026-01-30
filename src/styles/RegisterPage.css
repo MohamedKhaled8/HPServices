@@ -171,12 +171,35 @@
   transition: all 0.3s ease;
 }
 
-.form-group input.error,
-.form-group select.error,
-.form-group textarea.error {
-  border-color: #fc8181;
-  background-color: #fff5f5;
+.char-count {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: #94a3b8;
+  pointer-events: none;
+  background: #f8fafc;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
+
+.char-count.success {
+  color: #10b981;
+  font-weight: 700;
+}
+
+.input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-container input {
+  padding-left: 55px !important;
+  width: 100%;
+}
+
 
 .error-message {
   font-size: 12px;

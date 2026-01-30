@@ -60,33 +60,54 @@ export const registerUser = async (email: string, password: string, studentData:
   }
 };
 
-export const loginUser = async (email: string, password: string): Promise<FirebaseUser> => {
+export const getStudentEmailByNationalID = async (nationalID: string): Promise<string | null> => {
   try {
+    const studentsRef = collection(db, 'students');
+    const q = query(studentsRef, where('nationalID', '==', nationalID));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      return querySnapshot.docs[0].data().email;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error finding student by National ID:', error);
+    return null;
+  }
+};
+
+export const loginUser = async (identifier: string, password: string): Promise<FirebaseUser> => {
+  try {
+    let email = identifier;
+
+    // Check if input is a 14-digit National ID
+    if (/^\d{14}$/.test(identifier)) {
+      const foundEmail = await getStudentEmailByNationalID(identifier);
+      if (foundEmail) {
+        email = foundEmail;
+      } else {
+        throw new Error('رقم الهوية غير مسجل في النظام');
+      }
+    }
+
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     return userCredential.user;
   } catch (error: any) {
     // تحسين رسائل الخطأ
-    let errorMessage = 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
+    let errorMessage = 'البيانات المدخلة أو كلمة المرور غير صحيحة';
 
-    if (error.code === 'auth/user-not-found') {
-      errorMessage = 'المستخدم غير موجود. يرجى التسجيل أولاً';
+    if (error.code === 'auth/user-not-found' || error.message === 'رقم الهوية غير مسجل في النظام') {
+      errorMessage = 'المستخدم غير موجود. يرجى التأكد من البيانات أو التسجيل أولاً';
     } else if (error.code === 'auth/wrong-password') {
       errorMessage = 'كلمة المرور غير صحيحة';
     } else if (error.code === 'auth/invalid-email') {
-      errorMessage = 'البريد الإلكتروني غير صحيح';
-    } else if (error.code === 'auth/user-disabled') {
-      errorMessage = 'تم تعطيل هذا الحساب';
-    } else if (error.code === 'auth/too-many-requests') {
-      errorMessage = 'محاولات كثيرة. يرجى المحاولة لاحقاً';
-    } else if (error.code === 'auth/operation-not-allowed') {
-      errorMessage = 'طريقة تسجيل الدخول غير مفعلة. يرجى تفعيل Email/Password في Firebase Console';
-    } else if (error.message) {
-      errorMessage = error.message;
+      errorMessage = 'البريد الإلكتروني أو رقم الهوية غير صحيح';
     }
 
     throw new Error(errorMessage);
   }
 };
+
 
 export const logoutUser = async (): Promise<void> => {
   try {

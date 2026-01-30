@@ -5,8 +5,7 @@ import { checkIsAdmin } from '../services/firebaseService';
 import '../styles/DashboardPage.css';
 import {
   LogOut, Users, Settings,
-  ArrowLeft, Star, Clock,
-  CheckCircle, Zap, Shield, BookOpen
+  ArrowLeft, Star, Clock, Zap
 } from 'lucide-react';
 import * as Icons from 'lucide-react';
 
@@ -135,38 +134,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           </span>
         </h1>
 
-        {/* Quick Stats Grid */}
-        <div className="hero-stats">
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#ecfdf5', color: '#10b981' }}>
-              <CheckCircle size={24} />
-            </div>
-            <div className="stat-content">
-              <span className="stat-value">مفعل</span>
-              <span className="stat-label">حالة الحساب</span>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#eff6ff', color: '#3b82f6' }}>
-              <BookOpen size={24} />
-            </div>
-            <div className="stat-content">
-              <span className="stat-value">{student?.track || 'غير محدد'}</span>
-              <span className="stat-label">المسار الحالي</span>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#f5f3ff', color: '#8b5cf6' }}>
-              <Shield size={24} />
-            </div>
-            <div className="stat-content">
-              <span className="stat-value">أساسي</span>
-              <span className="stat-label">نوع العضوية</span>
-            </div>
-          </div>
-        </div>
+        {/* quick-stats removed per request */}
       </header>
 
       {/* Services Section */}

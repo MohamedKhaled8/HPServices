@@ -2,9 +2,10 @@
 /* REAL GEOMETRIC SHAPES - Throughout Body */
 /* ============================================ */
 .body-geometric-shapes {
-    position: fixed;
+    position: absolute;
     width: 100%;
     height: 100%;
+    /* Stretches with content */
     top: 0;
     left: 0;
     pointer-events: none;
@@ -14,8 +15,24 @@
 
 .geo-shape {
     position: absolute;
-    border: 3px solid;
+    border: 2px solid;
+    opacity: 0.05;
+    /* Even more subtle for large screens */
     animation: floatGeoShape 25s infinite ease-in-out;
+    animation-play-state: paused;
+    transition: opacity 0.4s ease;
+    transform-origin: center;
+}
+
+/* Clearer & Larger shapes for Laptop/Desktop */
+.geo-shape {
+    transform: scale(1.4);
+    /* Make them 40% larger on desktop */
+}
+
+/* Run animation only during scroll */
+.body-geometric-shapes.is-scrolling .geo-shape {
+    animation-play-state: running;
 }
 
 /* ========== TOP SECTION (0-20%) - Hero Area ========== */

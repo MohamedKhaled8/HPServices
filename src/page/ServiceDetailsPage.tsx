@@ -5,7 +5,7 @@ import { ServiceRequest, UploadedFile } from '../types';
 import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, updateStudentData } from '../services/firebaseService';
 import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
 import { calculateTrack, getAvailableTracks } from '../utils/trackUtils';
-import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText } from 'lucide-react';
+import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import '../styles/ServiceDetailsPage.css';
 
@@ -206,7 +206,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   useEffect(() => {
     if (!service || !student) return;
 
-    if (service.id === '1' || service.id === '2' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') {
+    if (service.id === '1' || service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') {
       const initialData: Record<string, any> = {};
       const addressString = student.address
         ? `${student.address.governorate || ''}, ${student.address.city || ''}, ${student.address.street || ''}, ${student.address.building || ''}, ${student.address.siteNumber || ''}${student.address.landmark ? `, ${student.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
@@ -278,6 +278,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           }
         }
       });
+
+      // Special defaults for Service 3 (Book Shipping)
+      if (service.id === '3') {
+        initialData['number_of_copies'] = 1;
+        initialData['names_array'] = [''];
+        initialData['tracks_array'] = [''];
+        initialData['phone_whatsapp'] = student.whatsappNumber || '';
+        initialData['diploma_type'] = 'اختر نوع الدبلومة';
+      }
 
       setServiceData(initialData);
 
@@ -570,33 +579,54 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
       <form onSubmit={handleSubmit} className="details-form">
         <div className="details-container">
-          {service.id !== '1' && (
-            <section className="form-section section-personal-data">
-              <h2>البيانات الشخصية</h2>
-              <div className="personal-data-display">
-                <div className="data-field">
-                  <span className="label">الاسم:</span>
-                  <span className="value">{student.fullNameArabic}</span>
-                </div>
-                <div className="data-field">
-                  <span className="label">البريد الإلكتروني:</span>
-                  <span className="value">{student.email}</span>
-                </div>
-                <div className="data-field">
-                  <span className="label">رقم الواتس:</span>
-                  <span className="value">{student.whatsappNumber}</span>
-                </div>
-                <div className="data-field">
-                  <span className="label">المقرر:</span>
-                  <span className="value">{student.course}</span>
-                </div>
+          {service.id === '5' && assignmentsConfig && (
+            <section className="form-section section-assignments">
+              <h2>حدد التكاليف المطلوبة</h2>
+              <div className="assignments-cards-grid">
+                {assignmentsConfig.assignments.map((assignment) => (
+                  <div
+                    key={assignment.id}
+                    className={`assignment-card ${selectedAssignments.includes(assignment.id) ? 'selected' : ''}`}
+                    onClick={() => {
+                      if (selectedAssignments.includes(assignment.id)) {
+                        setSelectedAssignments(selectedAssignments.filter(id => id !== assignment.id));
+                      } else {
+                        setSelectedAssignments([...selectedAssignments, assignment.id]);
+                      }
+                    }}
+                  >
+                    <div className="assignment-card-content">
+                      <h3>{assignment.name}</h3>
+                      <div className="assignment-price">{assignment.price} جنيه</div>
+                    </div>
+                    {selectedAssignments.includes(assignment.id) && (
+                      <div className="assignment-selected-indicator">✓</div>
+                    )}
+                  </div>
+                ))}
               </div>
-              <p className="edit-note">
-                <Edit2 size={16} />
-                هذه البيانات غير قابلة للتعديل. يمكنك تحديثها من الملف الشخصي
-              </p>
+              {selectedAssignments.length > 0 && (
+                <div className="selected-assignments-summary">
+                  <strong>التكليفات المختارة:</strong>
+                  <div className="selected-assignments-list">
+                    {assignmentsConfig.assignments
+                      .filter(a => selectedAssignments.includes(a.id))
+                      .map(a => (
+                        <span key={a.id} className="selected-assignment-item">
+                          {a.name} ({a.price} جنيه)
+                        </span>
+                      ))}
+                  </div>
+                  <div className="total-price">
+                    <strong>المجموع: {assignmentsConfig.assignments
+                      .filter(a => selectedAssignments.includes(a.id))
+                      .reduce((sum, a) => sum + a.price, 0)} جنيه</strong>
+                  </div>
+                </div>
+              )}
             </section>
           )}
+
 
           {(service.id === '9' || service.id === '2') && (service.features || (graduationProjectConfig && graduationProjectConfig.features)) && (
             <section className={`form-section section-features ${service.id === '2' ? 'premium-features' : ''}`}>
@@ -614,20 +644,31 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
           {/* Required Documents Section for Service 10 */}
           {service.id === '10' && service.requiredDocuments && (
-            <section className="form-section section-features">
+            <section className="form-section section-features required-docs">
               <h2>المستندات المطلوبة</h2>
               <ul className="features-list">
                 {service.requiredDocuments.map((doc, index) => (
                   <li key={index} className="feature-item">
-                    <FileText size={18} className="feature-icon" />
+                    <FileText size={16} className="feature-icon" />
                     <span>{doc}</span>
                   </li>
                 ))}
               </ul>
-              <p className="edit-note">
-                <AlertCircle size={16} />
-                يرجى إرسال جميع المستندات المذكورة أعلاه على رقم واتس اب المكتبة: 01050889596
-              </p>
+            </section>
+          )}
+
+          {/* Book Shipping Prices Section (Moved Up) */}
+          {service.id === '3' && bookConfig && (
+            <section className="form-section section-features">
+              <h2>تفاصيل وأسعار النسخ</h2>
+              <div className="book-prices-list">
+                {Object.entries(bookConfig.prices).sort((a, b) => parseInt(a[0]) - parseInt(b[0])).map(([copies, price]) => (
+                  <div key={copies} className="price-item-row">
+                    <span>نسخة {copies === '1' ? 'واحدة' : copies === '2' ? 'نسختين' : `${copies} نسخ`}:</span>
+                    <strong>{price} جنيه</strong>
+                  </div>
+                ))}
+              </div>
             </section>
           )}
 
@@ -688,7 +729,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                     {field.type === 'text' && (
                       <input
                         id={field.name}
-                        type="text"
+                        type={field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('mobile') || field.name.includes('id') ? 'tel' : 'text'}
+                        inputMode={field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('mobile') || field.name.includes('id') ? 'numeric' : 'text'}
                         value={serviceData[field.name] || ''}
                         onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
                         placeholder={field.label}
@@ -705,47 +747,46 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         value={serviceData[field.name] ?? ''}
                         onChange={(e) => {
                           const inputValue = e.target.value;
-                          // إذا كان الحقل فارغاً، نضع قيمة فارغة
+                          // السماح بمسح الحقل تماماً
                           if (inputValue === '') {
                             handleServiceDataChange(field.name, '');
-                            if (service.id === '3' && field.name === 'number_of_copies') {
-                              // Don't clear arrays immediately to prevent data loss on accidental clear
-                              // Just keep them, they will be sliced when render happens or updated when number comes back
-                            }
                             return;
                           }
 
                           let value = parseInt(inputValue);
                           if (!isNaN(value)) {
-                            // Clamp value between 1 and 10
+                            // السماح بالصفر أثناء الكتابة ولكن نقيد الحد الأقصى فقط
                             if (value > 10) value = 10;
-                            if (value < 1) value = 1;
+                            if (value < 0) value = 1;
 
-                            handleServiceDataChange(field.name, value);
-
-                            // تحديث المصفوفات فقط إذا كان الرقم مختلفاً وصحيحاً
+                            // Special logic for Service 3 copies to update arrays efficiently
                             if (service.id === '3' && field.name === 'number_of_copies') {
-                              // Preserve existing data while resizing
                               setServiceData(prev => {
+                                // Clamp value strictly for state update to be safe
+                                const finalValue = value > 10 ? 10 : (value < 1 ? 1 : value);
+
                                 const currentNames = prev.names_array || [];
                                 const currentTracks = prev.tracks_array || [];
 
-                                // Create new arrays preserving existing data
-                                const newNames = Array.from({ length: value }, (_, i) => currentNames[i] || '');
-                                const newTracks = Array.from({ length: value }, (_, i) => currentTracks[i] || '');
+                                const newNames = Array.from({ length: finalValue }, (_, i) => currentNames[i] || '');
+                                const newTracks = Array.from({ length: finalValue }, (_, i) => currentTracks[i] || '');
 
                                 return {
                                   ...prev,
-                                  [field.name]: value,
+                                  [field.name]: finalValue,
                                   names_array: newNames,
                                   tracks_array: newTracks,
                                   names: newNames.join('\n'),
                                   tracks: newTracks.join('\n')
                                 };
                               });
+                            } else {
+                              // Normal update for other number fields
+                              handleServiceDataChange(field.name, value);
                             }
                           }
                         }}
+                        onWheel={(e) => e.currentTarget.blur()}
                         placeholder={field.label}
                         required={field.required}
                       />
@@ -932,6 +973,82 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                       </>
                     )}
 
+                    {field.type === 'dynamic_list' && (
+                      <div className="dynamic-list-container">
+                        <div className="existing-list">
+                          {(serviceData[field.name]?.split('\n').filter((s: string) => s.trim() !== '') || []).map((item: string, index: number) => (
+                            <div key={index} className="dynamic-list-item">
+                              <input
+                                type="text"
+                                value={item}
+                                onChange={(e) => {
+                                  const newVal = e.target.value;
+                                  const currentList = serviceData[field.name] ? serviceData[field.name].split('\n') : [];
+                                  if (currentList[index] !== undefined) {
+                                    currentList[index] = newVal;
+                                    handleServiceDataChange(field.name, currentList.join('\n'));
+                                  }
+                                }}
+                                className="dynamic-item-input"
+                              />
+                              <button
+                                type="button"
+                                className="delete-item-btn"
+                                onClick={() => {
+                                  let currentList = serviceData[field.name] ? serviceData[field.name].split('\n') : [];
+                                  currentList.splice(index, 1);
+                                  handleServiceDataChange(field.name, currentList.join('\n'));
+                                }}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="add-new-item-row">
+                          <input
+                            type="text"
+                            placeholder="أضف اسم طالب..."
+                            id={`new-item-${field.name}`}
+                            className="new-item-input"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const input = e.currentTarget;
+                                const val = input.value.trim();
+                                if (val) {
+                                  let currentList = serviceData[field.name] ? serviceData[field.name].split('\n') : [];
+                                  // Filter out empty strings if any existed before pushing
+                                  currentList = currentList.filter((s: string) => s.trim() !== '');
+                                  currentList.push(val);
+                                  handleServiceDataChange(field.name, currentList.join('\n'));
+                                  input.value = '';
+                                }
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="add-item-btn"
+                            onClick={() => {
+                              const input = document.getElementById(`new-item-${field.name}`) as HTMLInputElement;
+                              if (input && input.value.trim()) {
+                                const val = input.value.trim();
+                                let currentList = serviceData[field.name] ? serviceData[field.name].split('\n') : [];
+                                currentList = currentList.filter((s: string) => s.trim() !== '');
+                                currentList.push(val);
+                                handleServiceDataChange(field.name, currentList.join('\n'));
+                                input.value = '';
+                              }
+                            }}
+                          >
+                            <Plus size={20} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {field.type === 'textarea' && (
                       <textarea
                         id={field.name}
@@ -1066,7 +1183,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             {/* حقل المسار */}
                             <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                               <label htmlFor={`track_${index}`} style={{ fontSize: '14px' }}>
-                                المسار / التخصص
+                                اكتب المسار والتخصص
                                 <span className="required">*</span>
                               </label>
                               <input
@@ -1097,53 +1214,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </div>
           </section>
 
-          {service.id === '5' && assignmentsConfig && (
-            <section className="form-section section-assignments">
-              <h2>حدد التكاليف المطلوبة</h2>
-              <div className="assignments-cards-grid">
-                {assignmentsConfig.assignments.map((assignment) => (
-                  <div
-                    key={assignment.id}
-                    className={`assignment-card ${selectedAssignments.includes(assignment.id) ? 'selected' : ''}`}
-                    onClick={() => {
-                      if (selectedAssignments.includes(assignment.id)) {
-                        setSelectedAssignments(selectedAssignments.filter(id => id !== assignment.id));
-                      } else {
-                        setSelectedAssignments([...selectedAssignments, assignment.id]);
-                      }
-                    }}
-                  >
-                    <div className="assignment-card-content">
-                      <h3>{assignment.name}</h3>
-                      <div className="assignment-price">{assignment.price} جنيه</div>
-                    </div>
-                    {selectedAssignments.includes(assignment.id) && (
-                      <div className="assignment-selected-indicator">✓</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {selectedAssignments.length > 0 && (
-                <div className="selected-assignments-summary">
-                  <strong>التكليفات المختارة:</strong>
-                  <div className="selected-assignments-list">
-                    {assignmentsConfig.assignments
-                      .filter(a => selectedAssignments.includes(a.id))
-                      .map(a => (
-                        <span key={a.id} className="selected-assignment-item">
-                          {a.name} ({a.price} جنيه)
-                        </span>
-                      ))}
-                  </div>
-                  <div className="total-price">
-                    <strong>المجموع: {assignmentsConfig.assignments
-                      .filter(a => selectedAssignments.includes(a.id))
-                      .reduce((sum, a) => sum + a.price, 0)} جنيه</strong>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
 
           {service.id === '6' && certificatesConfig && certificatesConfig.certificates && (
             <section className="certificates-section-modern">
@@ -1353,15 +1423,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               <h2>خدمات الدفع</h2>
               {service.id === '3' && bookConfig && (
                 <div className="payment-amount">
-                  <strong>أسعار الشحن:</strong>
-                  <div className="book-prices-list">
-                    {Object.entries(bookConfig.prices).map(([copies, price]) => (
-                      <div key={copies} className="price-item-row">
-                        <span>كتب لـ {copies === '1' ? 'شخص' : `${copies} أشخاص`}:</span>
-                        <strong>{price} جنيه</strong>
-                      </div>
-                    ))}
-                  </div>
                   {serviceData.number_of_copies && (
                     <div className="selected-price">
                       <strong>
@@ -1452,104 +1513,55 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               <div className="payment-methods">
                 {service.paymentMethods && service.paymentMethods.length > 0 && service.paymentMethods.map(method => {
                   let phoneNumber = '';
-                  if (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') {
-                    if (service.id === '6' && certificatesConfig) {
-                      switch (method) {
-                        case 'Vodafone':
-                        case 'Etisalat':
-                        case 'Orange':
-                          phoneNumber = certificatesConfig.paymentMethods.cashWallet;
-                          break;
-                        case 'instaPay':
-                          phoneNumber = certificatesConfig.paymentMethods.instaPay;
-                          break;
-                        default:
-                          phoneNumber = '';
-                      }
-                    } else if (service.id === '5' && assignmentsConfig) {
-                      switch (method) {
-                        case 'Vodafone':
-                        case 'Etisalat':
-                        case 'Orange':
-                          phoneNumber = assignmentsConfig.paymentMethods.cashWallet;
-                          break;
-                        case 'instaPay':
-                          phoneNumber = assignmentsConfig.paymentMethods.instaPay;
-                          break;
-                        default:
-                          phoneNumber = '';
-                      }
-                    } else if (service.id === '7' && digitalTransformationConfig) {
-                      switch (method) {
-                        case 'Vodafone':
-                        case 'Etisalat':
-                        case 'Orange':
-                          phoneNumber = digitalTransformationConfig.paymentMethods.cashWallet;
-                          break;
-                        case 'instaPay':
-                          phoneNumber = digitalTransformationConfig.paymentMethods.instaPay;
-                          break;
-                        default:
-                          phoneNumber = '';
-                      }
-                    } else if (service.id === '8' && finalReviewConfig) {
-                      switch (method) {
-                        case 'Vodafone':
-                        case 'Etisalat':
-                        case 'Orange':
-                          phoneNumber = finalReviewConfig.paymentMethods.cashWallet;
-                          break;
-                        case 'instaPay':
-                          phoneNumber = finalReviewConfig.paymentMethods.instaPay;
-                          break;
-                        default:
-                          phoneNumber = '';
-                      }
-                    } else if (service.id === '9' && graduationProjectConfig) {
-                      switch (method) {
-                        case 'Vodafone':
-                        case 'Etisalat':
-                        case 'Orange':
-                          phoneNumber = graduationProjectConfig.paymentMethods.cashWallet;
-                          break;
-                        case 'instaPay':
-                          phoneNumber = graduationProjectConfig.paymentMethods.instaPay;
-                          break;
-                        default:
-                          phoneNumber = '';
-                      }
-                    } else if ((service.id as string) === '10') {
-                      // Using default numbers for Service 10 as per request "standard payment methods"
-                      switch (method) {
-                        case 'Vodafone':
-                        case 'Etisalat':
-                        case 'Orange':
-                          phoneNumber = '01050889591'; // Using default wallet number
-                          break;
-                        case 'instaPay':
-                          phoneNumber = '01017180923'; // Using default InstaPay number
-                          break;
-                        default:
-                          phoneNumber = '';
-                      }
-                    }
+
+                  // Define default numbers
+                  const defaultWallet = '01050889591';
+                  const defaultInstaPay = '01017180923';
+
+                  // Try to get from specific configs first
+                  if (service.id === '3' && bookConfig?.paymentMethods) {
+                    phoneNumber = (method === 'instaPay') ? bookConfig.paymentMethods.instaPay : bookConfig.paymentMethods.cashWallet;
+                  } else if (service.id === '5' && assignmentsConfig?.paymentMethods) {
+                    phoneNumber = (method === 'instaPay') ? assignmentsConfig.paymentMethods.instaPay : assignmentsConfig.paymentMethods.cashWallet;
+                  } else if (service.id === '6' && certificatesConfig?.paymentMethods) {
+                    phoneNumber = (method === 'instaPay') ? certificatesConfig.paymentMethods.instaPay : certificatesConfig.paymentMethods.cashWallet;
+                  } else if (service.id === '7' && digitalTransformationConfig?.paymentMethods) {
+                    phoneNumber = (method === 'instaPay') ? digitalTransformationConfig.paymentMethods.instaPay : digitalTransformationConfig.paymentMethods.cashWallet;
+                  } else if (service.id === '8' && finalReviewConfig?.paymentMethods) {
+                    phoneNumber = (method === 'instaPay') ? finalReviewConfig.paymentMethods.instaPay : finalReviewConfig.paymentMethods.cashWallet;
+                  } else if (service.id === '9' && graduationProjectConfig?.paymentMethods) {
+                    phoneNumber = (method === 'instaPay') ? graduationProjectConfig.paymentMethods.instaPay : graduationProjectConfig.paymentMethods.cashWallet;
                   } else {
-                    switch (method) {
-                      case 'Vodafone':
-                      case 'Etisalat':
-                      case 'Orange':
-                        phoneNumber = '01050889591';
-                        break;
-                      case 'instaPay':
-                        phoneNumber = '01017180923';
-                        break;
-                      default:
-                        phoneNumber = '';
-                    }
+                    // Fallback to defaults for all other services (2, 4, 10, etc.)
+                    phoneNumber = (method === 'instaPay') ? defaultInstaPay : defaultWallet;
+                  }
+
+                  // Force empty string for methods that aren't wallets/instapay if any
+                  if (method !== 'Vodafone' && method !== 'Etisalat' && method !== 'Orange' && method !== 'instaPay') {
+                    phoneNumber = '';
                   }
 
                   return (
-                    <label key={method} className="payment-option">
+                    <label key={method} className="payment-option" onClick={() => {
+                      if (phoneNumber) {
+                        // 1. Copy to clipboard
+                        navigator.clipboard.writeText(phoneNumber);
+                        alert(`تم نسخ الرقم: ${phoneNumber}\nسيتم فتح التطبيق الآن...`);
+
+                        // 2. Try to open the app (Deep Linking)
+                        if (method === 'instaPay') {
+                          window.location.href = 'https://ipn.eg/S/raoufpk97/instapay/3jZFKt';
+                        } else if (method === 'Vodafone') {
+                          // Try common schemes for Vodafone Cash
+                          window.location.href = 'anavodafone://';
+                        } else if (method === 'Etisalat') {
+                          window.location.href = 'myetisalat://';
+                        } else if (method === 'Orange') {
+                          window.location.href = 'myorange://';
+                        }
+                        // Note: If app is not installed, nothing will happen or browser might show error
+                      }
+                    }}>
                       <input
                         type="radio"
                         name="paymentMethod"

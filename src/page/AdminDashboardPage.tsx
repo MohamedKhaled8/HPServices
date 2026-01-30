@@ -50,7 +50,8 @@ import {
   Search,
   Pencil,
   Zap,
-  Image
+  Image,
+  EyeOff
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import '../styles/AdminDashboardPage.css';
@@ -105,6 +106,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newGradProjectPriceAmount, setNewGradProjectPriceAmount] = useState<string>('');
   const [newGradProjectFeature, setNewGradProjectFeature] = useState<string>('');
   const [isSaving, setIsSaving] = useState<string | null>(null);
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
 
 
   useEffect(() => {
@@ -2180,6 +2182,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               <span className="detail-label">الرقم القومي:</span>
                               <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
                             </div>
+                            <div className="detail-item" style={{ background: '#fffbeb', padding: '4px 8px', borderRadius: '6px' }}>
+                              <span className="detail-label">كلمة المرور:</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span className="detail-value" style={{ fontFamily: 'monospace', letterSpacing: showPasswords[student.id || ''] ? '0' : '2px' }}>
+                                  {showPasswords[student.id || ''] ? (student.password || 'غير متاح') : '••••••••'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                >
+                                  {showPasswords[student.id || ''] ? <EyeOff size={14} /> : <Eye size={14} />}
+                                </button>
+                              </div>
+                            </div>
                             <div className="detail-item">
                               <span className="detail-label">نوع الدبلومة:</span>
                               <span className="detail-value">{student.diplomaType || 'غير متاح'}</span>
@@ -2361,6 +2378,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           diplomaYear: e.target.value
                         })}
                         className="form-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>كلمة المرور</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.password || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          password: e.target.value
+                        })}
+                        className="form-input"
+                        placeholder="أدخل كلمة المرور الجديدة"
                       />
                     </div>
                   </div>

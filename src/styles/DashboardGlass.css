@@ -246,64 +246,32 @@
   font-size: 18px;
   color: var(--text-secondary);
   max-width: 600px;
-  margin-bottom: 40px;
+  margin-bottom: 20px; /* tightened */
   animation: fadeIn 1s ease-out;
 }
 
-.hero-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  width: 100%;
-  max-width: 800px;
-  animation: slideUp 0.8s ease-out 0.2s backwards;
+/* Lift hero section a bit and improve mobile spacing */
+.hero-section {
+  padding-top: 18px;
+  padding-bottom: 18px;
+  transition: transform .32s ease, padding .32s ease;
+}
+.hero-section .hero-welcome,
+.hero-section .hero-title {
+  transform: translateY(-6px);
+  transition: transform .32s ease;
 }
 
-.stat-card {
-  background: white;
-  padding: 20px;
-  border-radius: 16px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  transition: all 0.3s ease;
+@media (max-width: 640px) {
+  .hero-section { padding-top: 8px; padding-bottom: 10px; }
+  .hero-section .hero-welcome, .hero-section .hero-title { transform: translateY(-14px); }
+  .hero-title { font-size: 28px; }
+  .hero-subtitle { margin-bottom: 12px; font-size: 14px; }
+  /* Pull next section up on small screens */
+  .services-container { margin-top: 6px; }
 }
 
-.stat-card:hover {
-  transform: translateY(-5px);
-  box-shadow: var(--shadow-lg);
-  border-color: var(--primary);
-}
-
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  background: #f1f5f9;
-  color: var(--primary);
-}
-
-.stat-content {
-  text-align: right;
-}
-
-.stat-value {
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--text-primary);
-  display: block;
-}
-
-.stat-label {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
+/* hero stats removed — styles cleaned per request */
 
 /* Services Grid */
 .services-container {

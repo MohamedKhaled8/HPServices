@@ -185,15 +185,25 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
               </div>
 
               <div className="form-group">
-                <label htmlFor="nationalID">رقم الهوية *</label>
-                <input
-                  id="nationalID"
-                  type="text"
-                  placeholder="14 رقم"
-                  value={formData.nationalID || ''}
-                  onChange={(e) => handleInputChange('nationalID', e.target.value)}
-                  className={getFieldError('nationalID') ? 'error' : ''}
-                />
+                <label htmlFor="nationalID">رقم الهوية * (14 رقم)</label>
+                <div className="input-container">
+                  <input
+                    id="nationalID"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="أدخل 14 رقم"
+                    maxLength={14}
+                    value={formData.nationalID || ''}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '');
+                      handleInputChange('nationalID', value);
+                    }}
+                    className={getFieldError('nationalID') ? 'error' : ''}
+                  />
+                  <small className={`char-count ${formData.nationalID?.length === 14 ? 'success' : ''}`}>
+                    {formData.nationalID?.length || 0} / 14
+                  </small>
+                </div>
                 {getFieldError('nationalID') && (
                   <span className="error-message">{getFieldError('nationalID')}</span>
                 )}

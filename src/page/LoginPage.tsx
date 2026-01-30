@@ -40,10 +40,18 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
       return;
     }
 
+    // National ID validation if numeric
+    const isNumeric = /^\d+$/.test(formData.email);
+    if (isNumeric && formData.email.length !== 14) {
+      setError('يجب أن يكون رقم الرقم القومي 14 رقم');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      // Login with Firebase
+      // Login with Firebase (identifier can be email or nationalID)
       const user = await loginUser(formData.email, formData.password);
-      
+
       // Check if user is admin
       const isAdmin = await checkIsAdmin(user.uid);
       if (isAdmin) {
@@ -75,10 +83,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
         }
         return;
       }
-      
+
       // Get student data from Firestore
       const studentData = await getStudentData(user.uid);
-      
+
       if (studentData) {
         setStudent(studentData);
         onLoginSuccess();
@@ -86,11 +94,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
         setError('لم يتم العثور على بيانات المستخدم');
       }
     } catch (err: any) {
-      setError(err.message || 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
+      setError(err.message || 'البيانات المدخلة أو كلمة المرور غير صحيحة');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const isIdentifierNumeric = /^\d+$/.test(formData.email);
 
   return (
     <div className="login-page">
@@ -112,15 +122,36 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
 
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label htmlFor="email">البريد الإلكتروني</label>
-            <input
-              id="email"
-              type="email"
-              placeholder="example@example.com"
-              value={formData.email}
-              onChange={(e) => handleInputChange('email', e.target.value)}
-              className={error ? 'error' : ''}
-            />
+            <label htmlFor="identifier">البريد الإلكتروني أو الرقم القومي</label>
+            <div className="input-container" style={{ position: 'relative' }}>
+              <input
+                id="identifier"
+                type="text"
+                placeholder="example@example.com أو 14 رقم"
+                value={formData.email}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                className={error ? 'error' : ''}
+              />
+              {isIdentifierNumeric && (
+                <small
+                  style={{
+                    position: 'absolute',
+                    left: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    fontSize: '11px',
+                    color: formData.email.length === 14 ? '#10b981' : '#94a3b8',
+                    fontWeight: formData.email.length === 14 ? '700' : '400',
+                    background: '#f8fafc',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    pointerEvents: 'none'
+                  }}
+                >
+                  {formData.email.length} / 14
+                </small>
+              )}
+            </div>
           </div>
 
           <div className="form-group">
@@ -137,11 +168,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
 
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || (isIdentifierNumeric && formData.email.length !== 14)}
             className="login-button"
           >
             {isSubmitting ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
           </button>
+
 
           <div className="register-link">
             <p>ليس لديك حساب؟ <button type="button" onClick={onGoToRegister} className="link-button">سجل الآن</button></p>

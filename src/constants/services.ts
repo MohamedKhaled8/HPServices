@@ -110,11 +110,9 @@ export const SERVICES: Service[] = [
     icon: 'user',
     color: '#F59E0B',
     features: [
-      'متابعة شاملة لجميع الخدمات خطوة بخطوة',
-      'تنبيهات فورية ومكالمات هاتفية لكل جديد',
-      'التسجيل في جميع الخدمات بالنيابة عنك',
-      'خصومات حصرية على كافة الخدمات المتاحة',
-      'أولوية قصوى في الدعم الفني والرد على الاستفسارات'
+      'متابعة شاملة لكافة الخدمات مع تنبيهات ومكالمات فورية لكل جديد',
+      'التسجيل في جميع الخدمات بالنيابة عنك وخصومات حصرية على كافة الخدمات',
+      'أولوية قصوى في الدعم الفني والرد السريع على كافة الاستفسارات'
     ],
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
@@ -139,7 +137,6 @@ export const SERVICES: Service[] = [
       { name: 'number_of_copies', label: 'عدد النسخ المطلوبة (من 1 إلى 10)', type: 'number', required: true },
       { name: 'phone_whatsapp', label: 'رقم هاتف للتواصل والشحن (واتساب وفون)', type: 'text', required: true },
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: DIPLOMA_TYPES },
-      { name: 'payment_account', label: 'رقم الحساب أو الموبايل الذي حولت منه المبلغ', type: 'text', required: true },
       { name: 'address_details', label: 'العنوان بالتفصيل (المحافظة / المدينة / اسم الشارع / علامة مميزة / رقم العقار)', type: 'textarea', required: true }
     ],
     paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
@@ -240,15 +237,12 @@ export const SERVICES: Service[] = [
     icon: 'graduation-cap',
     color: '#6366F1',
     features: [
-      'إعداد مشروع التخرج بالكامل باحترافية',
-      'شرح وتوضيح كافة جوانب وتفاصيل المشروع',
-      'إحصائيات دقيقة وبيانات ميدانية واقعية',
-      'تدريب على الإلقاء وتقسيم الأدوار بمهارة',
-      'قائمة مراجع حديثة وموثقة للمشروع',
-      'تصميم عرض تقديمي (PowerPoint) متميز'
+      'تنفيذ كامل للمشروع مع شرح تفصيلي لكافة أجزائه',
+      'إجراء الإحصائيات وتدريب الفريق على المناقشة',
+      'توفير المراجع وتصميم عرض (PPT) احترافي'
     ],
     fields: [
-      { name: 'student_names', label: 'اسماء الطلاب المشتركين في المشروع (اكتب كل اسم في سطر منفصل)', type: 'textarea', required: true },
+      { name: 'student_names', label: 'اسماء الطلاب المشتركين في المشروع', type: 'dynamic_list', required: true },
       { name: 'leader_whatsapp', label: 'رقم واتس اب ليدر المجموعة المسؤول عن المشروع', type: 'text', required: true },
       { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة'] },
       { name: 'project_title', label: 'عنوان المشروع كامل كما تم كتابته في الاستمارة', type: 'textarea', required: true },
@@ -273,11 +267,9 @@ export const SERVICES: Service[] = [
     ],
     paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay'],
     requiredDocuments: [
-      'صورة شهادة الميلاد',
-      'صورة التحول الرقمي',
-      'صورة شهادة التخرج الأساسية',
-      'صورة شخصية 4*6',
-      'صورة تحويل 700 جنيه علي كاش او انستا'
+      'شهادة الميلاد',
+      'التحول الرقمي',
+      'شهادة التخرج + صورة شخصية'
     ]
   }
 ];

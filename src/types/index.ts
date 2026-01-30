@@ -50,7 +50,7 @@ export interface Service {
 export interface ServiceField {
   name: string;
   label: string;
-  type: 'text' | 'number' | 'select' | 'textarea' | 'readonly' | 'editable';
+  type: 'text' | 'number' | 'select' | 'textarea' | 'readonly' | 'editable' | 'dynamic_list';
   required: boolean;
   options?: string[];
   hasOther?: boolean; // للـ dropdown مع خيار Other
