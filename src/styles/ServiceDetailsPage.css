@@ -124,7 +124,8 @@
 .service-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 8px;
+  /* Further reduced from 10px */
 }
 
 .service-fields>.dynamic-fields-section {
@@ -202,12 +203,16 @@
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  /* Further reduced from 4px */
+  margin-bottom: 4px;
+  /* Explicitly control bottom margin */
 }
 
 .form-group label {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 800;
+  /* Made Bolder as requested */
   color: #2d3748;
 }
 
@@ -219,10 +224,13 @@
 .form-group input,
 .form-group select,
 .form-group textarea {
-  padding: 12px 16px;
+  padding: 10px 14px;
+  /* Reduced padding for more compact look */
   border: 1.5px solid #e2e8f0;
-  border-radius: 10px;
-  font-size: 15px;
+  border-radius: 8px;
+  /* Slightly smaller radius */
+  font-size: 14px;
+  /* Slightly smaller font to match */
   font-family: inherit;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   background-color: #ffffff;

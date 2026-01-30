@@ -94,9 +94,7 @@ export const SERVICES: Service[] = [
       { name: 'email', label: 'الجيميل', type: 'editable', required: true },
       { name: 'whatsapp_number', label: 'رقم الواتس اب', type: 'editable', required: true },
       { name: 'college', label: 'الكلية او المعهد الي اتخرجت منه', type: 'select', required: true, options: COLLEGES, hasOther: true },
-      { name: 'college_other', label: 'اذكر الكلية او المعهد', type: 'text', required: false },
       { name: 'department', label: 'القسم او الشعبة بتاعتك في المؤهل الاساسي ( برجاء كتابه ما تم كتابته علي الشهادة )', type: 'select', required: true, options: DEPARTMENTS, hasOther: true },
-      { name: 'department_other', label: 'اذكر القسم او الشعبة', type: 'text', required: false },
       { name: 'grade', label: 'التقدير العام في الشهادة ( برجاء كتابه ما تم كتابته علي الشهادة )', type: 'select', required: true, options: GRADES, hasOther: false }
     ],
     paymentMethods: []
