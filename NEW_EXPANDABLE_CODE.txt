@@ -1,0 +1,196 @@
+// هذا الكود يجب أن يحل محل الكود القديم في AdminDashboardPage.tsx
+// ابحث عن: {/* Display requests for selected service */}
+// واستبدل كل شيء من هناك حتى نهاية div className="requests-grid"
+
+{/* Display requests for selected service - NEW EXPANDABLE DESIGN */}
+{selectedServiceId && (
+  <div className="selected-service-requests">
+    <div className="selected-service-header">
+      <h3>{getServiceName(selectedServiceId)}</h3>
+      <button
+        onClick={() => setSelectedServiceId(null)}
+        className="close-service-button"
+      >
+        <X size={20} />
+      </button>
+    </div>
+
+    <div className="requests-list-container">
+      {serviceRequests.filter(r => r.serviceId === selectedServiceId).length === 0 ? (
+        <div className="no-requests-message">
+          <p>لا توجد طلبات لهذه الخدمة</p>
+        </div>
+      ) : (
+        serviceRequests.filter(r => r.serviceId === selectedServiceId).map((request, index) => {
+          const studentData = students[request.studentId];
+          const isExpanded = expandedRequests.has(request.id || '');
+          const isLastItem = index === serviceRequests.filter(r => r.serviceId === selectedServiceId).length - 1;
+          
+          const toggleExpand = () => {
+            const newExpanded = new Set(expandedRequests);
+            if (isExpanded) {
+              newExpanded.delete(request.id || '');
+            } else {
+              newExpanded.add(request.id || '');
+            }
+            setExpandedRequests(newExpanded);
+          };
+
+          return (
+            <div key={request.id} className="request-row-wrapper">
+              <div className={`request-row ${isExpanded ? 'expanded' : ''}`}>
+                {/* Main Row Content */}
+                <div className="request-row-main">
+                  {/* Right Side: User Info */}
+                  <div className="request-row-info">
+                    <div className="request-user-name">
+                      {studentData?.fullNameArabic || 'غير متاح'}
+                    </div>
+                    <div className="request-meta">
+                      <span className="request-email">{studentData?.email || 'غير متاح'}</span>
+                      <span className="request-date">
+                        {request.createdAt
+                          ? new Date(request.createdAt).toLocaleDateString('ar-EG', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            })
+                          : 'غير متاح'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Center: Status Badge */}
+                  <div className="request-row-status">
+                    {getStatusBadge(request.status)}
+                  </div>
+
+                  {/* Left Side: Actions */}
+                  <div className="request-row-actions">
+                    <button
+                      onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
+                      className={`action-btn accept-btn ${request.status === 'completed' ? 'active' : ''}`}
+                      disabled={request.status === 'completed'}
+                      title="قبول الطلب"
+                    >
+                      <CheckCircle size={18} />
+                      <span>قبول</span>
+                    </button>
+                    <button
+                      onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
+                      className={`action-btn reject-btn ${request.status === 'rejected' ? 'active' : ''}`}
+                      disabled={request.status === 'rejected'}
+                      title="رفض الطلب"
+                    >
+                      <XCircle size={18} />
+                      <span>رفض</span>
+                    </button>
+                    <button
+                      onClick={toggleExpand}
+                      className={`expand-btn ${isExpanded ? 'expanded' : ''}`}
+                      title={isExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}
+                    >
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded Details */}
+                {isExpanded && (
+                  <div className="request-row-details">
+                    <div className="details-grid">
+                      {/* User Details */}
+                      <div className="details-section">
+                        <h4 className="details-section-title">معلومات المستخدم</h4>
+                        <div className="details-items">
+                          <div className="detail-item-row">
+                            <span className="detail-label">الاسم الكامل:</span>
+                            <span className="detail-value">{studentData?.fullNameArabic || 'غير متاح'}</span>
+                          </div>
+                          <div className="detail-item-row">
+                            <span className="detail-label">البريد الإلكتروني:</span>
+                            <span className="detail-value">{studentData?.email || 'غير متاح'}</span>
+                          </div>
+                          <div className="detail-item-row">
+                            <span className="detail-label">رقم الواتساب:</span>
+                            <span className="detail-value">{studentData?.whatsappNumber || 'غير متاح'}</span>
+                          </div>
+                          <div className="detail-item-row">
+                            <span className="detail-label">الرقم القومي:</span>
+                            <span className="detail-value">{studentData?.nationalID || 'غير متاح'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Request Details */}
+                      <div className="details-section">
+                        <h4 className="details-section-title">تفاصيل الطلب</h4>
+                        <div className="details-items">
+                          <div className="detail-item-row">
+                            <span className="detail-label">تاريخ الطلب:</span>
+                            <span className="detail-value">
+                              {request.createdAt
+                                ? new Date(request.createdAt).toLocaleString('ar-EG')
+                                : 'غير متاح'}
+                            </span>
+                          </div>
+                          {request.paymentMethod && (
+                            <div className="detail-item-row">
+                              <span className="detail-label">طريقة الدفع:</span>
+                              <span className="detail-value">{request.paymentMethod}</span>
+                            </div>
+                          )}
+                          {request.serviceId === '6' && request.data?.selectedCertificate && (
+                            <>
+                              <div className="detail-item-row">
+                                <span className="detail-label">الشهادة المختارة:</span>
+                                <span className="detail-value">{request.data.selectedCertificate.name}</span>
+                              </div>
+                              {request.data.selectedCertificate.imageUrl && (
+                                <div className="detail-item-row full-width">
+                                  <img
+                                    src={request.data.selectedCertificate.imageUrl}
+                                    alt={request.data.selectedCertificate.name}
+                                    className="certificate-preview-img"
+                                  />
+                                </div>
+                              )}
+                            </>
+                          )}
+                          {/* Display all other request data */}
+                          {Object.entries(request.data || {}).map(([key, value]) => {
+                            if (key === 'selectedCertificate' || typeof value === 'object') return null;
+                            return (
+                              <div key={key} className="detail-item-row">
+                                <span className="detail-label">{key}:</span>
+                                <span className="detail-value">{String(value)}</span>
+                              </div>
+                            );
+                          })}
+                        </details-items>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Dotted Separator */}
+              {!isLastItem && <div className="request-row-separator"></div>}
+            </div>
+          );
+        })
+      )}
+    </div>
+  </div>
+)}

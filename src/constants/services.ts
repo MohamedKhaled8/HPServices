@@ -85,7 +85,7 @@ export const SERVICES: Service[] = [
     nameAr: 'سجل بياناتك',
     descriptionEn: 'Register and update your personal information',
     descriptionAr: 'سجل وحدث معلوماتك الشخصية',
-    icon: 'clipboard-list',
+    icon: 'Writing.json',
     color: '#3B82F6',
     fields: [
       { name: 'full_name', label: 'الأسم الرباعي عربي', type: 'editable', required: true },
@@ -105,7 +105,7 @@ export const SERVICES: Service[] = [
     nameAr: 'العميل المميز',
     descriptionEn: 'Get premium support and exclusive services',
     descriptionAr: 'احصل على دعم مميز وخدمات حصرية',
-    icon: 'user',
+    icon: 'vip.json',
     color: '#F59E0B',
     features: [
       'متابعة شاملة لكافة الخدمات مع تنبيهات ومكالمات فورية لكل جديد',
@@ -126,10 +126,10 @@ export const SERVICES: Service[] = [
   {
     id: '3',
     nameEn: 'School Books Shipping',
-    nameAr: 'شحن الكتب الدراسية', // سيتم تحديثه من Admin Dashboard
+    nameAr: 'شحن الكتب الدراسية',
     descriptionEn: 'Order and ship your school books',
     descriptionAr: 'اطلب وشحن كتبك الدراسية',
-    icon: 'package',
+    icon: 'shipping.json',
     color: '#10B981',
     fields: [
       { name: 'number_of_copies', label: 'عدد النسخ المطلوبة (من 1 إلى 10)', type: 'number', required: true },
@@ -145,7 +145,7 @@ export const SERVICES: Service[] = [
     nameAr: 'دفع المصروفات الدراسية',
     descriptionEn: 'Pay your school fees securely',
     descriptionAr: 'ادفع مصروفاتك الدراسية بأمان',
-    icon: 'creditcard',
+    icon: 'payment.json',
     color: '#8B5CF6',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
@@ -163,7 +163,7 @@ export const SERVICES: Service[] = [
     nameAr: 'حل وتسليم تكليفات',
     descriptionEn: 'Get help with your assignments and submit them',
     descriptionAr: 'احصل على مساعدة في تكليفاتك وقم بتسليمها',
-    icon: 'checklist',
+    icon: 'solve.json',
     color: '#EC4899',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
@@ -180,7 +180,7 @@ export const SERVICES: Service[] = [
     nameAr: 'شهادات اونلاين',
     descriptionEn: 'Apply for and receive online certificates',
     descriptionAr: 'قدم طلب واحصل على شهادات إلكترونية',
-    icon: 'award',
+    icon: 'Certificate.json',
     color: '#06B6D4',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
@@ -198,7 +198,7 @@ export const SERVICES: Service[] = [
     nameAr: 'التقديم علي التحول الرقمي',
     descriptionEn: 'Apply for digital transformation services',
     descriptionAr: 'قدم طلب للتحول الرقمي',
-    icon: 'zap',
+    icon: 'TEchnology.json',
     color: '#14B8A6',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
@@ -216,7 +216,7 @@ export const SERVICES: Service[] = [
     nameAr: 'المراجعة النهائية',
     descriptionEn: 'Get comprehensive review for your exams',
     descriptionAr: 'احصل على مراجعة شاملة لامتحاناتك',
-    icon: 'search',
+    icon: 'Books.json',
     color: '#F97316',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم الرباعي', type: 'editable', required: true },
@@ -232,7 +232,7 @@ export const SERVICES: Service[] = [
     nameAr: 'مشروع التخرج',
     descriptionEn: 'Get help with your graduation project',
     descriptionAr: 'احصل على مساعدة في مشروع التخرج',
-    icon: 'graduation-cap',
+    icon: 'Graduation.json',
     color: '#6366F1',
     features: [
       'تنفيذ كامل للمشروع مع شرح تفصيلي لكافة أجزائه',
@@ -254,7 +254,7 @@ export const SERVICES: Service[] = [
     nameAr: 'استخراج شهادة التخرج',
     descriptionEn: 'Request graduation certificate - receive after 20 days from college',
     descriptionAr: 'هنقدملك علي شهادة التخرج و انت تيجي تستلمها من الكلية بعد 20 يوم. محتاجين تملي البيانات و تبعت الورق علي رقم واتس اب المكتبة 01050889596',
-    icon: 'file-check',
+    icon: 'Extract_Graduation.json',
     color: '#EF4444',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },

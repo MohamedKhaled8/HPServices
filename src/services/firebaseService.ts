@@ -3,7 +3,13 @@ import {
   signInWithEmailAndPassword,
   signOut,
   User as FirebaseUser,
-  onAuthStateChanged
+  onAuthStateChanged,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  sendPasswordResetEmail,
+  confirmPasswordReset,
+  verifyPasswordResetCode
 } from 'firebase/auth';
 import {
   collection,
@@ -23,6 +29,11 @@ import { auth, db, storage } from '../config/firebase';
 import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
 import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile } from '../types';
+import { logger } from '../utils/logger';
+import { checkRateLimit } from '../utils/security';
+
+const MAX_FILE_SIZE_MB = 10; // Max 10MB per file
+const MAX_DOC_SIZE_KB = 1024; // 1MB Firestore doc limit warning
 
 export type TrackKey = 'track1' | 'track2' | 'track3';
 
@@ -38,11 +49,15 @@ interface AssignmentFileMeta {
 // Auth Functions
 export const registerUser = async (email: string, password: string, studentData: StudentData): Promise<FirebaseUser> => {
   try {
+    // Security: Rate limiting
+    if (!checkRateLimit('register', 3, 60000)) {
+      throw new Error('محاولات متكررة جداً. يرجى المحاولة بعد دقيقة.');
+    }
     // Create user with email and password
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
-    // Save student data to Firestore
+    // Save student data to Firestore (Stored as plain text as requested)
     const studentDataWithId = {
       ...studentData,
       id: user.uid,
@@ -71,13 +86,17 @@ export const getStudentEmailByNationalID = async (nationalID: string): Promise<s
     }
     return null;
   } catch (error) {
-    console.error('Error finding student by National ID:', error);
+    logger.error('Error finding student by National ID:', error);
     return null;
   }
 };
 
 export const loginUser = async (identifier: string, password: string): Promise<FirebaseUser> => {
   try {
+    // Security: Rate limiting
+    if (!checkRateLimit('login', 5, 60000)) {
+      throw new Error('محاولات دخول فاشلة كثيرة. يرجى الانتظار دقيقة.');
+    }
     let email = identifier;
 
     // Check if input is a 14-digit National ID
@@ -117,6 +136,70 @@ export const logoutUser = async (): Promise<void> => {
   }
 };
 
+export const changeUserPassword = async (oldPassword: string, newPassword: string): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error('المستخدم غير مسجل الدخول');
+
+  try {
+    // 1. Re-authenticate
+    const credential = EmailAuthProvider.credential(user.email, oldPassword);
+    await reauthenticateWithCredential(user, credential);
+
+    // 2. Update Auth Password
+    await updatePassword(user, newPassword);
+
+    // 3. Update Firestore (Admin View)
+    await updateStudentData(user.uid, { password: newPassword } as any);
+
+  } catch (error: any) {
+    logger.error('Error changing password:', error);
+    if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      throw new Error('كلمة المرور الحالية غير صحيحة');
+    }
+    throw new Error('فشل تغيير كلمة المرور: ' + (error.message || 'خطأ غير معروف'));
+  }
+};
+
+
+
+export const sendResetPasswordEmail = async (email: string): Promise<void> => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error: any) {
+    if (error.code === 'auth/user-not-found') {
+      throw new Error('البريد الإلكتروني غير مسجل');
+    }
+    throw new Error('حدث خطأ أثناء إرسال البريد: ' + error.message);
+  }
+};
+
+export const verifyResetCode = async (code: string): Promise<string> => {
+  try {
+    return await verifyPasswordResetCode(auth, code);
+  } catch (error: any) {
+    throw new Error('الرابط غير صالح أو منتهي الصلاحية');
+  }
+};
+
+export const completePasswordReset = async (code: string, newPassword: string, email: string): Promise<void> => {
+  try {
+    // 1. Confirm Reset in Auth
+    await confirmPasswordReset(auth, code, newPassword);
+
+    // 2. Update Firestore (Find user by email)
+    const studentsRef = collection(db, 'students');
+    const q = query(studentsRef, where('email', '==', email));
+    const snap = await getDocs(q);
+
+    if (!snap.empty) {
+      const studentDoc = snap.docs[0];
+      await updateStudentData(studentDoc.id, { password: newPassword } as any);
+    }
+  } catch (error: any) {
+    throw new Error('فشل تحديث كلمة المرور: ' + error.message);
+  }
+};
+
 export const getCurrentUser = (): FirebaseUser | null => {
   return auth.currentUser;
 };
@@ -150,7 +233,7 @@ export const getStudentData = async (userId: string): Promise<StudentData | null
       errorMessage = error.message;
     }
 
-    console.error('Error getting student data:', error);
+    logger.error('Error getting student data:', error);
     throw new Error(errorMessage);
   }
 };
@@ -193,7 +276,7 @@ export const uploadAssignmentFilesForTrack = async (
 ): Promise<AssignmentFileMeta[]> => {
   try {
     if (!adminId) {
-      console.warn('Admin ID missing in upload, using fallback or anonymous');
+      logger.warn('Admin ID missing in upload, using fallback or anonymous');
       const currentUser = auth.currentUser;
       if (currentUser) {
         adminId = currentUser.uid;
@@ -220,7 +303,7 @@ export const uploadAssignmentFilesForTrack = async (
         });
 
       if (uploadError) {
-        console.error('Supabase Upload Error:', uploadError);
+        logger.error('Supabase Upload Error:', uploadError);
         throw new Error(`خطأ في رفع الملف ${file.name}: ${uploadError.message}`);
       }
 
@@ -260,7 +343,7 @@ export const uploadAssignmentFilesForTrack = async (
 
     return results;
   } catch (error: any) {
-    console.error('Error uploading assignment files:', error);
+    logger.error('Error uploading assignment files:', error);
     throw new Error(error.message || 'حدث خطأ أثناء رفع ملفات التكاليف');
   }
 };
@@ -282,7 +365,7 @@ export const getAssignmentFilesForTrack = async (track: TrackKey): Promise<Assig
       };
     });
   } catch (error: any) {
-    console.error('Error fetching assignment files:', error);
+    logger.error('Error fetching assignment files:', error);
     throw new Error(error.message || 'حدث خطأ أثناء جلب ملفات التكاليف');
   }
 };
@@ -323,22 +406,46 @@ export const distributeAssignmentsForTrack = async (track: TrackKey, fileIds?: s
     let fileIndex = 0;
     for (const student of students) {
       const file = shuffledFiles[fileIndex];
+
+      // Extract file extension from original file name
+      const fileExtension = file.name.includes('.')
+        ? file.name.substring(file.name.lastIndexOf('.'))
+        : '';
+
+      // Create new file name using student's name + original extension
+      // Replace spaces and special characters with underscores for safety
+      const studentName = (student.data.fullNameArabic || 'طالب').replace(/\s+/g, '_').replace(/[^\u0600-\u06FF\w.-]/g, '_');
+      const customFileName = `${studentName}${fileExtension}`;
+
       const assigned: AssignedFile = {
         id: file.id,
-        name: file.name,
+        name: file.name, // الاسم الأصلي للملف
+        customName: customFileName, // الاسم المخصص (اسم الطالب)
         url: file.url,
         track,
         assignedAt: new Date().toISOString()
       };
 
-      await updateStudentData(student.id, {
-        assignedFile: assigned
-      } as any);
+      // Get existing assigned files or initialize empty array
+      const existingFiles = student.data.assignedFiles || [];
+
+      // Check if this file is already assigned (by ID) to avoid duplicates
+      const isAlreadyAssigned = existingFiles.some(f => f.id === file.id);
+
+      if (!isAlreadyAssigned) {
+        // Add new file to the array
+        const updatedFiles = [...existingFiles, assigned];
+
+        await updateStudentData(student.id, {
+          assignedFiles: updatedFiles,
+          assignedFile: assigned // Keep last file for backward compatibility
+        } as any);
+      }
 
       fileIndex = (fileIndex + 1) % shuffledFiles.length;
     }
   } catch (error: any) {
-    console.error('Error distributing assignments:', error);
+    logger.error('Error distributing assignments:', error);
     throw new Error(error.message || 'حدث خطأ أثناء توزيع ملفات التكاليف على الطلاب');
   }
 };
@@ -367,19 +474,19 @@ export const deleteAssignmentFilesForTrack = async (
             const { error } = await supabase.storage
               .from(ASSIGNMENTS_BUCKET)
               .remove([storagePath]);
-            if (error) console.error('Error removing from Supabase:', error);
+            if (error) logger.error('Error removing from Supabase:', error);
           } else {
             await deleteObject(ref(storage, storagePath));
           }
         } catch (storageError) {
-          console.error('Error deleting file from storage:', storageError);
+          logger.error('Error deleting file from storage:', storageError);
         }
       }
     });
 
     await Promise.all(deletePromises);
   } catch (error: any) {
-    console.error('Error deleting assignment files:', error);
+    logger.error('Error deleting assignment files:', error);
     throw new Error(error.message || 'حدث خطأ أثناء حذف ملفات التكاليف');
   }
 };
@@ -419,10 +526,10 @@ export const subscribeToAllStudents = (
         createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
       } as StudentData;
     });
-    console.log('subscribeToAllStudents: Found', students.length, 'students');
+    logger.log('subscribeToAllStudents: Found', students.length, 'students');
     callback(students);
   }, (error) => {
-    console.error('Error in students subscription:', error);
+    logger.error('Error in students subscription:', error);
     if (onError) {
       onError(error);
     }
@@ -571,6 +678,11 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
       throw new Error(`نوع الملف غير مدعوم. الصيغ المقبولة: JPEG, PNG, PDF`);
     }
 
+    // Security: Validate file size
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      throw new Error(`حجم الملف كبير جداً. الحد الأقصى هو ${MAX_FILE_SIZE_MB} ميجابايت.`);
+    }
+
     let fileToUpload: File | Blob;
 
     // If we have the actual file object, use it directly
@@ -627,7 +739,7 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
 
     return optimizedUrl;
   } catch (error: any) {
-    console.error('Error uploading file to Cloudinary:', error);
+    logger.error('Error uploading file to Cloudinary:', error);
     throw new Error(error.message || 'حدث خطأ أثناء رفع الملف');
   }
 };
@@ -653,7 +765,7 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
             type: file.type
           };
         } catch (error) {
-          console.error(`Error uploading file ${file.name}:`, error);
+          logger.error(`Error uploading file ${file.name}:`, error);
           throw error;
         }
       });
@@ -675,11 +787,11 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
     const maxSize = 1024 * 1024; // 1 MB limit
 
     if (documentSize > maxSize) {
-      console.warn(`Document size (${(documentSize / 1024).toFixed(2)} KB) is large. Consider splitting data.`);
+      logger.warn(`Document size (${(documentSize / 1024).toFixed(2)} KB) is large. Consider splitting data.`);
       // Still save, but log warning
     }
 
-    console.log(`Saving document with size: ${(documentSize / 1024).toFixed(2)} KB`);
+    logger.log(`Saving document with size: ${(documentSize / 1024).toFixed(2)} KB`);
 
     // Save request - only links, no base64, optimized and secure
     await setDoc(requestRef, requestData);
@@ -750,7 +862,7 @@ export const subscribeToServiceRequests = (
       // Call callback with merged results
       callback([...allRequests]);
     }, (error) => {
-      console.error(`Error in service requests subscription for ${serviceId}:`, error);
+      logger.error(`Error in service requests subscription for ${serviceId}:`, error);
     });
 
     unsubscribes.push(unsubscribe);
@@ -772,7 +884,7 @@ export const checkIsAdmin = async (userId: string): Promise<boolean> => {
     }
     return false;
   } catch (error) {
-    console.error('Error checking admin status:', error);
+    logger.error('Error checking admin status:', error);
     return false;
   }
 };
@@ -829,7 +941,7 @@ export const subscribeToAllServiceRequests = (
       // Call callback with merged results
       callback([...allRequests]);
     }, (error) => {
-      console.error(`Error in service requests subscription for ${serviceId}:`, error);
+      logger.error(`Error in service requests subscription for ${serviceId}:`, error);
     });
 
     unsubscribes.push(unsubscribe);
@@ -954,13 +1066,13 @@ export const updateAssignmentsServiceConfig = async (config: AssignmentsServiceC
 // Certificates Service Configuration
 export const getCertificatesServiceConfig = async (): Promise<CertificatesServiceConfig | null> => {
   try {
-    console.log('Fetching certificates config from Firebase...');
+    logger.log('Fetching certificates config from Firebase...');
     const docRef = doc(db, 'config', 'certificatesService');
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
       const data = docSnap.data() as CertificatesServiceConfig;
-      console.log('Certificates config loaded:', {
+      logger.log('Certificates config loaded:', {
         hasCertificates: !!data.certificates,
         certificatesCount: data.certificates?.length || 0,
         certificates: data.certificates?.map(c => ({
@@ -972,11 +1084,11 @@ export const getCertificatesServiceConfig = async (): Promise<CertificatesServic
       });
       return data;
     } else {
-      console.log('Certificates config document does not exist');
+      logger.log('Certificates config document does not exist');
       return null;
     }
   } catch (error: any) {
-    console.error('Error fetching certificates config:', error);
+    logger.error('Error fetching certificates config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء جلب إعدادات الشهادات');
   }
 };
@@ -996,7 +1108,7 @@ export const updateCertificatesServiceConfig = async (config: CertificatesServic
       paymentMethods: config.paymentMethods
     };
 
-    console.log('Saving certificates config to Firebase:', {
+    logger.log('Saving certificates config to Firebase:', {
       hasCertificates: !!cleanConfig.certificates,
       certificatesCount: cleanConfig.certificates?.length || 0,
       certificates: cleanConfig.certificates?.map(c => ({
@@ -1016,9 +1128,9 @@ export const updateCertificatesServiceConfig = async (config: CertificatesServic
       { merge: false } // استخدام merge: false للتأكد من الكتابة الكاملة
     );
 
-    console.log('Certificates config saved to Firebase successfully');
+    logger.log('Certificates config saved to Firebase successfully');
   } catch (error: any) {
-    console.error('Error saving certificates config:', error);
+    logger.error('Error saving certificates config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات الشهادات');
   }
 };
@@ -1026,7 +1138,7 @@ export const updateCertificatesServiceConfig = async (config: CertificatesServic
 // Digital Transformation Service Configuration
 export const getDigitalTransformationConfig = async (): Promise<DigitalTransformationConfig | null> => {
   try {
-    console.log('Fetching digital transformation config from Firebase...');
+    logger.log('Fetching digital transformation config from Firebase...');
     const docRef = doc(db, 'config', 'digitalTransformationService');
     const docSnap = await getDoc(docRef);
 
@@ -1039,18 +1151,18 @@ export const getDigitalTransformationConfig = async (): Promise<DigitalTransform
           ? data.examLanguage
           : (data.examLanguage ? [data.examLanguage] : [])
       };
-      console.log('Digital transformation config loaded:', {
+      logger.log('Digital transformation config loaded:', {
         hasTypes: !!config.transformationTypes,
         typesCount: config.transformationTypes?.length || 0,
         languagesCount: config.examLanguage?.length || 0
       });
       return config;
     } else {
-      console.log('Digital transformation config document does not exist');
+      logger.log('Digital transformation config document does not exist');
       return null;
     }
   } catch (error: any) {
-    console.error('Error fetching digital transformation config:', error);
+    logger.error('Error fetching digital transformation config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء جلب إعدادات التحول الرقمي');
   }
 };
@@ -1068,7 +1180,7 @@ export const updateDigitalTransformationConfig = async (config: DigitalTransform
       paymentMethods: config.paymentMethods
     };
 
-    console.log('Saving digital transformation config to Firebase:', {
+    logger.log('Saving digital transformation config to Firebase:', {
       hasTypes: !!cleanConfig.transformationTypes,
       typesCount: cleanConfig.transformationTypes?.length || 0,
       languagesCount: cleanConfig.examLanguage?.length || 0
@@ -1083,9 +1195,9 @@ export const updateDigitalTransformationConfig = async (config: DigitalTransform
       { merge: false }
     );
 
-    console.log('Digital transformation config saved to Firebase successfully');
+    logger.log('Digital transformation config saved to Firebase successfully');
   } catch (error: any) {
-    console.error('Error saving digital transformation config:', error);
+    logger.error('Error saving digital transformation config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات التحول الرقمي');
   }
 };
@@ -1093,23 +1205,23 @@ export const updateDigitalTransformationConfig = async (config: DigitalTransform
 // Final Review Service Configuration
 export const getFinalReviewConfig = async (): Promise<FinalReviewConfig | null> => {
   try {
-    console.log('Fetching final review config from Firebase...');
+    logger.log('Fetching final review config from Firebase...');
     const docRef = doc(db, 'config', 'finalReviewService');
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
       const data = docSnap.data() as FinalReviewConfig;
-      console.log('Final review config loaded:', {
+      logger.log('Final review config loaded:', {
         serviceName: data.serviceName,
         paymentAmount: data.paymentAmount
       });
       return data;
     } else {
-      console.log('Final review config document does not exist');
+      logger.log('Final review config document does not exist');
       return null;
     }
   } catch (error: any) {
-    console.error('Error fetching final review config:', error);
+    logger.error('Error fetching final review config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء جلب إعدادات المراجعة النهائية');
   }
 };
@@ -1122,7 +1234,7 @@ export const updateFinalReviewConfig = async (config: FinalReviewConfig): Promis
       paymentMethods: config.paymentMethods
     };
 
-    console.log('Saving final review config to Firebase:', cleanConfig);
+    logger.log('Saving final review config to Firebase:', cleanConfig);
 
     await setDoc(
       doc(db, 'config', 'finalReviewService'),
@@ -1133,9 +1245,9 @@ export const updateFinalReviewConfig = async (config: FinalReviewConfig): Promis
       { merge: false }
     );
 
-    console.log('Final review config saved to Firebase successfully');
+    logger.log('Final review config saved to Firebase successfully');
   } catch (error: any) {
-    console.error('Error saving final review config:', error);
+    logger.error('Error saving final review config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات المراجعة النهائية');
   }
 };
@@ -1143,23 +1255,23 @@ export const updateFinalReviewConfig = async (config: FinalReviewConfig): Promis
 // Graduation Project Service Configuration
 export const getGraduationProjectConfig = async (): Promise<GraduationProjectConfig | null> => {
   try {
-    console.log('Fetching graduation project config from Firebase...');
+    logger.log('Fetching graduation project config from Firebase...');
     const docRef = doc(db, 'config', 'graduationProjectService');
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
       const data = docSnap.data() as GraduationProjectConfig;
-      console.log('Graduation project config loaded:', {
+      logger.log('Graduation project config loaded:', {
         serviceName: data.serviceName,
         featuresCount: data.features?.length || 0
       });
       return data;
     } else {
-      console.log('Graduation project config document does not exist');
+      logger.log('Graduation project config document does not exist');
       return null;
     }
   } catch (error: any) {
-    console.error('Error fetching graduation project config:', error);
+    logger.error('Error fetching graduation project config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء جلب إعدادات مشروع التخرج');
   }
 };
@@ -1173,7 +1285,7 @@ export const updateGraduationProjectConfig = async (config: GraduationProjectCon
       paymentMethods: config.paymentMethods
     };
 
-    console.log('Saving graduation project config to Firebase:', cleanConfig);
+    logger.log('Saving graduation project config to Firebase:', cleanConfig);
 
     await setDoc(
       doc(db, 'config', 'graduationProjectService'),
@@ -1184,9 +1296,9 @@ export const updateGraduationProjectConfig = async (config: GraduationProjectCon
       { merge: false }
     );
 
-    console.log('Graduation project config saved to Firebase successfully');
+    logger.log('Graduation project config saved to Firebase successfully');
   } catch (error: any) {
-    console.error('Error saving graduation project config:', error);
+    logger.error('Error saving graduation project config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات مشروع التخرج');
   }
 };
@@ -1203,9 +1315,9 @@ export const saveDigitalTransformationCode = async (data: any): Promise<void> =>
       updatedAt: serverTimestamp()
     });
 
-    console.log('Digital transformation code saved successfully');
+    logger.log('Digital transformation code saved successfully');
   } catch (error: any) {
-    console.error('Error saving digital transformation code:', error);
+    logger.error('Error saving digital transformation code:', error);
     throw new Error(error.message || 'حدث خطأ أثناء حفظ كود التحول الرقمي');
   }
 };
@@ -1222,7 +1334,7 @@ export const getDigitalTransformationCodes = async (): Promise<any[]> => {
       ...doc.data()
     }));
   } catch (error: any) {
-    console.error('Error fetching digital transformation codes:', error);
+    logger.error('Error fetching digital transformation codes:', error);
     return [];
   }
 };
@@ -1248,14 +1360,14 @@ export const subscribeToDigitalTransformationCodes = (
         onUpdate(codes);
       },
       (error) => {
-        console.error('Error subscribing to digital transformation codes:', error);
+        logger.error('Error subscribing to digital transformation codes:', error);
         if (onError) onError(error);
       }
     );
 
     return unsubscribe;
   } catch (error) {
-    console.error('Error setting up subscription:', error);
+    logger.error('Error setting up subscription:', error);
     if (onError) onError(error);
     return () => { };
   }
@@ -1278,9 +1390,9 @@ export const saveElectronicPaymentCode = async (data: any): Promise<void> => {
       updatedAt: serverTimestamp()
     });
 
-    console.log('Electronic payment code saved successfully');
+    logger.log('Electronic payment code saved successfully');
   } catch (error: any) {
-    console.error('Error saving electronic payment code:', error);
+    logger.error('Error saving electronic payment code:', error);
     throw new Error(error.message || 'حدث خطأ أثناء حفظ كود الدفع الإلكتروني');
   }
 };
@@ -1296,7 +1408,7 @@ export const getElectronicPaymentCodes = async (): Promise<any[]> => {
       ...doc.data()
     }));
   } catch (error: any) {
-    console.error('Error fetching electronic payment codes:', error);
+    logger.error('Error fetching electronic payment codes:', error);
     return [];
   }
 };
@@ -1322,15 +1434,47 @@ export const subscribeToElectronicPaymentCodes = (
         onUpdate(codes);
       },
       (error) => {
-        console.error('Error subscribing to electronic payment codes:', error);
+        logger.error('Error subscribing to electronic payment codes:', error);
         if (onError) onError(error);
       }
     );
 
     return unsubscribe;
   } catch (error) {
-    console.error('Error setting up subscription (electronic payment codes):', error);
+    logger.error('Error setting up subscription (electronic payment codes):', error);
     if (onError) onError(error);
     return () => { };
+  }
+};
+
+// ============================================
+// Latest News (أخر الأخبار)
+// ============================================
+
+export const getLatestNews = async (): Promise<{ content: string; updatedAt?: any } | null> => {
+  try {
+    const docRef = doc(db, 'config', 'latestNews');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as { content: string; updatedAt?: any };
+    }
+    return null;
+  } catch (error: any) {
+    logger.error('Error fetching latest news:', error);
+    return null;
+  }
+};
+
+export const updateLatestNews = async (content: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'config', 'latestNews');
+    await setDoc(docRef, {
+      content,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    logger.log('Latest news updated successfully');
+  } catch (error: any) {
+    logger.error('Error updating latest news:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء تحديث أخر الأخبار');
   }
 };

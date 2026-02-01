@@ -118,8 +118,8 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           <div className="logo">
             <div className="logo-icon">🎓</div>
           </div>
-          <h1>التسجيل في منصة خدمات الطلاب</h1>
-          <p>املأ البيانات المطلوبة لبدء رحلتك الأكاديمية</p>
+          <h1>منصة HP للخدمات التعليمية</h1>
+          <p>أدخل بياناتك للاشتراك في خدماتنا التعليمية</p>
         </div>
 
         {submitError && (
@@ -142,7 +142,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
                 id="fullNameArabic"
                 type="text"
                 dir="rtl"
-                placeholder="أدخل اسمك الكامل بالعربية"
+                placeholder="ادخل اسمك رباعي باللغة العربية"
                 value={formData.fullNameArabic || ''}
                 onChange={(e) => handleInputChange('fullNameArabic', e.target.value)}
                 className={getFieldError('fullNameArabic') ? 'error' : ''}
@@ -158,7 +158,8 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
                 id="vehicleNameEnglish"
                 type="text"
                 dir="ltr"
-                placeholder="Enter vehicle name in English"
+                style={{ textAlign: 'right' }}
+                placeholder="ادخل الاسم الرباعي باللغة الانجليزية"
                 value={formData.vehicleNameEnglish || ''}
                 onChange={(e) => handleInputChange('vehicleNameEnglish', e.target.value)}
                 className={getFieldError('vehicleNameEnglish') ? 'error' : ''}
@@ -185,7 +186,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
               </div>
 
               <div className="form-group">
-                <label htmlFor="nationalID">رقم الهوية * (14 رقم)</label>
+                <label htmlFor="nationalID">الرقم القومي * (14 رقم)</label>
                 <div className="input-container">
                   <input
                     id="nationalID"
@@ -253,14 +254,14 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             </div>
 
             <div className="form-group">
-              <label htmlFor="course">المقرر *</label>
+              <label htmlFor="course">الشعبة الدراسية *</label>
               <select
                 id="course"
                 value={formData.course || ''}
                 onChange={(e) => handleInputChange('course', e.target.value as any)}
                 className={getFieldError('course') ? 'error' : ''}
               >
-                <option value="">اختر المقرر</option>
+                <option value="">اختر الشعبة الدراسية</option>
                 {COURSES.map(course => (
                   <option key={course} value={course}>{course}</option>
                 ))}
@@ -342,20 +343,6 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             </div>
 
             <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="siteNumber">رقم الموقع *</label>
-                <input
-                  id="siteNumber"
-                  type="text"
-                  placeholder="رقم الموقع"
-                  value={formData.address?.siteNumber || ''}
-                  onChange={(e) => handleAddressChange('siteNumber', e.target.value)}
-                  className={getFieldError('address.siteNumber') ? 'error' : ''}
-                />
-                {getFieldError('address.siteNumber') && (
-                  <span className="error-message">{getFieldError('address.siteNumber')}</span>
-                )}
-              </div>
 
               <div className="form-group">
                 <label htmlFor="landmark">معلم قريب (اختياري)</label>

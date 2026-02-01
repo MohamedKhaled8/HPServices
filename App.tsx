@@ -12,6 +12,8 @@ import AdminDashboardPage from './src/page/AdminDashboardPage';
 import AssignmentsManagementPage from './src/page/AssignmentsManagementPage';
 import StudentAssignmentsPage from './src/page/StudentAssignmentsPage';
 import ApprovedRequestsPage from './src/page/ApprovedRequestsPage';
+import NewsPage from './src/page/NewsPage';
+import ResetPasswordPage from './src/page/ResetPasswordPage';
 import './src/styles/App.css';
 
 // مكون حماية المسارات الخاصة بالمستخدمين المسجلين (الطلاب فقط)
@@ -181,6 +183,7 @@ const DashboardWrapper = () => {
       onProfileClick={() => navigate('/profile')}
       onAssignmentsClick={() => navigate('/my-assignments')}
       onRequestsClick={() => navigate('/my-requests')}
+      onNewsClick={() => navigate('/news')}
       onLogout={handleLogout}
       onAdminClick={() => navigate('/admin')}
     />
@@ -223,6 +226,11 @@ const AllUsersWrapper = () => {
   return <AllUsersPage onBack={() => navigate('/dashboard')} />;
 };
 
+const NewsWrapper = () => {
+  const navigate = useNavigate();
+  return <NewsPage onBack={() => navigate('/dashboard')} />;
+};
+
 const AdminDashboardWrapper = () => {
   const navigate = useNavigate();
   const { logout } = useStudent();
@@ -262,6 +270,7 @@ const App: React.FC = () => {
           {/* Public Routes */}
           <Route path="/login" element={<LoginWrapper />} />
           <Route path="/register" element={<RegisterWrapper />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/admin-login" element={<Navigate to="/login" replace />} />
 
           {/* User Protected Routes */}
@@ -300,6 +309,12 @@ const App: React.FC = () => {
           <Route path="/all-users" element={
             <ProtectedRoute>
               <AllUsersWrapper />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/news" element={
+            <ProtectedRoute>
+              <NewsWrapper />
             </ProtectedRoute>
           } />
 

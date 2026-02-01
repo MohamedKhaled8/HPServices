@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UploadedFile } from '../types';
 import { Upload, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { logger } from '../utils/logger';
 import '../styles/FileUpload.css';
 
 interface FileUploadProps {
@@ -13,7 +14,7 @@ interface FileUploadProps {
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesSelected,
-  maxFileSize = 20 * 1024 * 1024, // 20 MB
+  maxFileSize = 10 * 1024 * 1024, // 10 MB - Security: Reduced from 20MB for better safety
   acceptedFormats = ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF'],
   resetTrigger
 }) => {

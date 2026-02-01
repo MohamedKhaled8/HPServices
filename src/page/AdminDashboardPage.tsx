@@ -26,6 +26,8 @@ import {
   subscribeToDigitalTransformationCodes,
   saveElectronicPaymentCode,
   subscribeToElectronicPaymentCodes,
+  getLatestNews,
+  updateLatestNews,
 } from '../services/firebaseService';
 import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice } from '../types';
 import {
@@ -51,10 +53,22 @@ import {
   Pencil,
   Zap,
   Image,
-  EyeOff
+  EyeOff,
+  Newspaper,
+  Bell,
+  Send,
+  BarChart2,
+  TrendingUp,
+  DollarSign,
+  PieChart,
+  Activity
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
+import { logger } from '../utils/logger';
 import '../styles/AdminDashboardPage.css';
+import '../styles/AdminExpandableRows.css';
+import '../styles/AdminNewsEditor.css';
+
 
 interface AdminDashboardPageProps {
   onLogout: () => void;
@@ -66,8 +80,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const { student } = useStudent();
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [students, setStudents] = useState<Record<string, StudentData>>({});
-  const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users'>('requests');
+  const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics'>('requests');
   const [bookConfig, setBookConfig] = useState<BookServiceConfig | null>(null);
   const [feesConfig, setFeesConfig] = useState<FeesServiceConfig | null>(null);
   const [assignmentsConfig, setAssignmentsConfig] = useState<AssignmentsServiceConfig | null>(null);
@@ -91,12 +105,69 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const [isLoading, setIsLoading] = useState(true);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  const requestsSectionRef = React.useRef<HTMLDivElement>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isEditingStudent, setIsEditingStudent] = useState(false);
   const [editedStudentData, setEditedStudentData] = useState<StudentData | null>(null);
   const [newFeeYear, setNewFeeYear] = useState<string>('');
   const [newFeeAmount, setNewFeeAmount] = useState<string>('');
+  const [latestNews, setLatestNews] = useState<string>('');
+  const [isPublishingNews, setIsPublishingNews] = useState(false);
+
+  const translateKey = (key: string) => {
+    const keys: Record<string, string> = {
+      fullNameArabic: 'الاسم بالعربية',
+      fullNameEnglish: 'الاسم بالإنجليزية',
+      nationalID: 'الرقم القومي',
+      whatsappNumber: 'رقم الواتساب',
+      email: 'البريد الإلكتروني',
+      address: 'العنوان',
+      faculty: 'الكلية',
+      department: 'القسم',
+      level: 'المستوى الدراسي',
+      universityId: 'رقم الكارنيه / الجامعي',
+      serviceName: 'اسم الخدمة',
+      numberOfCopies: 'عدد النسخ',
+      deliveryAddress: 'عنوان التوصيل',
+      paymentMethod: 'طريقة الدفع',
+      paymentStatus: 'حالة الدفع',
+      fawryCode: 'كود فوري',
+      phoneNumber: 'رقم الهاتف',
+      selectedCertificate: 'الشهادة المختارة',
+      examLanguage: 'لغة الامتحان',
+      transformationType: 'نوع التحول الرقمي',
+      receiptUrl: 'إيصال الدفع',
+      notes: 'ملاحظات إضافية',
+      college_other: 'الكلية (أخرى)',
+      department_other: 'القسم (أخر)',
+      track_category: 'فئة المسار المختار',
+      track_name: 'اسم المسار الخاص بالطالب',
+      educational_specialization_other: 'التخصص التعليمي (أخر)',
+      student_type: 'نوع الطالب',
+      academic_year: 'العام الدراسي'
+    };
+    return keys[key] || key;
+  };
+
+  // Fixed Scroll Effect when service changes
+  useEffect(() => {
+    if (selectedServiceId && requestsSectionRef.current) {
+      // Small delay to ensure the content is rendered and height is stable
+      const timer = setTimeout(() => {
+        if (requestsSectionRef.current) {
+          const yOffset = -20; // Slight offset to not be exactly at the top
+          const element = requestsSectionRef.current;
+          const y = element.getBoundingClientRect().top + window.pageYOffset + yOffset;
+
+          window.scrollTo({ top: y, behavior: 'smooth' });
+        }
+      }, 400); // 400ms is very safe for layout stability
+      return () => clearTimeout(timer);
+    }
+  }, [selectedServiceId]);
 
   // Final Review states
   const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
@@ -107,7 +178,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newGradProjectFeature, setNewGradProjectFeature] = useState<string>('');
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
-
 
   useEffect(() => {
     if (!student?.id) return;
@@ -125,6 +195,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [student, onBack]);
 
   useEffect(() => {
+
     if (isLoading) return;
 
     // Subscribe to all service requests
@@ -142,7 +213,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 studentsMap[request.studentId] = studentData;
               }
             } catch (error) {
-              console.error(`Error fetching student ${request.studentId}:`, error);
+              logger.error(`Error fetching student ${request.studentId}:`, error);
             }
           }
         }
@@ -180,7 +251,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           });
         }
       } catch (error) {
-        console.error('Error loading book config:', error);
+        logger.error('Error loading book config:', error);
       }
     };
     loadBookConfig();
@@ -198,7 +269,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           });
         }
       } catch (error) {
-        console.error('Error loading fees config:', error);
+        logger.error('Error loading fees config:', error);
       }
     };
     loadFeesConfig();
@@ -221,7 +292,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           });
         }
       } catch (error) {
-        console.error('Error loading assignments config:', error);
+        logger.error('Error loading assignments config:', error);
       }
     };
     loadAssignmentsConfig();
@@ -229,13 +300,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     // Load certificates config
     const loadCertificatesConfig = async () => {
       try {
-        console.log('Loading certificates config in AdminDashboard...');
+        logger.log('Loading certificates config in AdminDashboard...');
         const config = await getCertificatesServiceConfig();
         if (config) {
-          console.log('Setting certificates config in AdminDashboard:', config.certificates?.length || 0, 'certificates');
+          logger.log('Setting certificates config in AdminDashboard:', config.certificates?.length || 0, 'certificates');
           setCertificatesConfig(config);
         } else {
-          console.log('No config found, using default certificates config');
+          logger.log('No config found, using default certificates config');
           // Default config with 4 certificates
           const defaultConfig: CertificatesServiceConfig = {
             certificates: [
@@ -299,15 +370,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             };
 
             await updateCertificatesServiceConfig(cleanDefaultConfig);
-            console.log('Default certificates config saved to Firebase');
+            logger.log('Default certificates config saved to Firebase');
           } catch (saveError) {
-            console.error('Error saving default config:', saveError);
+            logger.error('Error saving default config:', saveError);
           }
 
           setCertificatesConfig(defaultConfig);
         }
       } catch (error) {
-        console.error('Error loading certificates config:', error);
+        logger.error('Error loading certificates config:', error);
       }
     };
     loadCertificatesConfig();
@@ -315,13 +386,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     // Load digital transformation config
     const loadDigitalTransformationConfig = async () => {
       try {
-        console.log('Loading digital transformation config in AdminDashboard...');
+        logger.log('Loading digital transformation config in AdminDashboard...');
         const config = await getDigitalTransformationConfig();
         if (config) {
-          console.log('Setting digital transformation config in AdminDashboard:', config.transformationTypes?.length || 0, 'types');
+          logger.log('Setting digital transformation config in AdminDashboard:', config.transformationTypes?.length || 0, 'types');
           setDigitalTransformationConfig(config);
         } else {
-          console.log('No config found, using default digital transformation config');
+          logger.log('No config found, using default digital transformation config');
           const defaultConfig: DigitalTransformationConfig = {
             transformationTypes: [],
             examLanguage: ['اللغة العربية'],
@@ -333,41 +404,41 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
           try {
             await updateDigitalTransformationConfig(defaultConfig);
-            console.log('Default digital transformation config saved to Firebase');
+            logger.log('Default digital transformation config saved to Firebase');
           } catch (saveError) {
-            console.error('Error saving default config:', saveError);
+            logger.error('Error saving default config:', saveError);
           }
 
           setDigitalTransformationConfig(defaultConfig);
         }
       } catch (error) {
-        console.error('Error loading digital transformation config:', error);
+        logger.error('Error loading digital transformation config:', error);
       }
     };
     loadDigitalTransformationConfig();
 
     // Subscribe to digital transformation codes (Real-time)
     const unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
-      console.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
+      logger.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
       setDtCodes(codes);
     });
 
     // Subscribe to electronic payment codes (Real-time)
     const unsubscribeEpCodes = subscribeToElectronicPaymentCodes((codes) => {
-      console.log('Real-time update: Electronic Payment Codes loaded:', codes.length);
+      logger.log('Real-time update: Electronic Payment Codes loaded:', codes.length);
       setEpCodes(codes);
     });
 
     // Load final review config
     const loadFinalReviewConfig = async () => {
       try {
-        console.log('Loading final review config in AdminDashboard...');
+        logger.log('Loading final review config in AdminDashboard...');
         const config = await getFinalReviewConfig();
         if (config) {
-          console.log('Setting final review config in AdminDashboard:', config);
+          logger.log('Setting final review config in AdminDashboard:', config);
           setFinalReviewConfig(config);
         } else {
-          console.log('No config found, using default final review config');
+          logger.log('No config found, using default final review config');
           const defaultConfig: FinalReviewConfig = {
             serviceName: 'المراجعة النهائية',
             paymentAmount: 500,
@@ -379,15 +450,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
           try {
             await updateFinalReviewConfig(defaultConfig);
-            console.log('Default final review config saved to Firebase');
+            logger.log('Default final review config saved to Firebase');
           } catch (saveError) {
-            console.error('Error saving default config:', saveError);
+            logger.error('Error saving default config:', saveError);
           }
 
           setFinalReviewConfig(defaultConfig);
         }
       } catch (error) {
-        console.error('Error loading final review config:', error);
+        logger.error('Error loading final review config:', error);
       }
     };
     loadFinalReviewConfig();
@@ -395,13 +466,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     // Load graduation project config
     const loadGraduationProjectConfig = async () => {
       try {
-        console.log('Loading graduation project config in AdminDashboard...');
+        logger.log('Loading graduation project config in AdminDashboard...');
         const config = await getGraduationProjectConfig();
         if (config) {
-          console.log('Setting graduation project config in AdminDashboard:', config);
+          logger.log('Setting graduation project config in AdminDashboard:', config);
           setGraduationProjectConfig(config);
         } else {
-          console.log('No config found, using default graduation project config');
+          logger.log('No config found, using default graduation project config');
           const defaultConfig: GraduationProjectConfig = {
             serviceName: 'مشروع التخرج',
             features: [
@@ -421,18 +492,31 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
           try {
             await updateGraduationProjectConfig(defaultConfig);
-            console.log('Default graduation project config saved to Firebase');
+            logger.log('Default graduation project config saved to Firebase');
             setGraduationProjectConfig(defaultConfig);
           } catch (saveError) {
-            console.error('Error saving default graduation project config:', saveError);
+            logger.error('Error saving default graduation project config:', saveError);
             setGraduationProjectConfig(defaultConfig);
           }
         }
       } catch (error) {
-        console.error('Error loading graduation project config:', error);
+        logger.error('Error loading graduation project config:', error);
       }
     };
     loadGraduationProjectConfig();
+
+    // Load Latest News
+    const loadLatestNews = async () => {
+      try {
+        const news = await getLatestNews();
+        if (news) {
+          setLatestNews(news.content);
+        }
+      } catch (error) {
+        logger.error('Error loading latest news:', error);
+      }
+    };
+    loadLatestNews();
 
     return () => {
       unsubscribe();
@@ -454,10 +538,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
 
     const unsubscribe = subscribeToAllStudents((students) => {
-      console.log('Students loaded:', students.length);
+      logger.log('Students loaded:', students.length);
       setAllStudents(students);
     }, (error) => {
-      console.error('Error subscribing to students:', error);
+      logger.error('Error subscribing to students:', error);
       alert('حدث خطأ أثناء جلب بيانات المستخدمين');
     });
 
@@ -490,9 +574,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             };
 
             // Debug: Print payload
-            console.log('📤 Sending Payload to Backend:', payload);
-            console.log('📊 Student Data:', studentData);
-            console.log('📋 Request Data:', request.data);
+            logger.log('📤 Sending Payload to Backend:', payload);
+            logger.log('📊 Student Data:', studentData);
+            logger.log('📋 Request Data:', request.data);
 
             // Show user what we're sending
             const debugInfo = `
@@ -505,12 +589,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 🌐 نوع التدريب: ${payload.examLanguage}
             `.trim();
 
-            console.log(debugInfo);
+            logger.log(debugInfo);
             alert('🔍 فحص البيانات:\n\n' + debugInfo + '\n\nسيتم بدء الأتمتة الآن...');
 
             // Call Node.js Backend
             const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
-            console.log('Using API_BASE_URL:', API_BASE_URL);
+            logger.log('Using API_BASE_URL:', API_BASE_URL);
             const apiUrl = `${API_BASE_URL}/api/digital-transformation/register`;
 
             fetch(apiUrl, {
@@ -552,17 +636,17 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     alert('🎉 تم الحفظ في "أكواد التحول الرقمي" بنجاح!');
 
                   } catch (saveError) {
-                    console.error('Save Error:', saveError);
+                    logger.error('Save Error:', saveError);
                     alert('⚠️ نجحت الأتمتة ولكن فشل الحفظ في قاعدة البيانات.');
                   }
 
                 } else {
-                  console.error('Automation Error:', data.error);
+                  logger.error('Automation Error:', data.error);
                   alert(`❌ فشلت الأتمتة:\n${data.error}`);
                 }
               })
               .catch(err => {
-                console.error('Connection Error:', err);
+                logger.error('Connection Error:', err);
                 alert('⚠️ لا يمكن الاتصال بخدمة الأتمتة (Backend Service).\nتأكد من تشغيل: node server.js');
               });
           }
@@ -586,10 +670,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               phone: request.data.whatsapp_number || studentData.whatsappNumber
             };
 
-            console.log('📤 [EP] Sending Payload to Backend:', payload);
+            logger.log('📤 [EP] Sending Payload to Backend:', payload);
 
             const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
-            console.log('Using API_BASE_URL:', API_BASE_URL);
+            logger.log('Using API_BASE_URL:', API_BASE_URL);
             const apiUrl = `${API_BASE_URL}/api/electronic-payment/create`;
 
             fetch(apiUrl, {
@@ -622,16 +706,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     await saveElectronicPaymentCode(codeData);
                     alert('🎉 تم الحفظ في "أكواد الدفع الإلكتروني" بنجاح!');
                   } catch (saveError) {
-                    console.error('[EP] Save Error:', saveError);
+                    logger.error('[EP] Save Error:', saveError);
                     alert('⚠️ نجحت الأتمتة ولكن فشل الحفظ في "أكواد الدفع الإلكتروني".');
                   }
                 } else {
-                  console.error('[EP] Automation Error:', data.error);
+                  logger.error('[EP] Automation Error:', data.error);
                   alert(`❌ فشلت أتمتة الدفع الإلكتروني:\n${data.error}`);
                 }
               })
               .catch(err => {
-                console.error('[EP] Connection Error:', err);
+                logger.error('[EP] Connection Error:', err);
                 alert('⚠️ لا يمكن الاتصال بخدمة أتمتة الدفع الإلكتروني.\nتأكد من تشغيل: node server.js');
               });
           }
@@ -940,7 +1024,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const handleImageUpload = (certificateId: string, file: File) => {
     if (!editingCertificate || editingCertificate.id !== certificateId) {
-      console.error('Certificate ID mismatch or editingCertificate is null');
+      logger.error('Certificate ID mismatch or editingCertificate is null');
       return;
     }
 
@@ -961,7 +1045,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       const imageUrl = reader.result as string;
       if (imageUrl) {
         setEditingCertificate({ ...editingCertificate, imageUrl });
-        console.log('Image uploaded successfully');
+        logger.log('Image uploaded successfully');
       }
     };
     reader.onerror = () => {
@@ -1007,10 +1091,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     try {
       const results = await searchStudent(searchTerm);
-      console.log('Search results:', results.length);
+      logger.log('Search results:', results.length);
       setAllStudents(results);
     } catch (error: any) {
-      console.error('Search error:', error);
+      logger.error('Search error:', error);
       alert(error.message || 'حدث خطأ أثناء البحث');
     }
   };
@@ -1080,6 +1164,24 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return serviceNames[serviceId] || `خدمة ${serviceId}`;
   };
 
+  const handlePublishNews = async () => {
+    if (!latestNews.trim()) {
+      alert('يرجى كتابة خبر لنشره');
+      return;
+    }
+
+    setIsPublishingNews(true);
+    try {
+      await updateLatestNews(latestNews);
+      alert('تم نشر الخبر بنجاح لجميع المستخدمين');
+    } catch (error: any) {
+      logger.error('Error publishing news:', error);
+      alert('حدث خطأ أثناء النشر');
+    } finally {
+      setIsPublishingNews(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
@@ -1124,10 +1226,24 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
       <div className="admin-tabs">
         <button
+          className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
+          onClick={() => setActiveTab('news')}
+        >
+          <Newspaper size={18} />
+          أخر الأخبار
+        </button>
+        <button
           className={`tab-button ${activeTab === 'requests' ? 'active' : ''}`}
           onClick={() => setActiveTab('requests')}
         >
           جميع الطلبات
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'statistics' ? 'active' : ''}`}
+          onClick={() => setActiveTab('statistics')}
+        >
+          <BarChart2 size={18} />
+          الإحصائيات والتقارير
         </button>
         <button
           className={`tab-button ${activeTab === 'books' ? 'active' : ''}`}
@@ -1204,6 +1320,52 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         </button>
       </div>
 
+      {activeTab === 'news' && (
+        <div className="admin-content">
+          <div className="config-section premium-news-editor">
+            <div className="section-header-compact">
+              <div className="header-icon-hex">
+                <Bell size={24} color="#F59E0B" />
+              </div>
+              <div>
+                <h2>إدارة أخر الأخبار</h2>
+                <p>هذا النص سيظهر لجميع المستخدمين في صفحة "أخر الأخبار" بشكل مميز.</p>
+              </div>
+            </div>
+
+            <div className="news-editor-container" style={{ marginTop: '24px' }}>
+              <div className="form-group-full">
+                <label>محتوى الخبر (يمكنك كتابة أي نص بأي طول)</label>
+                <textarea
+                  className="premium-textarea"
+                  value={latestNews}
+                  onChange={(e) => setLatestNews(e.target.value)}
+                  placeholder="اكتب الخبر هنا... سوف يظهر للطلاب فور الحفظ."
+                  style={{ minHeight: '300px', lineHeight: '1.8' }}
+                />
+              </div>
+
+              <div className="action-row-end" style={{ marginTop: '20px' }}>
+                <button
+                  className="publish-button-premium"
+                  onClick={handlePublishNews}
+                  disabled={isPublishingNews}
+                >
+                  {isPublishingNews ? (
+                    'جاري الحفظ...'
+                  ) : (
+                    <>
+                      <Send size={18} style={{ marginLeft: '8px' }} />
+                      نشر وحفظ الخبر
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'requests' && (
         <div className="admin-content">
           <div className="requests-section">
@@ -1243,7 +1405,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   <div
                     key={service.id}
                     className={`service-file ${isSelected ? 'selected' : ''}`}
-                    onClick={() => setSelectedServiceId(isSelected ? null : service.id)}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedServiceId(null);
+                      } else {
+                        setSelectedServiceId(service.id);
+                        setCurrentPage(1);
+                      }
+                    }}
                   >
                     <div className="service-file-icon" style={{ color: service.color }}>
                       {getServiceIcon()}
@@ -1266,7 +1435,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
             {/* Display requests for selected service */}
             {selectedServiceId && (
-              <div className="selected-service-requests">
+              <div className="selected-service-requests" ref={requestsSectionRef}>
                 <div className="selected-service-header">
                   <h3>
                     {getServiceName(selectedServiceId)}
@@ -1279,100 +1448,332 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   </button>
                 </div>
 
-                <div className="requests-grid">
-                  {serviceRequests.filter(r => r.serviceId === selectedServiceId).length === 0 ? (
-                    <div className="no-requests-message">
-                      <p>لا توجد طلبات لهذه الخدمة</p>
-                    </div>
-                  ) : (
-                    serviceRequests.filter(r => r.serviceId === selectedServiceId).map((request) => {
-                      const studentData = students[request.studentId];
+                <div className="requests-list-container">
+                  {(() => {
+                    const filteredRequests = serviceRequests
+                      .filter(r => r.serviceId === selectedServiceId)
+                      .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+
+                    if (filteredRequests.length === 0) {
                       return (
-                        <div key={request.id} className="request-card">
-                          <div className="request-header">
-                            <div className="request-info">
-                              <h3>{getServiceName(request.serviceId)}</h3>
-                              {getStatusBadge(request.status)}
-                            </div>
-                            <div className="request-actions">
-                              <button
-                                onClick={() => setSelectedRequest(request)}
-                                className="view-button"
-                                title="عرض التفاصيل"
-                              >
-                                <Eye size={18} />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="request-card-body">
-                            {request.serviceId === '6' && request.data?.selectedCertificate?.imageUrl && (
-                              <div className="certificate-image-preview">
-                                <img
-                                  src={request.data.selectedCertificate.imageUrl}
-                                  alt={request.data.selectedCertificate.name}
-                                  className="certificate-thumbnail-small"
-                                />
-                              </div>
-                            )}
-                            <div className="request-details">
-                              <div className="detail-row">
-                                <span className="detail-label">المستخدم:</span>
-                                <span className="detail-value">
-                                  {studentData?.fullNameArabic || 'غير متاح'}
-                                </span>
-                              </div>
-                              <div className="detail-row">
-                                <span className="detail-label">البريد:</span>
-                                <span className="detail-value">
-                                  {studentData?.email || 'غير متاح'}
-                                </span>
-                              </div>
-                              <div className="detail-row">
-                                <span className="detail-label">التاريخ:</span>
-                                <span className="detail-value">
-                                  {request.createdAt
-                                    ? new Date(request.createdAt).toLocaleString('ar-EG')
-                                    : 'غير متاح'}
-                                </span>
-                              </div>
-                              {request.paymentMethod && (
-                                <div className="detail-row">
-                                  <span className="detail-label">طريقة الدفع:</span>
-                                  <span className="detail-value">{request.paymentMethod}</span>
-                                </div>
-                              )}
-                              {request.serviceId === '6' && request.data?.selectedCertificate && (
-                                <div className="detail-row">
-                                  <span className="detail-label">الشهادة المختارة:</span>
-                                  <span className="detail-value">{request.data.selectedCertificate.name}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="request-status-actions">
-                            <button
-                              onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
-                              className={`status-button ${request.status === 'completed' ? 'active' : ''}`}
-                              disabled={request.status === 'completed'}
-                            >
-                              <CheckCircle size={16} />
-                              قبول
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
-                              className={`status-button reject ${request.status === 'rejected' ? 'active' : ''}`}
-                              disabled={request.status === 'rejected'}
-                            >
-                              <XCircle size={16} />
-                              رفض
-                            </button>
-                          </div>
+                        <div className="no-requests-message">
+                          <p>لا توجد طلبات لهذه الخدمة</p>
                         </div>
                       );
-                    })
-                  )}
+                    }
+
+                    const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
+                    const startIndex = (currentPage - 1) * itemsPerPage;
+                    const currentRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
+
+                    return (
+                      <>
+                        <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px' }}>
+                          عرض {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredRequests.length)} من أصل {filteredRequests.length} طلب
+                        </div>
+
+                        {currentRequests.map((request, index) => {
+                          const studentData = students[request.studentId];
+                          const isExpanded = expandedRequests.has(request.id || '');
+                          const isLastItem = index === currentRequests.length - 1;
+
+                          const toggleExpand = () => {
+                            const newExpanded = new Set(expandedRequests);
+                            if (isExpanded) {
+                              newExpanded.delete(request.id || '');
+                            } else {
+                              newExpanded.add(request.id || '');
+                            }
+                            setExpandedRequests(newExpanded);
+                          };
+
+                          return (
+                            <div key={request.id} className="request-row-wrapper">
+                              <div className={`request-row ${isExpanded ? 'expanded' : ''}`}>
+                                {/* Main Row Content */}
+                                <div className="request-row-main">
+                                  {/* Right Side: User Info */}
+                                  <div className="request-row-info">
+                                    <div className="request-user-name">
+                                      {studentData?.fullNameArabic || 'غير متاح'}
+                                    </div>
+                                    <div className="request-meta">
+                                      <span className="request-email">{studentData?.email || 'غير متاح'}</span>
+                                      <span className="request-date">
+                                        {request.createdAt
+                                          ? new Date(request.createdAt).toLocaleDateString('ar-EG', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric'
+                                          })
+                                          : 'غير متاح'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Center: Status Badge */}
+                                  <div className="request-row-status">
+                                    {getStatusBadge(request.status)}
+                                  </div>
+
+                                  {/* Left Side: Actions */}
+                                  <div className="request-row-actions">
+                                    <button
+                                      onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
+                                      className={`action-btn accept-btn ${request.status === 'completed' ? 'active' : ''}`}
+                                      disabled={request.status === 'completed'}
+                                      title="قبول الطلب"
+                                    >
+                                      <CheckCircle size={18} />
+                                      <span>قبول</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
+                                      className={`action-btn reject-btn ${request.status === 'rejected' ? 'active' : ''}`}
+                                      disabled={request.status === 'rejected'}
+                                      title="رفض الطلب"
+                                    >
+                                      <XCircle size={18} />
+                                      <span>رفض</span>
+                                    </button>
+                                    <button
+                                      onClick={toggleExpand}
+                                      className={`expand-btn ${isExpanded ? 'expanded' : ''}`}
+                                      title={isExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}
+                                    >
+                                      <svg
+                                        width="20"
+                                        height="20"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      >
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                      </svg>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Expanded Details */}
+                                {isExpanded && (
+                                  <div className="request-row-details">
+                                    <div className="details-grid">
+                                      {/* User Details */}
+                                      <div className="details-section">
+                                        <h4 className="details-section-title">معلومات المستخدم</h4>
+                                        <div className="details-items">
+                                          <div className="detail-item-row">
+                                            <span className="detail-label">الاسم الكامل:</span>
+                                            <span className="detail-value">{studentData?.fullNameArabic || 'غير متاح'}</span>
+                                          </div>
+                                          <div className="detail-item-row">
+                                            <span className="detail-label">الرقم القومي:</span>
+                                            <span className="detail-value">{studentData?.nationalID || 'غير متاح'}</span>
+                                          </div>
+                                          <div className="detail-item-row">
+                                            <span className="detail-label">رقم الواتساب:</span>
+                                            <span className="detail-value">{studentData?.whatsappNumber || 'غير متاح'}</span>
+                                          </div>
+
+                                          {/* الذكاء المحسن: عرض البيانات الأكاديمية والمسارات إذا وجدت في البروفايل */}
+                                          {studentData?.faculty && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">الكلية:</span>
+                                              <span className="detail-value">{studentData.faculty}</span>
+                                            </div>
+                                          )}
+                                          {studentData?.college_other && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">الكلية (أخرى):</span>
+                                              <span className="detail-value">{studentData.college_other}</span>
+                                            </div>
+                                          )}
+                                          {studentData?.department && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">القسم:</span>
+                                              <span className="detail-value">{studentData.department}</span>
+                                            </div>
+                                          )}
+                                          {studentData?.department_other && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">القسم (أخرى):</span>
+                                              <span className="detail-value">{studentData.department_other}</span>
+                                            </div>
+                                          )}
+                                          {studentData?.educational_specialization && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">التخصص:</span>
+                                              <span className="detail-value">{studentData.educational_specialization}</span>
+                                            </div>
+                                          )}
+                                          {studentData?.educational_specialization_other && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">التخصص (أخرى):</span>
+                                              <span className="detail-value">{studentData.educational_specialization_other}</span>
+                                            </div>
+                                          )}
+                                          {studentData?.track_category && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">فئة المسار:</span>
+                                              <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{studentData.track_category}</span>
+                                            </div>
+                                          )}
+                                          {studentData?.track_name && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">اسم المسار:</span>
+                                              <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{studentData.track_name}</span>
+                                            </div>
+                                          )}
+                                          <div className="detail-item-row">
+                                            <span className="detail-label">البريد الإلكتروني:</span>
+                                            <span className="detail-value" style={{ fontSize: '12px' }}>{studentData?.email}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Request Details */}
+                                      <div className="details-section">
+                                        <h4 className="details-section-title">تفاصيل الطلب</h4>
+                                        <div className="details-items">
+                                          <div className="detail-item-row">
+                                            <span className="detail-label">تاريخ الطلب:</span>
+                                            <span className="detail-value">
+                                              {request.createdAt
+                                                ? new Date(request.createdAt).toLocaleString('ar-EG')
+                                                : 'غير متاح'}
+                                            </span>
+                                          </div>
+                                          {request.paymentMethod && (
+                                            <div className="detail-item-row">
+                                              <span className="detail-label">طريقة الدفع:</span>
+                                              <span className="detail-value">{request.paymentMethod}</span>
+                                            </div>
+                                          )}
+                                          {request.serviceId === '6' && request.data?.selectedCertificate && (
+                                            <>
+                                              <div className="detail-item-row">
+                                                <span className="detail-label">الشهادة المختارة:</span>
+                                                <span className="detail-value">{request.data.selectedCertificate.name}</span>
+                                              </div>
+                                              {request.data.selectedCertificate.imageUrl && (
+                                                <div className="detail-item-row full-width">
+                                                  <img
+                                                    src={request.data.selectedCertificate.imageUrl}
+                                                    alt={request.data.selectedCertificate.name}
+                                                    className="certificate-preview-img"
+                                                  />
+                                                </div>
+                                              )}
+                                            </>
+                                          )}
+                                          {/* Display all other request data - Only show if value exists */}
+                                          {Object.entries(request.data || {}).map(([key, value]) => {
+                                            const stringValue = String(value || '').trim();
+
+                                            // Skip if key is special or if value is empty/null/undefined
+                                            if (
+                                              key === 'selectedCertificate' ||
+                                              key === 'receiptUrl' ||
+                                              typeof value === 'object' ||
+                                              !stringValue ||
+                                              stringValue === 'undefined' ||
+                                              stringValue === 'null'
+                                            ) return null;
+
+                                            return (
+                                              <div key={key} className="detail-item-row">
+                                                <span className="detail-label">{translateKey(key)}:</span>
+                                                <span className="detail-value">{stringValue}</span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+
+                                      {/* Attachments Section (Receipts, etc.) */}
+                                      <div className="details-section">
+                                        <h4 className="details-section-title">المرفقات وإيصال الدفع</h4>
+                                        <div className="documents-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px' }}>
+                                          {/* Main Receipt from data.receiptUrl */}
+                                          {request.data?.receiptUrl && (
+                                            <div className="document-item" style={{ cursor: 'pointer' }} onClick={() => window.open(request.data.receiptUrl, '_blank')}>
+                                              <div className="document-preview" style={{ height: '150px', overflow: 'hidden', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                                <img src={request.data.receiptUrl} alt="إيصال الدفع" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                              </div>
+                                              <span className="document-name" style={{ display: 'block', textAlign: 'center', marginTop: '5px', fontSize: '12px', fontWeight: '600' }}>إيصال الدفع</span>
+                                            </div>
+                                          )}
+
+                                          {/* Other documents from request.documents array if exist */}
+                                          {request.documents && request.documents.map((doc, idx) => (
+                                            <div key={idx} className="document-item" style={{ cursor: 'pointer' }} onClick={() => window.open(doc.url, '_blank')}>
+                                              <div className="document-preview" style={{ height: '150px', overflow: 'hidden', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
+                                                {doc.type === 'PDF' ? <FileText size={48} color="#64748b" /> : <img src={doc.url} alt={doc.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                                              </div>
+                                              <span className="document-name" style={{ display: 'block', textAlign: 'center', marginTop: '5px', fontSize: '12px', fontWeight: '600' }}>{doc.name || 'مرفق إضافي'}</span>
+                                            </div>
+                                          ))}
+
+                                          {/* If no documents at all */}
+                                          {!request.data?.receiptUrl && (!request.documents || request.documents.length === 0) && (
+                                            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px', color: '#94a3b8', background: '#f8fafc', borderRadius: '12px', border: '2px dashed #e2e8f0' }}>
+                                              لا توجد مرفقات أو إيصالات لهذا الطلب
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Dotted Separator */}
+                              {!isLastItem && <div className="request-row-separator"></div>}
+                            </div>
+                          );
+                        })}
+
+                        {totalPages > 1 && (
+                          <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', marginTop: '24px', padding: '16px 0' }}>
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                              disabled={currentPage === 1}
+                              style={{
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                border: '1px solid #e2e8f0',
+                                background: currentPage === 1 ? '#f1f5f9' : 'white',
+                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                color: '#1e293b'
+                              }}
+                            >
+                              السابق
+                            </button>
+                            <span style={{ fontWeight: 'bold', color: '#1e293b' }}>
+                              {currentPage} / {totalPages}
+                            </span>
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                              disabled={currentPage === totalPages}
+                              style={{
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                border: '1px solid #e2e8f0',
+                                background: currentPage === totalPages ? '#f1f5f9' : 'white',
+                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                color: '#1e293b'
+                              }}
+                            >
+                              التالي
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -2182,18 +2583,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               <span className="detail-label">الرقم القومي:</span>
                               <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
                             </div>
-                            <div className="detail-item" style={{ background: '#fffbeb', padding: '4px 8px', borderRadius: '6px' }}>
+                            <div className="detail-item password-detail-item">
                               <span className="detail-label">كلمة المرور:</span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span className="detail-value" style={{ fontFamily: 'monospace', letterSpacing: showPasswords[student.id || ''] ? '0' : '2px' }}>
+                              <div className="password-toggle-row">
+                                <span className="password-text-value">
                                   {showPasswords[student.id || ''] ? (student.password || 'غير متاح') : '••••••••'}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                  className="icon-toggle-button"
+                                  title={showPasswords[student.id || ''] ? 'إخفاء' : 'إظهار'}
                                 >
-                                  {showPasswords[student.id || ''] ? <EyeOff size={14} /> : <Eye size={14} />}
+                                  {showPasswords[student.id || ''] ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                               </div>
                             </div>
@@ -2240,13 +2642,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       <div className="request-item-date">
                                         {request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : 'غير متاح'}
                                       </div>
-                                      <button
-                                        onClick={() => setSelectedRequest(request)}
-                                        className="view-request-button"
-                                      >
-                                        <Eye size={16} />
-                                        عرض التفاصيل
-                                      </button>
                                     </div>
                                   ))}
                                 </div>
@@ -2461,7 +2856,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     </div>
                   </div>
 
-                  <div className="modal-actions">
+                  <div className="modal-footer">
                     <button type="button" onClick={handleSaveStudent} className="save-button" disabled={isSaving === 'student'}>
                       <Save size={18} />
                       {isSaving === 'student' ? 'جاري الحفظ...' : 'حفظ التغييرات'}
@@ -2483,100 +2878,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         )
       }
 
-      {
-        selectedRequest && (
-          <div className="request-modal-overlay" onClick={() => setSelectedRequest(null)}>
-            <div className="request-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>تفاصيل الطلب</h2>
-                <button onClick={() => setSelectedRequest(null)} className="close-button">
-                  <X size={24} />
-                </button>
-              </div>
 
-              <div className="modal-content">
-                <div className="modal-section">
-                  <h3>معلومات المستخدم</h3>
-                  {students[selectedRequest.studentId] && (
-                    <div className="user-info-grid premium-grid">
-                      <div className="info-item aligned">
-                        <span className="info-label">الاسم:</span>
-                        <span className="info-value">{students[selectedRequest.studentId].fullNameArabic}</span>
-                      </div>
-                      <div className="info-item aligned">
-                        <span className="info-label">البريد:</span>
-                        <span className="info-value">{students[selectedRequest.studentId].email}</span>
-                      </div>
-                      <div className="info-item aligned">
-                        <span className="info-label">واتساب:</span>
-                        <span className="info-value">{students[selectedRequest.studentId].whatsappNumber}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="modal-section">
-                  <h3>بيانات الطلب</h3>
-                  <div className="request-data-grid premium-grid">
-                    {Object.entries(selectedRequest.data).map(([key, value]) => (
-                      <div key={key} className="data-item aligned">
-                        <span className="data-label">{key}:</span>
-                        <span className="data-value">{String(value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {selectedRequest.documents && selectedRequest.documents.length > 0 && (
-                  <div className="modal-section">
-                    <h3>المرفقات ({selectedRequest.documents.length})</h3>
-                    <div className="documents-grid">
-                      {selectedRequest.documents.map((doc, index) => (
-                        <div key={index} className="document-item">
-                          {doc.type !== 'PDF' && doc.url ? (
-                            <img
-                              src={doc.url}
-                              alt={doc.name}
-                              className="document-image"
-                              onClick={() => {
-                                const img = document.createElement('img');
-                                img.src = doc.url;
-                                img.onload = () => {
-                                  const newWindow = window.open('', '_blank');
-                                  if (newWindow) {
-                                    newWindow.document.write(`
-                                    <html>
-                                      <head>
-                                        <title>${doc.name}</title>
-                                        <style>
-                                          body { margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f5f5f5; }
-                                          img { max-width: 100%; max-height: 100vh; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-                                        </style>
-                                      </head>
-                                      <body>
-                                        <img src="${doc.url}" alt="${doc.name}" />
-                                      </body>
-                                    </html>
-                                  `);
-                                  }
-                                };
-                              }}
-                              style={{ cursor: 'pointer' }}
-                            />
-                          ) : (
-                            <div className="document-placeholder">PDF</div>
-                          )}
-                          <span className="document-name">{doc.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      }
 
       {
         activeTab === 'digitalTransformation' && (
@@ -2873,6 +3175,180 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           </div>
         )
       }
+
+      {activeTab === 'statistics' && (() => {
+        // --- STATISTICS CALCULATION ENGINE ---
+        let totalRevenue = 0;
+        let completedCount = 0;
+        let pendingCount = 0;
+        let rejectedCount = 0;
+        const serviceStats: Record<string, { count: number; revenue: number; name: string; color: string }> = {};
+
+        // Initialize Services
+        SERVICES.forEach(s => {
+          serviceStats[s.id] = { count: 0, revenue: 0, name: s.nameAr, color: s.color };
+        });
+
+        // Loop through all requests to gather data
+        serviceRequests.forEach(req => {
+          // Status Counts
+          if (req.status === 'completed') completedCount++;
+          else if (req.status === 'rejected') rejectedCount++;
+          else pendingCount++;
+
+          // Per Service Logic
+          if (serviceStats[req.serviceId]) {
+            serviceStats[req.serviceId].count++;
+
+            // Revenue: Only count if COMPLETED
+            if (req.status === 'completed' && req.data) {
+              let amount = 0;
+              // Smart parsing for various price keys
+              const rawPrice = req.data.price || req.data.totalPrice || req.data.amount || req.data.cost || req.data.fees;
+              if (rawPrice) {
+                // Remove currency symbols if any and parse
+                amount = parseFloat(String(rawPrice).replace(/[^0-9.]/g, '')) || 0;
+              }
+
+              serviceStats[req.serviceId].revenue += amount;
+              totalRevenue += amount;
+            }
+          }
+        });
+
+        const sortedServicesByRew = Object.values(serviceStats).sort((a, b) => b.revenue - a.revenue);
+        const sortedServicesByCount = Object.values(serviceStats).sort((a, b) => b.count - a.count);
+        const maxServiceCount = Math.max(...Object.values(serviceStats).map(s => s.count), 10); // avoid div by zero
+
+        return (
+          <div className="admin-content stats-dashboard" style={{ animation: 'fadeIn 0.5s ease-out' }}>
+            <div className="section-header" style={{ marginBottom: '30px' }}>
+              <div>
+                <h2 style={{ fontSize: '1.8rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <TrendingUp size={32} color="#2563eb" />
+                  مركز الإحصائيات والتقارير المالية
+                </h2>
+                <p style={{ color: '#64748b', marginTop: '8px' }}>تحليل شامل لأداء المنصة والمبالغ المحصلة</p>
+              </div>
+              <div style={{ background: '#f1f5f9', padding: '10px 20px', borderRadius: '12px', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.9rem', color: '#64748b' }}>إجمالي الدخل المحقق</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#10b981' }}>{totalRevenue.toLocaleString()} ج.م</div>
+              </div>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+              <div className="stat-card" style={{ background: 'white', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', background: '#eff6ff', borderRadius: '12px', color: '#2563eb' }}><Activity size={24} /></div>
+                  <span style={{ color: '#64748b', fontSize: '0.9rem' }}>إجمالي الطلبات</span>
+                </div>
+                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{serviceRequests.length}</h3>
+                <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#64748b' }}>طلب مقدم على المنصة</div>
+              </div>
+
+              <div className="stat-card" style={{ background: 'white', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', background: '#dcfce7', borderRadius: '12px', color: '#166534' }}><CheckCircle size={24} /></div>
+                  <span style={{ color: '#64748b', fontSize: '0.9rem' }}>الطلبات المكتملة</span>
+                </div>
+                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{completedCount}</h3>
+                <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#166534', fontWeight: 'bold' }}>
+                  {Math.round((completedCount / (serviceRequests.length || 1)) * 100)}% معدل القبول
+                </div>
+              </div>
+
+              <div className="stat-card" style={{ background: 'white', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', background: '#fef2f2', borderRadius: '12px', color: '#dc2626' }}><XCircle size={24} /></div>
+                  <span style={{ color: '#64748b', fontSize: '0.9rem' }}>الطلبات المرفوضة</span>
+                </div>
+                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{rejectedCount}</h3>
+                <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#ef4444' }}>تحتاج لمراجعة السبب</div>
+              </div>
+
+              <div className="stat-card" style={{ background: 'white', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', background: '#fff7ed', borderRadius: '12px', color: '#ea580c' }}><Award size={24} /></div>
+                  <span style={{ color: '#64748b', fontSize: '0.9rem' }}>الأكثر ربحاً</span>
+                </div>
+                <h3 style={{ fontSize: '1.2rem', margin: 0, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {sortedServicesByRew[0]?.revenue > 0 ? sortedServicesByRew[0].name : 'لا يوجد'}
+                </h3>
+                <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#ea580c', fontWeight: 'bold' }}>
+                  {sortedServicesByRew[0]?.revenue.toLocaleString()} ج.م
+                </div>
+              </div>
+            </div>
+
+            <div className="charts-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '40px' }}>
+              {/* Service Popularity Chart */}
+              <div className="chart-card" style={{ background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <BarChart2 size={20} />
+                  توزيع الطلبات حسب الخدمة
+                </h3>
+                <div className="custom-chart" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {sortedServicesByCount.map((service) => (
+                    <div key={service.name} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '120px', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'left' }}>{service.name}</div>
+                      <div style={{ flex: 1, height: '10px', background: '#f1f5f9', borderRadius: '5px', overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${(service.count / maxServiceCount) * 100}%`,
+                          height: '100%',
+                          background: service.color,
+                          borderRadius: '5px',
+                          transition: 'width 1s ease-out'
+                        }} />
+                      </div>
+                      <div style={{ width: '40px', fontSize: '0.85rem', fontWeight: 'bold', textAlign: 'right' }}>{service.count}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Revenue Breakdown */}
+              <div className="chart-card" style={{ background: 'white', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <DollarSign size={20} />
+                  تحليل الإيرادات (للمقبولة فقط)
+                </h3>
+                <div style={{ height: '300px', overflowY: 'auto', paddingRight: '10px' }}>
+                  {sortedServicesByRew.map((service) => (
+                    service.revenue > 0 && (
+                      <div key={service.name} style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px dashed #f1f5f9' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <span style={{ fontWeight: '600', color: '#334155' }}>{service.name}</span>
+                          <span style={{ fontWeight: 'bold', color: '#10b981' }}>{service.revenue.toLocaleString()} ج.م</span>
+                        </div>
+                        <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px' }}>
+                          <div style={{
+                            width: `${(service.revenue / (totalRevenue || 1)) * 100}%`,
+                            height: '100%',
+                            background: '#10b981',
+                            borderRadius: '4px'
+                          }} />
+                        </div>
+                      </div>
+                    )
+                  ))}
+                  {totalRevenue === 0 && (
+                    <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                      لا توجد إيرادات مسجلة حتى الآن
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="quick-actions-hint" style={{ marginTop: '20px', padding: '20px', background: '#fffbeb', borderRadius: '12px', border: '1px solid #fcd34d', color: '#92400e', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Bell size={20} />
+              <span>تلميح: يتم حساب الإيرادات تلقائياً فقط للطلبات التي تم تغيير حالتها إلى "مكتمل" (Completed). تأكد من قبول الطلبات المدفوعة ليتم إدراجها هنا.</span>
+            </div>
+          </div>
+        );
+      })()}
+
     </div >
   );
 };

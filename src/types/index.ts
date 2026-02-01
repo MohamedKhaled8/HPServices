@@ -1,6 +1,7 @@
 export interface AssignedFile {
   id: string;
-  name: string;
+  name: string; // اسم الملف الأصلي
+  customName?: string; // الاسم المخصص من الأدمن
   url: string;
   track: 'track1' | 'track2' | 'track3';
   assignedAt?: string;
@@ -30,7 +31,15 @@ export interface StudentData {
   department?: string;
   grade?: string;
   track?: string;
-  assignedFile?: AssignedFile;
+  assignedFile?: AssignedFile; // للتوافق مع الكود القديم
+  assignedFiles?: AssignedFile[]; // قائمة الملفات المسندة للطالب
+  faculty?: string;
+  college_other?: string;
+  department_other?: string;
+  educational_specialization?: string;
+  educational_specialization_other?: string;
+  track_category?: string;
+  track_name?: string;
 }
 
 export interface Service {

@@ -11,7 +11,9 @@
   flex-direction: column;
   gap: 16px;
   position: relative;
-  overflow: hidden;
+  /* Reduced overflow constraints to allow icons to pop out */
+  overflow: visible;
+  will-change: transform;
 }
 
 .service-card::before {
@@ -43,7 +45,8 @@
 }
 
 .service-card:hover .service-icon {
-  transform: scale(1.1) rotate(5deg);
+  /* Simplified transform to reduce hover "heaviness" */
+  transform: scale(1.15);
 }
 
 .service-custom-icon {

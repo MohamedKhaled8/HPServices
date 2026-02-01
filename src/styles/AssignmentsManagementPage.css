@@ -882,6 +882,24 @@
   gap: 20px;
 }
 
+@media (max-width: 768px) {
+  .section-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    text-align: center;
+  }
+
+  .section-header h2 {
+    font-size: 20px !important;
+  }
+
+  .section-header .save-button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+}
+
 .section-header h2 {
   margin: 0 !important;
   color: #1e293b;

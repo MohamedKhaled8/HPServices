@@ -1,27 +1,51 @@
-// Firestore Security Rules - للاختبار فقط
-// انسخ هذا الكود والصقه في Firebase Console → Firestore Database → Rules
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // قاعدة بيانات الطلاب - السماح بالقراءة والكتابة للجميع (للاختبار)
+    
+    // Function to check if the user is an admin
+    function isAdmin() {
+      return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Students collection rules
     match /students/{userId} {
-      allow read, write: if true;
+      // Users can only read and write their own profile
+      // Admins can read all student profiles
+      allow read: if (request.auth != null && request.auth.uid == userId) || isAdmin();
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if (request.auth != null && request.auth.uid == userId) || isAdmin();
+      allow delete: if isAdmin();
     }
     
-    // قاعدة بيانات طلبات الخدمات - السماح بالقراءة والكتابة للجميع (للاختبار)
-    match /serviceRequests/{requestId} {
-      allow read, write: if true;
+    // Service Requests rules (for all services)
+    match /{collectionName}/{requestId} {
+      allow read, write, update, delete: if false; // Deny by default
+      
+      // Match patterns like serviceRequests_1, serviceRequests_2, etc.
+      match /serviceRequests_{serviceId}/{requestId} {
+         // Users can read/create their own requests
+         // Admins can read/update all requests
+         allow read: if (request.auth != null && resource.data.studentId == request.auth.uid) || isAdmin();
+         allow create: if request.auth != null && request.resource.data.studentId == request.auth.uid;
+         allow update, delete: if isAdmin();
+      }
+    }
+
+    // Admins collection - Strictly protected
+    match /admins/{adminId} {
+      allow read: if request.auth != null; // Registered users can check if someone is admin
+      allow write: if false; // No one can create admins via client-side code
+    }
+
+    // Config collections (e.g., bookConfig, feesConfig)
+    match /{configType}Config/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
     
-    // السماح بالوصول لجميع المجموعات الأخرى (للاختبار)
+    // Global catch-all - Deny everything else
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
-
-// ⚠️ تحذير: هذه القواعد تسمح للجميع بالوصول
-// استخدمها فقط للاختبار والتطوير
-// للإنتاج، استخدم قواعد أكثر أماناً
-

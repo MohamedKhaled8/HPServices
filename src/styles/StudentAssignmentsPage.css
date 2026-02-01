@@ -1,0 +1,52 @@
+/* Assignment Card Responsive Layout */
+.assigned-file-card-responsive {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.assignment-card-content {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex: 1;
+    min-width: 0;
+}
+
+.assignment-card-actions {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .assigned-file-card-responsive {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 20px;
+    }
+
+    .assignment-card-content {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 15px;
+    }
+
+    .assignment-card-content h3 {
+        white-space: normal !important;
+        text-align: center;
+    }
+
+    .assignment-card-actions {
+        justify-content: center;
+        width: 100%;
+        gap: 10px;
+    }
+
+    .assignment-card-actions a {
+        flex: 1;
+        max-width: 150px;
+    }
+}

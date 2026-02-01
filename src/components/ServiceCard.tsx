@@ -50,39 +50,30 @@ const ServiceCard: React.FC<ServiceCardProps> = ({ service, onClick }) => {
 
   // عرض الصورة المخصصة للخدمات المختلفة
   const renderIcon = () => {
-    // Map service IDs to their custom images
-    const customImages: Record<string, string> = {
-      '1': '/saveinformation.png', // سجل بياناتك
-      '2': '/vip.png', // العميل المميز
-      '3': '/pay.jpeg', // شحن الكتب الدراسية
-      '4': '/pay.jpeg', // دفع المصروفات الدراسية
-      '5': '/solveproblem.png', // حل وتسليم تكليفات
-      '6': '/Certificatesofappreciation.png', // شهادات اونلاين
-      '7': '/visual.png' // التقديم علي التحول الرقمي
-    };
-
-    const imagePath = customImages[service.id];
-    
-    if (imagePath) {
+    if (service.icon && service.icon.toLowerCase().endsWith('.json')) {
       return (
-        <img 
-          src={imagePath} 
-          alt={service.nameAr}
-          className="service-custom-icon"
-          onError={(e) => {
-            // Fallback to icon if image fails to load
-            const target = e.target as HTMLImageElement;
-            target.style.display = 'none';
-            const parent = target.parentElement;
-            if (parent) {
-              parent.innerHTML = '';
-              parent.appendChild(getServiceIcon(service.icon) as any);
-            }
-          }}
-        />
+        <div className="lottie-icon-wrapper" style={{
+          width: '120px',
+          height: '120px',
+          margin: '-30px auto -10px',
+          pointerEvents: 'none',
+          position: 'relative',
+          zIndex: 2
+        }}>
+          {/* @ts-ignore */}
+          <lottie-player
+            src={`/json/${service.icon}`}
+            renderer="canvas"
+            background="transparent"
+            speed="1"
+            style={{ width: '100%', height: '100%' }}
+            loop
+            autoplay
+          ></lottie-player>
+        </div>
       );
     }
-    
+
     return getServiceIcon(service.icon);
   };
 

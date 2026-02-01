@@ -201,38 +201,49 @@
 }
 
 .password-row {
-  background: #fff3cd;
-  padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #ffc107;
+  background: #fdf2f8 !important;
+  /* Soft rose background */
+  padding: 12px !important;
+  border-radius: 12px !important;
+  border: 1px solid #fce7f3 !important;
+  margin-top: 5px !important;
 }
 
 .password-display {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  width: 100% !important;
 }
 
 .password-value {
-  font-family: monospace;
-  font-size: 16px;
-  letter-spacing: 2px;
+  font-family: 'Courier New', Courier, monospace !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #be185d !important;
+  letter-spacing: 0.5px !important;
 }
 
 .toggle-password-btn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: #667eea;
-  padding: 5px;
-  display: flex;
-  align-items: center;
-  transition: all 0.3s;
+  background: white !important;
+  border: 1px solid #f9a8d4 !important;
+  color: #db2777 !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  flex-shrink: 0 !important;
 }
 
 .toggle-password-btn:hover {
-  color: #5568d3;
-  transform: scale(1.1);
+  background: #fdf2f8 !important;
+  transform: scale(1.1) !important;
+  box-shadow: 0 4px 10px rgba(219, 39, 119, 0.1) !important;
 }
 
 .edit-password-btn {

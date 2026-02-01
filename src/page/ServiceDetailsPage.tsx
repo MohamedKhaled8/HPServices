@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
 import { ServiceRequest, UploadedFile } from '../types';
@@ -7,6 +8,7 @@ import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, Certifi
 import { calculateTrack, getAvailableTracks } from '../utils/trackUtils';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
+import { logger } from '../utils/logger';
 import '../styles/ServiceDetailsPage.css';
 
 interface ServiceDetailsPageProps {
@@ -39,11 +41,27 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   const [digitalTransformationConfig, setDigitalTransformationConfig] = useState<DigitalTransformationConfig | null>(null);
   const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
   const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
+  const [showCopyToast, setShowCopyToast] = useState(false);
 
   // Scroll to top when service changes
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [serviceId]);
+
+  // Lock scroll when uploading
+  useEffect(() => {
+    if (uploadProgress.uploading) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.height = '100vh'; // Force body height to prevent jump
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.height = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.height = '';
+    };
+  }, [uploadProgress.uploading]);
 
   // Load book config for service 3
   useEffect(() => {
@@ -77,7 +95,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             });
           }
         } catch (error) {
-          console.error('Error loading book config:', error);
+          logger.error('Error loading book config:', error);
         }
       };
       loadBookConfig();
@@ -97,7 +115,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             });
           }
         } catch (error) {
-          console.error('Error loading fees config:', error);
+          logger.error('Error loading fees config:', error);
         }
       };
       loadFeesConfig();
@@ -110,7 +128,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             setAssignmentsConfig(config);
           }
         } catch (error) {
-          console.error('Error loading assignments config:', error);
+          logger.error('Error loading assignments config:', error);
         }
       };
       loadAssignmentsConfig();
@@ -118,11 +136,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     if (service.id === '6') {
       const loadCertificatesConfig = async () => {
         try {
-          console.log('Loading certificates config in ServiceDetailsPage...');
+          logger.log('Loading certificates config in ServiceDetailsPage...');
           const config = await getCertificatesServiceConfig();
           if (config) {
-            console.log('Setting certificates config in ServiceDetailsPage:', config.certificates?.length || 0, 'certificates');
-            console.log('Certificates details:', config.certificates?.map(c => ({
+            logger.log('Setting certificates config in ServiceDetailsPage:', config.certificates?.length || 0, 'certificates');
+            logger.log('Certificates details:', config.certificates?.map(c => ({
               id: c.id,
               name: c.name,
               hasImage: !!c.imageUrl,
@@ -130,11 +148,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             })));
             setCertificatesConfig(config);
           } else {
-            console.log('No certificates config found in ServiceDetailsPage');
+            logger.log('No certificates config found in ServiceDetailsPage');
             setCertificatesConfig(null);
           }
         } catch (error) {
-          console.error('Error loading certificates config in ServiceDetailsPage:', error);
+          logger.error('Error loading certificates config in ServiceDetailsPage:', error);
           setCertificatesConfig(null);
         }
       };
@@ -144,17 +162,17 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     if (service.id === '7') {
       const loadDigitalTransformationConfig = async () => {
         try {
-          console.log('Loading digital transformation config in ServiceDetailsPage...');
+          logger.log('Loading digital transformation config in ServiceDetailsPage...');
           const config = await getDigitalTransformationConfig();
           if (config) {
-            console.log('Setting digital transformation config in ServiceDetailsPage:', config.transformationTypes?.length || 0, 'types');
+            logger.log('Setting digital transformation config in ServiceDetailsPage:', config.transformationTypes?.length || 0, 'types');
             setDigitalTransformationConfig(config);
           } else {
-            console.log('No digital transformation config found in ServiceDetailsPage');
+            logger.log('No digital transformation config found in ServiceDetailsPage');
             setDigitalTransformationConfig(null);
           }
         } catch (error) {
-          console.error('Error loading digital transformation config in ServiceDetailsPage:', error);
+          logger.error('Error loading digital transformation config in ServiceDetailsPage:', error);
           setDigitalTransformationConfig(null);
         }
       };
@@ -164,17 +182,17 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     if (service.id === '8') {
       const loadFinalReviewConfig = async () => {
         try {
-          console.log('Loading final review config in ServiceDetailsPage...');
+          logger.log('Loading final review config in ServiceDetailsPage...');
           const config = await getFinalReviewConfig();
           if (config) {
-            console.log('Setting final review config in ServiceDetailsPage:', config);
+            logger.log('Setting final review config in ServiceDetailsPage:', config);
             setFinalReviewConfig(config);
           } else {
-            console.log('No final review config found in ServiceDetailsPage');
+            logger.log('No final review config found in ServiceDetailsPage');
             setFinalReviewConfig(null);
           }
         } catch (error) {
-          console.error('Error loading final review config in ServiceDetailsPage:', error);
+          logger.error('Error loading final review config in ServiceDetailsPage:', error);
           setFinalReviewConfig(null);
         }
       };
@@ -184,17 +202,17 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     if (service.id === '9') {
       const loadGraduationProjectConfig = async () => {
         try {
-          console.log('Loading graduation project config in ServiceDetailsPage...');
+          logger.log('Loading graduation project config in ServiceDetailsPage...');
           const config = await getGraduationProjectConfig();
           if (config) {
-            console.log('Setting graduation project config in ServiceDetailsPage:', config);
+            logger.log('Setting graduation project config in ServiceDetailsPage:', config);
             setGraduationProjectConfig(config);
           } else {
-            console.log('No graduation project config found in ServiceDetailsPage');
+            logger.log('No graduation project config found in ServiceDetailsPage');
             setGraduationProjectConfig(null);
           }
         } catch (error) {
-          console.error('Error loading graduation project config in ServiceDetailsPage:', error);
+          logger.error('Error loading graduation project config in ServiceDetailsPage:', error);
           setGraduationProjectConfig(null);
         }
       };
@@ -1542,24 +1560,20 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   }
 
                   return (
-                    <label key={method} className="payment-option" onClick={() => {
+                    <label key={method} className="payment-option" onClick={(e) => {
+                      e.preventDefault();
+                      setSelectedPaymentMethod(method);
+
                       if (phoneNumber) {
                         // 1. Copy to clipboard
                         navigator.clipboard.writeText(phoneNumber);
-                        alert(`تم نسخ الرقم: ${phoneNumber}\nسيتم فتح التطبيق الآن...`);
 
-                        // 2. Try to open the app (Deep Linking)
-                        if (method === 'instaPay') {
-                          window.location.href = 'https://ipn.eg/S/raoufpk97/instapay/3jZFKt';
-                        } else if (method === 'Vodafone') {
-                          // Try common schemes for Vodafone Cash
-                          window.location.href = 'anavodafone://';
-                        } else if (method === 'Etisalat') {
-                          window.location.href = 'myetisalat://';
-                        } else if (method === 'Orange') {
-                          window.location.href = 'myorange://';
-                        }
-                        // Note: If app is not installed, nothing will happen or browser might show error
+                        // Show stylish toast instead of alert
+                        setShowCopyToast(true);
+                        setTimeout(() => setShowCopyToast(false), 3000);
+
+                        // 2. No deep linking anymore as per user request
+                        // Removing window.location.href for InstaPay and others
                       }
                     }}>
                       <input
@@ -1567,7 +1581,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         name="paymentMethod"
                         value={method}
                         checked={selectedPaymentMethod === method}
-                        onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                        readOnly
+                        style={{ pointerEvents: 'none' }}
                       />
                       <div className="payment-info">
                         <span className="payment-label">{method}</span>
@@ -1598,30 +1613,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </section>
           )}
 
-          {uploadProgress.uploading && (
-            <div className="loading-overlay">
-              <div className="loading-modal">
-                <div className="loading-spinner-container">
-                  <Loader2 className="spinning-loader-large" size={64} />
-                </div>
-                <h3 className="loading-title">
-                  {service.id === '2' && receiptFiles.length > 0
-                    ? 'جاري رفع الملفات'
-                    : 'جاري تقديم الطلب'}
-                </h3>
-                <p className="loading-subtitle">يرجى الانتظار...</p>
-                <div className="progress-bar-wrapper">
-                  <div className="progress-bar-track">
-                    <div
-                      className="progress-bar-fill"
-                      style={{ width: `${uploadProgress.progress}%` }}
-                    ></div>
-                  </div>
-                  <span className="progress-percentage-text">{uploadProgress.progress}%</span>
-                </div>
-              </div>
-            </div>
-          )}
 
           {submitMessage && (
             <div className={`message ${submitMessage.type}`}>
@@ -1649,7 +1640,53 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           </div>
         </div>
       </form >
-    </div >
+
+      {(isSubmitting || uploadProgress.uploading) && createPortal(
+        <div className="loading-overlay-root">
+          <div className="loading-backdrop"></div>
+          <div className="floating-orbs-container">
+            <div className="floating-orb orb-1"></div>
+            <div className="floating-orb orb-2"></div>
+            <div className="floating-orb orb-3"></div>
+          </div>
+          <div className="loading-modal-wrapper">
+            <div className="loading-modal">
+              <div className="loading-spinner-container">
+                <Loader2 className="spinning-loader-large" size={64} />
+              </div>
+              <h3 className="loading-title">
+                {uploadProgress.progress > 0
+                  ? (service.id === '2' && receiptFiles.length > 0 ? 'جاري رفع الملفات' : 'جاري التقديم')
+                  : 'جاري معالجة الطلب'}
+              </h3>
+              <p className="loading-subtitle">يرجى الانتظار، نحن نجهز طلبك...</p>
+              <div className="progress-bar-wrapper">
+                <div className="progress-bar-track">
+                  <div
+                    className="progress-bar-fill"
+                    style={{ width: `${uploadProgress.progress}%` }}
+                  ></div>
+                </div>
+                <span className="progress-percentage-text">
+                  {uploadProgress.progress > 0 ? `${uploadProgress.progress}%` : 'جاري البدء...'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showCopyToast && createPortal(
+        <div className="copy-toast-container">
+          <div className="copy-toast">
+            <div className="toast-icon">✓</div>
+            <span>تم نسخ الرقم بنجاح</span>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
   );
 };
 

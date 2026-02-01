@@ -7,7 +7,8 @@ import '../styles/GeometricShapes.css';
 import {
   User, LogOut, Settings, Book,
   Search, Star, Zap, Menu, X, CheckCircle, Shield,
-  GraduationCap, ClipboardList, Package, CreditCard, CheckSquare, Award, FileCheck, Phone, Mail, MapPin, ChevronRight
+  GraduationCap, ClipboardList, Package, CreditCard, CheckSquare, Award, FileCheck, Phone, Mail, MapPin, ChevronRight,
+  Facebook, Linkedin, Github, MessageCircle
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -17,6 +18,7 @@ interface DashboardPageProps {
   onAdminClick?: () => void;
   onAssignmentsClick: () => void;
   onRequestsClick: () => void;
+  onNewsClick: () => void;
 }
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -38,7 +40,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   onLogout,
   onAdminClick,
   onAssignmentsClick,
-  onRequestsClick
+  onRequestsClick,
+  onNewsClick
 }) => {
   const { student } = useStudent();
   const [isAdmin, setIsAdmin] = useState(false);
@@ -46,15 +49,24 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [greeting, setGreeting] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+
+
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [isScrolling, setIsScrolling] = useState(false);
   const promoImages = [
-    "/images/1.jpg",
-    "/images/2.jpg",
-    "/images/5.jpg",
-    "/images/6.jpg",
-    "/images/7.jpg",
-    "/images/10.jpg"
+    "/images/optimized/0T8A9628.JPG",
+    "/images/optimized/0T8A9638.JPG",
+    "/images/optimized/0T8A9717.JPG",
+    "/images/optimized/0T8A9748.JPG",
+    "/images/optimized/0T8A9887.JPG",
+    "/images/optimized/0T8A9970.JPG",
+    "/images/optimized/4W3A0163.JPG",
+    "/images/optimized/4W3A0166.JPG",
+    "/images/optimized/4W3A0167.JPG",
+    "/images/optimized/4W3A0215.JPG",
+    "/images/optimized/4W3A0388.JPG",
+    "/images/optimized/4W3A0410.JPG",
+    "/images/optimized/4W3A0434.JPG"
   ];
 
 
@@ -72,18 +84,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   useEffect(() => {
     let scrollTimeout: any;
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 20);
-      setIsScrolling(true);
+    const geoContainer = document.querySelector('.body-geometric-shapes');
 
-      // Reset isScrolling after stop
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        setIsScrolling(false);
-      }, 150);
+    const handleScroll = () => {
+      const isPastThreshold = window.scrollY > 20;
+      setScrolled(prev => prev !== isPastThreshold ? isPastThreshold : prev);
     };
 
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       window.removeEventListener('scroll', handleScroll);
       clearTimeout(scrollTimeout);
@@ -112,6 +120,32 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const getFirstName = (fullName: string): string => fullName.split(' ')[0];
 
   const getIcon = (iconName: string) => {
+    if (iconName && iconName.toLowerCase().endsWith('.json')) {
+      return (
+        <div className="lottie-icon-container" style={{
+          width: '130px',
+          height: '130px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          margin: '-20px',
+          pointerEvents: 'none',
+          position: 'relative',
+          zIndex: 5
+        }}>
+          {/* @ts-ignore */}
+          <lottie-player
+            src={`/json/${iconName}`}
+            renderer="canvas"
+            background="transparent"
+            speed="1"
+            style={{ width: '100%', height: '100%' }}
+            loop
+            autoplay
+          ></lottie-player>
+        </div>
+      );
+    }
     const IconComponent = ICON_MAP[iconName] || Book;
     return <IconComponent size={32} strokeWidth={2} />;
   };
@@ -123,10 +157,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     }
   };
 
+
+
   return (
     <div className="dashboard-page">
       {/* Real Geometric Shapes Throughout Body */}
-      <div className={`body-geometric-shapes ${isScrolling ? 'is-scrolling' : ''}`}>
+      <div className="body-geometric-shapes">
         {/* Richer Geometric Background - Floating on scroll */}
         <div className="geo-shape geo-circle-1"></div>
         <div className="geo-shape geo-triangle-1"></div>
@@ -152,6 +188,26 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="geo-shape geo-circle-6"></div>
         <div className="geo-shape geo-diamond-3"></div>
         <div className="geo-shape geo-circle-7"></div>
+        <div className="geo-shape geo-square-5"></div>
+        <div className="geo-shape geo-pentagon-1"></div>
+
+        {/* Extra Lush Shapes for Desktop */}
+        <div className="geo-shape geo-circle-8 geo-lush"></div>
+        <div className="geo-shape geo-square-6 geo-lush"></div>
+        <div className="geo-shape geo-triangle-5 geo-lush"></div>
+        <div className="geo-shape geo-diamond-4 geo-lush"></div>
+        <div className="geo-shape geo-hexagon-3 geo-lush"></div>
+        <div className="geo-shape geo-circle-9 geo-lush"></div>
+        <div className="geo-shape geo-square-7 geo-lush"></div>
+        <div className="geo-shape geo-diamond-5 geo-lush"></div>
+        <div className="geo-shape geo-circle-10 geo-lush"></div>
+        <div className="geo-shape geo-triangle-6 geo-lush"></div>
+        <div className="geo-shape geo-pentagon-3 geo-lush"></div>
+        <div className="geo-shape geo-circle-11 geo-lush"></div>
+        <div className="geo-shape geo-square-8 geo-lush"></div>
+        <div className="geo-shape geo-diamond-6 geo-lush"></div>
+        <div className="geo-shape geo-circle-12 geo-lush"></div>
+        <div className="geo-shape geo-pentagon-4 geo-lush"></div>
       </div>
 
       {/* Navbar */}
@@ -167,6 +223,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         {/* Center: Links (Hidden on Mobile) */}
         <div className="nav-links desktop-only">
           <span className="nav-link" onClick={() => scrollToSection('services')}>الخدمات</span>
+          <span className="nav-link" onClick={onNewsClick}>أخر الأخبار</span>
           <span className="nav-link" onClick={() => scrollToSection('about')}>من نحن</span>
         </div>
 
@@ -278,6 +335,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               <div className="mobile-menu-divider"></div>
 
               <span className="mobile-nav-link" onClick={() => { scrollToSection('services'); setIsMobileMenuOpen(false); }}>الخدمات</span>
+              <span className="mobile-nav-link" onClick={() => { onNewsClick(); setIsMobileMenuOpen(false); }}>أخر الأخبار</span>
               <span className="mobile-nav-link" onClick={() => { scrollToSection('about'); setIsMobileMenuOpen(false); }}>من نحن</span>
 
               <div className="mobile-menu-divider"></div>
@@ -313,7 +371,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             <div
               key={index}
               className={`hero-slide ${index === currentImageIndex ? 'active' : ''}`}
-              style={{ backgroundImage: `url(${src})` }}
+              style={{ backgroundImage: `url(${src.replace(/\.JPG/i, '.webp')})` }}
             ></div>
           ))}
         </div>
@@ -407,12 +465,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
           <div className="footer-bottom">
             <span>© 2026 HP Services. جميع الحقوق محفوظة.</span>
-            <span className="powered-by">Powered By Eng. Mohamed Khaled</span>
+            <div className="developer-credits">
+              <span className="powered-by">Powered By Eng. Mohamed Khaled</span>
+              <div className="social-links">
+                <a href="https://www.facebook.com/mohamedkhaled.khalil.5/" target="_blank" rel="noopener noreferrer" className="social-link facebook">
+                  <Facebook size={18} />
+                </a>
+                <a href="https://www.linkedin.com/in/mohamed-khaled-0341a2224" target="_blank" rel="noopener noreferrer" className="social-link linkedin">
+                  <Linkedin size={18} />
+                </a>
+                <a href="https://github.com/MohamedKhaled8" target="_blank" rel="noopener noreferrer" className="social-link github">
+                  <Github size={18} />
+                </a>
+                <a href="https://wa.me/201026331866" target="_blank" rel="noopener noreferrer" className="social-link whatsapp">
+                  <MessageCircle size={18} />
+                </a>
+              </div>
+            </div>
           </div>
         </footer>
       </div>
+
+
     </div>
   );
 };
+
 
 export default DashboardPage;

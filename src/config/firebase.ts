@@ -3,16 +3,16 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// Firebase configuration
+// Firebase configuration using Environment Variables for better security/portability
 const firebaseConfig = {
-  apiKey: "AIzaSyCG7QOtB7a7uZzzFo5kOMOKPoLIELTkOk4",
-  authDomain: "hpservices-29a44.firebaseapp.com",
-  databaseURL: "https://hpservices-29a44-default-rtdb.firebaseio.com",
-  projectId: "hpservices-29a44",
-  storageBucket: "hpservices-29a44.appspot.com",
-  messagingSenderId: "542845890290",
-  appId: "1:542845890290:web:18d83a41e196b1cc2a6a6b",
-  measurementId: "G-B8PVV22FM1"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
