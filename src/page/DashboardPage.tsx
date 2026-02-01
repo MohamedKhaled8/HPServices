@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStudent } from '../context';
+import Lottie from 'lottie-react';
 import { SERVICES } from '../constants/services';
 import { checkIsAdmin } from '../services/firebaseService';
 import '../styles/DashboardPage.css';
@@ -119,6 +120,30 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   const getFirstName = (fullName: string): string => fullName.split(' ')[0];
 
+  /* New Lottie Component integration */
+  const LottieIcon = ({ iconName }: { iconName: string }) => {
+    const [animationData, setAnimationData] = useState<any>(null);
+
+    useEffect(() => {
+      fetch(`/json/${iconName}`)
+        .then(res => res.json())
+        .then(data => setAnimationData(data))
+        .catch(err => console.error('Error loading lottie:', err));
+    }, [iconName]);
+
+    if (!animationData) return <div style={{ width: '100%', height: '100%' }} />;
+
+    return (
+      <Lottie
+        animationData={animationData}
+        loop={true}
+        autoplay={true}
+        style={{ width: '100%', height: '100%' }}
+        rendererSettings={{ preserveAspectRatio: 'xMidYMid slice' }}
+      />
+    );
+  };
+
   const getIcon = (iconName: string) => {
     if (iconName && iconName.toLowerCase().endsWith('.json')) {
       return (
@@ -133,16 +158,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           position: 'relative',
           zIndex: 5
         }}>
-          {/* @ts-ignore */}
-          <lottie-player
-            src={`/json/${iconName}`}
-            renderer="canvas"
-            background="transparent"
-            speed="1"
-            style={{ width: '100%', height: '100%' }}
-            loop
-            autoplay
-          ></lottie-player>
+          <LottieIcon iconName={iconName} />
         </div>
       );
     }

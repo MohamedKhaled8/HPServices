@@ -1,15 +1,38 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Service } from '../types';
 import {
   Headphones, Package, Book, CreditCard, CheckCircle, Award, Zap,
   BookOpen, Search, Target, FileText, User, ClipboardList, FileCheck
 } from 'lucide-react';
+import Lottie from 'lottie-react';
 import '../styles/ServiceCard.css';
 
 interface ServiceCardProps {
   service: Service;
   onClick: () => void;
 }
+
+const LottieIcon = ({ iconName }: { iconName: string }) => {
+  const [animationData, setAnimationData] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`/json/${iconName}`)
+      .then(res => res.json())
+      .then(data => setAnimationData(data))
+      .catch(err => console.error('Error loading lottie:', err));
+  }, [iconName]);
+
+  if (!animationData) return <div style={{ width: '100%', height: '100%' }} />;
+
+  return (
+    <Lottie
+      animationData={animationData}
+      loop={true}
+      autoplay={true}
+      style={{ width: '100%', height: '100%' }}
+    />
+  );
+};
 
 const getServiceIcon = (iconName: string) => {
   const iconProps = { size: 32, strokeWidth: 1.5 };
@@ -60,16 +83,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({ service, onClick }) => {
           position: 'relative',
           zIndex: 2
         }}>
-          {/* @ts-ignore */}
-          <lottie-player
-            src={`/json/${service.icon}`}
-            renderer="canvas"
-            background="transparent"
-            speed="1"
-            style={{ width: '100%', height: '100%' }}
-            loop
-            autoplay
-          ></lottie-player>
+          <LottieIcon iconName={service.icon} />
         </div>
       );
     }
