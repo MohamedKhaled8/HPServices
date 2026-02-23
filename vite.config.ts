@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     react(),
     nodePolyfills({
-      // تفعيل polyfills لمكتبات Node.js التي تُستخدم في المتصفح
+      include: ['buffer', 'stream', 'util', 'crypto', 'path', 'fs'],
       globals: {
         Buffer: true,
         global: true,
@@ -15,20 +15,13 @@ export default defineConfig({
     }),
   ],
   build: {
-    chunkSizeWarningLimit: 2000,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         entryFileNames: `assets/[name].[hash].js`,
         chunkFileNames: `assets/[name].[hash].js`,
-        assetFileNames: `assets/[name].[hash].[ext]`,
-        // تقسيم الكود لتحسين الأداء
-        manualChunks: {
-          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
-          react: ['react', 'react-dom', 'react-router-dom'],
-        }
-      },
-      // تجاهل المكتبات التي لا تعمل في المتصفح
-      external: []
+        assetFileNames: `assets/[name].[hash].[ext]`
+      }
     }
   },
   server: {
@@ -41,9 +34,5 @@ export default defineConfig({
         secure: false
       }
     }
-  },
-  // تعريف متغيرات البيئة الأساسية كـ fallback لو لم تكن موجودة - تم إيقافها لأنها تسبب مشاكل في production مع polyfills
-  // define: {
-  //   'process.env': {}
-  // }
+  }
 })
