@@ -4,7 +4,7 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 // Firebase configuration using Environment Variables for better security/portability
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyCG7QOtB7a7uZzzFo5kOMOKPoLIELTkOk4",
   authDomain: "hpservices-29a44.firebaseapp.com",
   databaseURL: "https://hpservices-29a44-default-rtdb.firebaseio.com",

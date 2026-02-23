@@ -201,5 +201,8 @@ export interface GraduationProjectConfig {
 }
 
 export interface ServiceSettings {
-  [serviceId: string]: boolean;
+  [serviceId: string]: boolean | {
+    active: boolean;
+    disabledFields?: string[];
+  };
 }

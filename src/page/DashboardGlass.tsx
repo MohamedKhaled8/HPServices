@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
-import { checkIsAdmin } from '../services/firebaseService';
+import { checkIsAdmin, subscribeToAdminPreferences } from '../services/firebaseService';
 import '../styles/DashboardPage.css';
 import {
   LogOut, Users, Settings,
@@ -29,6 +29,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [scrolled, setScrolled] = useState(false);
   const [logoLoaded, setLogoLoaded] = useState(true);
   const [greeting, setGreeting] = useState('');
+  const [adminPrefs, setAdminPrefs] = useState<any>({ serviceOrder: [], profitCosts: {} });
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAdminPreferences(setAdminPrefs);
+    return () => unsubscribe();
+  }, []);
 
   // Handle scroll effect for navbar
   useEffect(() => {
@@ -70,8 +76,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   };
 
   // Categorize Services
-  const featuredServices = SERVICES.filter(s => s.id === '2' || s.id === '9');
-  const otherServices = SERVICES.filter(s => s.id !== '2' && s.id !== '9');
+  const sortedServices = [...SERVICES].sort((a, b) => {
+    const orderA = adminPrefs.serviceOrder?.indexOf(a.id) ?? -1;
+    const orderB = adminPrefs.serviceOrder?.indexOf(b.id) ?? -1;
+    const rankA = orderA === -1 ? 999 : orderA;
+    const rankB = orderB === -1 ? 999 : orderB;
+    return rankA - rankB;
+  });
+
+  const featuredServices = sortedServices.filter(s => s.id === '2' || s.id === '9');
+  const otherServices = sortedServices.filter(s => s.id !== '2' && s.id !== '9');
 
   return (
     <div className="dashboard-page">

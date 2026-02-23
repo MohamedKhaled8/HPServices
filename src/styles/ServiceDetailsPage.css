@@ -541,7 +541,8 @@
 /* Vertical Column Layout for Required Documents */
 .required-docs .features-list {
   display: flex !important;
-  flex-direction: column !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
   gap: 12px !important;
   padding: 0 !important;
 }
@@ -549,17 +550,17 @@
 .required-docs .feature-item {
   display: flex !important;
   flex-direction: row !important;
-  /* Icon on right, text on left for Arabic */
   align-items: center !important;
-  gap: 15px !important;
-  padding: 16px 20px !important;
+  gap: 10px !important;
+  padding: 12px 16px !important;
   background: white !important;
   border-radius: 12px !important;
   border: 1px solid #e2e8f0 !important;
-  border-right: 5px solid #ef4444 !important;
+  border-right: 4px solid #ef4444 !important;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
   transition: all 0.3s ease !important;
-  width: 100% !important;
+  flex: 1 1 calc(50% - 12px) !important;
+  min-width: 200px !important;
 }
 
 .required-docs .feature-item:hover {

@@ -3,6 +3,7 @@ import { useStudent } from '../context';
 import {
   subscribeToAllServiceRequests,
   updateServiceRequestStatus,
+  updateServiceRequestData,
   deleteServiceRequest,
   getBookServiceConfig,
   updateBookServiceConfig,
@@ -23,6 +24,8 @@ import {
   subscribeToAllStudents,
   searchStudent,
   updateStudentData,
+  deleteStudentData,
+  changeOtherUserPasswordHelper,
   saveDigitalTransformationCode,
   subscribeToDigitalTransformationCodes,
   saveElectronicPaymentCode,
@@ -33,7 +36,9 @@ import {
   updateLatestNews,
   sendQuickNotification,
   subscribeToServiceSettings,
-  updateServiceSettings
+  updateServiceSettings,
+  subscribeToAdminPreferences,
+  updateAdminPreferences
 } from '../services/firebaseService';
 import { normalizeTrackName } from '../utils/trackUtils';
 import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
@@ -127,6 +132,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isEditingStudent, setIsEditingStudent] = useState(false);
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [tempRequestData, setTempRequestData] = useState<any>({});
+  const [newPassword, setNewPassword] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  // Admin Preferences Editor State
+  const [adminPrefs, setAdminPrefs] = useState<any>({ serviceOrder: [], profitCosts: {} });
+  const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
   const [editedStudentData, setEditedStudentData] = useState<StudentData | null>(null);
   const [newFeeYear, setNewFeeYear] = useState<string>('');
   const [newFeeAmount, setNewFeeAmount] = useState<string>('');
@@ -135,6 +148,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [isSendingQuickMessage, setIsSendingQuickMessage] = useState(false);
   const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
   const [toastState, setToastState] = useState<{ message: string; type: 'loading' | 'success' | 'error'; duration?: number } | null>(null);
+  const [viewingStudentRequests, setViewingStudentRequests] = useState<StudentData | null>(null);
 
   // Custom Alert Modal State
   const [alertConfig, setAlertConfig] = useState<{
@@ -195,7 +209,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       address_details: 'العنوان بالتفصيل',
       diploma_type: 'نوع الدبلومة',
       names: 'الأسماء',
-      tracks: 'المسارات'
+      transfer_phone_number: 'الرقم المحول منه',
+      wantsMalazem: 'تم طلب إضافة ملازم؟ (+200 ج.م)'
     };
     return keys[key] || key;
   };
@@ -227,6 +242,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
+
+  const isServiceActive = (serviceId: string) => {
+    const setting = serviceSettings[serviceId];
+    if (typeof setting === 'boolean') return setting;
+    if (typeof setting === 'object' && setting !== null) return setting.active !== false;
+    return true;
+  };
+
+  const getDisabledFields = (serviceId: string) => {
+    const setting = serviceSettings[serviceId];
+    if (typeof setting === 'object' && setting !== null && setting.disabledFields) {
+      return setting.disabledFields;
+    }
+    return [];
+  };
 
   useEffect(() => {
     if (!student?.id) return;
@@ -589,6 +619,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   useEffect(() => {
     const unsubscribe = subscribeToServiceSettings((settings) => {
       setServiceSettings(settings);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to admin preferences
+  useEffect(() => {
+    const unsubscribe = subscribeToAdminPreferences((prefs) => {
+      setAdminPrefs(prefs);
     });
     return () => unsubscribe();
   }, []);
@@ -1227,9 +1265,35 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (!editedStudentData || !editedStudentData.id || isSaving === 'student') return;
     setIsSaving('student');
     try {
+      const originalStudent = allStudents.find(s => s.id === editedStudentData.id);
+      let passwordAuthUpdated = false;
+      let passwordAuthError = '';
+
+      // If password has changed, try to update it in Auth as well
+      if (originalStudent && originalStudent.password !== editedStudentData.password && editedStudentData.password) {
+        setToastState({ message: 'جاري تحديث كلمة المرور في المصادقة...', type: 'loading' });
+        try {
+          await changeOtherUserPasswordHelper(editedStudentData.id!, editedStudentData.password);
+          passwordAuthUpdated = true;
+        } catch (e: any) {
+          passwordAuthError = e.message || 'فشل تحديث كلمة المرور في المصادقة';
+          console.warn("Could not sync auth password:", e);
+        }
+      }
+
+      // Always update Firestore data (including new password)
       await updateStudentData(editedStudentData.id, editedStudentData);
       setIsEditingStudent(false);
-      showAlert('نجاح', 'تم تحديث بيانات المستخدم بنجاح', 'success');
+
+      if (originalStudent && originalStudent.password !== editedStudentData.password && editedStudentData.password) {
+        if (passwordAuthUpdated) {
+          showAlert('نجاح', 'تم تحديث بيانات المستخدم وكلمة المرور بنجاح ✅\nكلمة المرور الجديدة تعمل فوراً في تسجيل الدخول.', 'success');
+        } else {
+          showAlert('تنبيه', `تم تحديث البيانات في قاعدة البيانات ✅\nلكن ${passwordAuthError}\n\nيُنصح بإرسال رابط إعادة تعيين كلمة المرور للمستخدم عبر البريد الإلكتروني.`, 'warning');
+        }
+      } else {
+        showAlert('نجاح', 'تم تحديث بيانات المستخدم بنجاح', 'success');
+      }
     } catch (error: any) {
       showAlert('خطأ', error.message || 'حدث خطأ أثناء تحديث البيانات', 'error');
     } finally {
@@ -1446,26 +1510,20 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const handleDeleteDTCode = async (id: string) => {
     if (!id) return;
-    showConfirm('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الكود نهائياً؟', async () => {
-      try {
-        await deleteDigitalTransformationCode(id);
-        showAlert('نجاح', 'تم حذف الكود بنجاح', 'success');
-      } catch (error: any) {
-        showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
-      }
-    });
+    try {
+      await deleteDigitalTransformationCode(id);
+    } catch (error: any) {
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
+    }
   };
 
   const handleDeleteEPCode = async (id: string) => {
     if (!id) return;
-    showConfirm('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الكود نهائياً؟', async () => {
-      try {
-        await deleteElectronicPaymentCode(id);
-        showAlert('نجاح', 'تم حذف الكود بنجاح', 'success');
-      } catch (error: any) {
-        showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
-      }
-    });
+    try {
+      await deleteElectronicPaymentCode(id);
+    } catch (error: any) {
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
+    }
   };
 
   if (isLoading) {
@@ -1840,17 +1898,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                                   {/* Left Side: Actions */}
                                   <div className="request-row-actions">
-                                    {request.status !== 'rejected' && (
-                                      <button
-                                        onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
-                                        className={`action-btn accept-btn ${request.status === 'completed' ? 'active' : ''}`}
-                                        disabled={request.status === 'completed'}
-                                        title="قبول الطلب"
-                                      >
-                                        <CheckCircle size={18} />
-                                        <span>قبول</span>
-                                      </button>
-                                    )}
+                                    <button
+                                      onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
+                                      className={`action-btn accept-btn ${request.status === 'completed' ? 'active' : ''}`}
+                                      disabled={request.status === 'completed'}
+                                      title="قبول الطلب"
+                                    >
+                                      <CheckCircle size={18} />
+                                      <span>قبول</span>
+                                    </button>
                                     <button
                                       onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
                                       className={`action-btn reject-btn ${request.status === 'rejected' ? 'active' : ''}`}
@@ -1897,17 +1953,44 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       <div className="details-section">
                                         <h4 className="details-section-title">معلومات المستخدم</h4>
                                         <div className="details-items">
-                                          <div className="detail-item-row">
+                                          <div className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
                                             <span className="detail-label">الاسم الكامل:</span>
-                                            <span className="detail-value">{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
+                                            {editingRequestId === request.id ? (
+                                              <input
+                                                type="text"
+                                                value={tempRequestData.full_name_arabic || tempRequestData.full_name || studentData?.fullNameArabic || ''}
+                                                onChange={(e) => setTempRequestData({ ...tempRequestData, full_name_arabic: e.target.value })}
+                                                style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
+                                              />
+                                            ) : (
+                                              <span className="detail-value">{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
+                                            )}
                                           </div>
-                                          <div className="detail-item-row">
+                                          <div className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
                                             <span className="detail-label">الرقم القومي:</span>
-                                            <span className="detail-value">{request.data.national_id || studentData?.nationalID || 'غير متاح'}</span>
+                                            {editingRequestId === request.id ? (
+                                              <input
+                                                type="text"
+                                                value={tempRequestData.national_id || studentData?.nationalID || ''}
+                                                onChange={(e) => setTempRequestData({ ...tempRequestData, national_id: e.target.value })}
+                                                style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
+                                              />
+                                            ) : (
+                                              <span className="detail-value">{request.data.national_id || studentData?.nationalID || 'غير متاح'}</span>
+                                            )}
                                           </div>
-                                          <div className="detail-item-row">
+                                          <div className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
                                             <span className="detail-label">رقم الواتساب:</span>
-                                            <span className="detail-value">{request.data.whatsapp_number || studentData?.whatsappNumber || 'غير متاح'}</span>
+                                            {editingRequestId === request.id ? (
+                                              <input
+                                                type="text"
+                                                value={tempRequestData.whatsapp_number || studentData?.whatsappNumber || ''}
+                                                onChange={(e) => setTempRequestData({ ...tempRequestData, whatsapp_number: e.target.value })}
+                                                style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
+                                              />
+                                            ) : (
+                                              <span className="detail-value">{request.data.whatsapp_number || studentData?.whatsappNumber || 'غير متاح'}</span>
+                                            )}
                                           </div>
 
                                           {/* الذكاء المحسن: عرض البيانات الأكاديمية والمسارات إذا وجدت في البروفايل */}
@@ -1959,16 +2042,61 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                               <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{normalizeTrackName(studentData.track_name)}</span>
                                             </div>
                                           )}
-                                          <div className="detail-item-row">
+                                          <div className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
                                             <span className="detail-label">البريد الإلكتروني:</span>
-                                            <span className="detail-value" style={{ fontSize: '12px' }}>{studentData?.email}</span>
+                                            {editingRequestId === request.id ? (
+                                              <input
+                                                type="text"
+                                                value={tempRequestData.email || studentData?.email || ''}
+                                                onChange={(e) => setTempRequestData({ ...tempRequestData, email: e.target.value })}
+                                                style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
+                                              />
+                                            ) : (
+                                              <span className="detail-value" style={{ fontSize: '12px' }}>{request.data.email || studentData?.email}</span>
+                                            )}
                                           </div>
                                         </div>
                                       </div>
 
                                       {/* Request Details */}
                                       <div className="details-section">
-                                        <h4 className="details-section-title">تفاصيل الطلب</h4>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                          <h4 className="details-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>تفاصيل الطلب</h4>
+                                          {editingRequestId === request.id ? (
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                              <button
+                                                onClick={() => setEditingRequestId(null)}
+                                                style={{ padding: '6px 12px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                              >
+                                                <X size={14} /> إلغاء
+                                              </button>
+                                              <button
+                                                onClick={async () => {
+                                                  try {
+                                                    await updateServiceRequestData(request.id!, request.serviceId, tempRequestData);
+                                                    setEditingRequestId(null);
+                                                    setToastState({ message: 'تم تعديل بيانات الطلب بنجاح', type: 'success' });
+                                                  } catch (error: any) {
+                                                    setToastState({ message: error.message || 'حدث خطأ أثناء تعديل الطلب', type: 'error' });
+                                                  }
+                                                }}
+                                                style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                              >
+                                                <Save size={14} /> حفظ التعديلات
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <button
+                                              onClick={() => {
+                                                setEditingRequestId(request.id || null);
+                                                setTempRequestData(request.data || {});
+                                              }}
+                                              style={{ padding: '6px 12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                            >
+                                              <Edit2 size={14} /> تعديل البيانات
+                                            </button>
+                                          )}
+                                        </div>
                                         <div className="details-items">
                                           <div className="detail-item-row">
                                             <span className="detail-label">تاريخ الطلب:</span>
@@ -2041,15 +2169,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                               key === 'tracks_array' ||
                                               (request.serviceId === '3' && (key === 'names' || key === 'tracks')) ||
                                               typeof value === 'object' ||
-                                              !stringValue ||
+                                              (!stringValue && editingRequestId !== request.id) ||
                                               stringValue === 'undefined' ||
                                               stringValue === 'null'
                                             ) return null;
 
                                             return (
-                                              <div key={key} className="detail-item-row">
+                                              <div key={key} className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
                                                 <span className="detail-label">{translateKey(key)}:</span>
-                                                <span className="detail-value" style={{ whiteSpace: 'pre-wrap' }}>{key.includes('track') ? normalizeTrackName(stringValue) : stringValue}</span>
+                                                {editingRequestId === request.id ? (
+                                                  <input
+                                                    type="text"
+                                                    value={tempRequestData[key] || ''}
+                                                    onChange={(e) => setTempRequestData({ ...tempRequestData, [key]: e.target.value })}
+                                                    style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
+                                                  />
+                                                ) : (
+                                                  <span className="detail-value" style={{ whiteSpace: 'pre-wrap' }}>
+                                                    {key === 'wantsMalazem' ? (value ? 'نعم' : 'لا') : (key.includes('track') ? normalizeTrackName(stringValue) : stringValue)}
+                                                  </span>
+                                                )}
                                               </div>
                                             );
                                           })}
@@ -3042,7 +3181,30 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               title="تعديل البيانات"
                             >
                               <Edit2 size={18} />
-                              <span>تعديل</span>
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm("هل أنت متأكد من حذف هذا المشترك نهائياً من المنصة؟")) return;
+                                try {
+                                  await deleteStudentData(student.id!);
+                                  showAlert('نجاح', 'تم حذف المشترك بنجاح', 'success');
+                                } catch (error: any) {
+                                  showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
+                                }
+                              }}
+                              className="action-btn reject-btn"
+                              style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}
+                              title="حذف المشترك"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                            <button
+                              onClick={() => setViewingStudentRequests(student)}
+                              className="action-btn"
+                              style={{ background: '#8b5cf6', color: 'white', borderColor: '#8b5cf6', border: '1px solid #8b5cf6', borderRadius: '8px', padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                              title="عرض جميع الطلبات"
+                            >
+                              <ClipboardList size={18} />
                             </button>
 
                             <button
@@ -3193,51 +3355,176 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               <h2>إدارة الخدمات (تفعيل/تعطيل)</h2>
             </div>
             <div className="services-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', padding: '20px 0' }}>
-              {SERVICES.map((service) => {
-                const isActive = serviceSettings[service.id] !== false; // Default true
-                return (
-                  <div key={service.id} className="service-card-premium" style={{ '--card-color': service.color } as React.CSSProperties}>
-                    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                      <h3 style={{ margin: 0 }}>{service.nameAr}</h3>
-                      <div className={`status-badge ${isActive ? 'status-completed' : 'status-rejected'}`}>
-                        {isActive ? 'نشطة' : 'متوقفة'}
+              {[...SERVICES]
+                .sort((a, b) => {
+                  const orderA = adminPrefs.serviceOrder?.indexOf(a.id) ?? -1;
+                  const orderB = adminPrefs.serviceOrder?.indexOf(b.id) ?? -1;
+                  const rankA = orderA === -1 ? 999 : orderA;
+                  const rankB = orderB === -1 ? 999 : orderB;
+                  return rankA - rankB;
+                })
+                .map((service, index, arr) => {
+                  const isActive = isServiceActive(service.id);
+                  const disabledFields = getDisabledFields(service.id);
+
+                  const handleToggleActive = async () => {
+                    const newSettings = {
+                      ...serviceSettings,
+                      [service.id]: { active: !isActive, disabledFields }
+                    };
+                    setServiceSettings(newSettings as any);
+                    try {
+                      await updateServiceSettings(newSettings as any);
+                    } catch (e) {
+                      alert('فشل تحديث الحالة');
+                    }
+                  };
+
+                  const handleToggleField = async (fieldName: string) => {
+                    const isFieldDisabled = disabledFields.includes(fieldName);
+                    const newDisabledFields = isFieldDisabled
+                      ? disabledFields.filter(f => f !== fieldName)
+                      : [...disabledFields, fieldName];
+                    const newSettings = {
+                      ...serviceSettings,
+                      [service.id]: { active: isActive, disabledFields: newDisabledFields }
+                    };
+                    setServiceSettings(newSettings as any);
+                    try {
+                      await updateServiceSettings(newSettings as any);
+                    } catch (e) {
+                      alert('فشل تحديث الإعدادات');
+                    }
+                  };
+
+                  const handleDragStart = (e: React.DragEvent) => {
+                    setDraggedServiceId(service.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    if (e.currentTarget instanceof HTMLElement) {
+                      e.currentTarget.style.opacity = '0.5';
+                    }
+                  };
+
+                  const handleDragEnd = (e: React.DragEvent) => {
+                    setDraggedServiceId(null);
+                    if (e.currentTarget instanceof HTMLElement) {
+                      e.currentTarget.style.opacity = '1';
+                    }
+                  };
+
+                  const handleDragOver = (e: React.DragEvent) => {
+                    e.preventDefault();
+                    if (draggedServiceId !== service.id) {
+                      e.dataTransfer.dropEffect = 'move';
+                    }
+                  };
+
+                  const handleDrop = async (e: React.DragEvent) => {
+                    e.preventDefault();
+                    if (!draggedServiceId || draggedServiceId === service.id) return;
+
+                    const currentOrder = adminPrefs.serviceOrder?.length > 0 ? [...adminPrefs.serviceOrder] : SERVICES.map(s => s.id);
+                    const draggedIdx = currentOrder.indexOf(draggedServiceId);
+                    const targetIdx = currentOrder.indexOf(service.id);
+
+                    if (draggedIdx >= 0 && targetIdx >= 0) {
+                      const newOrder = [...currentOrder];
+                      const [item] = newOrder.splice(draggedIdx, 1);
+                      newOrder.splice(targetIdx, 0, item);
+                      await updateAdminPreferences({ ...adminPrefs, serviceOrder: newOrder });
+                    }
+                  };
+
+                  return (
+                    <div
+                      key={service.id}
+                      className="service-card-premium"
+                      style={{ '--card-color': service.color, cursor: 'grab' } as React.CSSProperties}
+                      draggable
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                    >
+                      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ color: '#94a3b8', cursor: 'grab' }}>⋮⋮</span>
+                          <h3 style={{ margin: 0 }}>{service.nameAr}</h3>
+                        </div>
+                        <div className={`status-badge ${isActive ? 'status-completed' : 'status-rejected'}`}>
+                          {isActive ? 'نشطة' : 'متوقفة'}
+                        </div>
+                      </div>
+
+                      <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
+                        {service.descriptionAr}
+                      </p>
+
+                      <div className="card-actions">
+                        <button
+                          onClick={handleToggleActive}
+                          className={`action-btn ${isActive ? 'reject-btn' : 'accept-btn'}`}
+                          style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
+                        >
+                          {isActive ? (
+                            <>
+                              <XCircle size={18} />
+                              تعطيل الخدمة
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle size={18} />
+                              تفعيل الخدمة
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div style={{ marginTop: '15px', padding: '12px', background: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#475569' }}>التحكم في حقول الخدمة:</h4>
+                        <div style={{ display: 'grid', gap: '8px' }}>
+                          {service.fields.map(field => (
+                            <label key={field.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={!disabledFields.includes(field.name)}
+                                onChange={() => handleToggleField(field.name)}
+                                style={{ accentColor: '#3b82f6' }}
+                              />
+                              {field.label}
+                            </label>
+                          ))}
+                          {service.paymentMethods && service.paymentMethods.length > 0 && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={!disabledFields.includes('payment_section')}
+                                onChange={() => handleToggleField('payment_section')}
+                                style={{ accentColor: '#3b82f6' }}
+                              />
+                              طرق الدفع والأسعار
+                            </label>
+                          )}
+                          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={!disabledFields.includes('receipt_upload')}
+                                onChange={() => handleToggleField('receipt_upload')}
+                                style={{ accentColor: '#3b82f6' }}
+                              />
+                              رفع المستندات والإيصال
+                            </label>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ padding: '15px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b', fontSize: '12px', marginTop: '10px' }}>
+                        قم بسحب وإفلات البطاقة لتغيير الترتيب
                       </div>
                     </div>
-
-                    <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                      {service.descriptionAr}
-                    </p>
-
-                    <div className="card-actions">
-                      <button
-                        onClick={async () => {
-                          const newSettings = { ...serviceSettings, [service.id]: !isActive };
-                          setServiceSettings(newSettings);
-                          try {
-                            await updateServiceSettings(newSettings);
-                          } catch (e) {
-                            alert('فشل تحديث الحالة');
-                          }
-                        }}
-                        className={`action-btn ${isActive ? 'reject-btn' : 'accept-btn'}`}
-                        style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
-                      >
-                        {isActive ? (
-                          <>
-                            <XCircle size={18} />
-                            تعطيل الخدمة
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle size={18} />
-                            تفعيل الخدمة
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           </div>
         )
@@ -3462,7 +3749,86 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         )
       }
 
-
+      {/* View Student Requests Modal */}
+      {viewingStudentRequests && (() => {
+        const studentReqs = getStudentRequests(viewingStudentRequests.id || '');
+        return (
+          <div className="request-modal-overlay" onClick={() => setViewingStudentRequests(null)}>
+            <div className="request-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}>
+              <div className="modal-header" style={{ position: 'sticky', top: 0, background: 'white', zIndex: 10, borderBottom: '2px solid #e2e8f0', paddingBottom: '15px' }}>
+                <div>
+                  <h2 style={{ margin: 0 }}>جميع طلبات: {viewingStudentRequests.fullNameArabic}</h2>
+                  <p style={{ margin: '5px 0 0', color: '#64748b', fontSize: '14px' }}>{viewingStudentRequests.email} • {studentReqs.length} طلب</p>
+                </div>
+                <button onClick={() => setViewingStudentRequests(null)} className="close-button">
+                  <X size={24} />
+                </button>
+              </div>
+              <div className="modal-content" style={{ padding: '20px' }}>
+                {studentReqs.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
+                    <ClipboardList size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+                    <p style={{ fontSize: '16px' }}>لا توجد طلبات مسجلة لهذا المستخدم</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {studentReqs
+                      .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
+                      .map((req, idx) => (
+                        <div key={req.id || idx} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            <div>
+                              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>{getServiceName(req.serviceId)}</h3>
+                              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                                {req.createdAt ? new Date(req.createdAt).toLocaleString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'بدون تاريخ'}
+                              </span>
+                            </div>
+                            {getStatusBadge(req.status)}
+                          </div>
+                          <div style={{ padding: '16px 20px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+                              {Object.entries(req.data || {}).map(([key, value]) => {
+                                const stringValue = String(value || '').trim();
+                                if (key === 'selectedCertificate' || key === 'receiptUrl' || key === 'names_array' || key === 'tracks_array' || key === 'selectedAssignmentsData' || key === 'selectedTransformationType' || typeof value === 'object' || !stringValue || stringValue === 'undefined' || stringValue === 'null') return null;
+                                return (
+                                  <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{translateKey(key)}:</span>
+                                    <span style={{ fontSize: '14px', color: '#0f172a' }}>
+                                      {key === 'wantsMalazem' ? (value ? 'نعم ✅' : 'لا') : (key.includes('track') ? normalizeTrackName(stringValue) : stringValue)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {req.paymentMethod && (
+                              <div style={{ marginTop: '12px', padding: '10px 14px', background: '#f1f5f9', borderRadius: '8px', fontSize: '13px' }}>
+                                <strong>طريقة الدفع:</strong> {req.paymentMethod}
+                              </div>
+                            )}
+                            {req.documents && req.documents.length > 0 && (
+                              <div style={{ marginTop: '12px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>المرفقات ({req.documents.length}):</span>
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                                  {req.documents.map((doc, dIdx) => (
+                                    <a key={dIdx} href={doc.url} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 12px', background: '#eff6ff', color: '#2563eb', borderRadius: '6px', fontSize: '12px', textDecoration: 'none', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <FileText size={14} />
+                                      {doc.name || `مرفق ${dIdx + 1}`}
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {
         activeTab === 'digitalTransformation' && (
@@ -3917,11 +4283,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         let completedCount = 0;
         let pendingCount = 0;
         let rejectedCount = 0;
-        const serviceStats: Record<string, { count: number; revenue: number; name: string; color: string }> = {};
+        let totalProfit = 0;
+        const serviceStats: Record<string, { id: string; count: number; revenue: number; profit: number; name: string; color: string }> = {};
 
         // Initialize Services
         SERVICES.forEach(s => {
-          serviceStats[s.id] = { count: 0, revenue: 0, name: s.nameAr, color: s.color };
+          serviceStats[s.id] = { id: s.id, count: 0, revenue: 0, profit: 0, name: s.nameAr, color: s.color };
         });
 
         // Loop through all requests to gather data
@@ -3945,8 +4312,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 amount = parseFloat(String(rawPrice).replace(/[^0-9.]/g, '')) || 0;
               }
 
+              const profitMarginOrCost = adminPrefs.profitCosts?.[req.serviceId] || 0;
+              // If profit margin looks like a percentage (e.g., < 1), or just use as fixed cost per item
+              // For simplicity: Admin inputs the EXACT profit per request (e.g. 50 means 50 EGP profit per request)
+              let itemProfit = profitMarginOrCost;
+
               serviceStats[req.serviceId].revenue += amount;
+              serviceStats[req.serviceId].profit += itemProfit;
               totalRevenue += amount;
+              totalProfit += itemProfit;
             }
           }
         });
@@ -3965,9 +4339,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </h2>
                 <p style={{ color: '#64748b', marginTop: '8px' }}>تحليل شامل لأداء المنصة والمبالغ المحصلة</p>
               </div>
-              <div style={{ background: '#f1f5f9', padding: '10px 20px', borderRadius: '12px', textAlign: 'center' }}>
-                <div style={{ fontSize: '0.9rem', color: '#64748b' }}>إجمالي الدخل المحقق</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#10b981' }}>{totalRevenue.toLocaleString()} ج.م</div>
+              <div style={{ display: 'flex', gap: '20px' }}>
+                <div style={{ background: '#f1f5f9', padding: '10px 20px', borderRadius: '12px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.9rem', color: '#64748b' }}>إجمالي الدخل المحقق</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#10b981' }}>{totalRevenue.toLocaleString()} ج.م</div>
+                </div>
+                <div style={{ background: '#fef3c7', padding: '10px 20px', borderRadius: '12px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.9rem', color: '#b45309' }}>إجمالي المكسب</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#d97706' }}>{totalProfit.toLocaleString()} ج.م</div>
+                </div>
               </div>
             </div>
 
@@ -4054,15 +4434,32 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       <div key={service.name} style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px dashed #f1f5f9' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                           <span style={{ fontWeight: '600', color: '#334155' }}>{service.name}</span>
-                          <span style={{ fontWeight: 'bold', color: '#10b981' }}>{service.revenue.toLocaleString()} ج.م</span>
+                          <div>
+                            <span style={{ fontWeight: 'bold', color: '#10b981', marginLeft: '10px' }}>{service.revenue.toLocaleString()} ج.م</span>
+                            <span style={{ fontWeight: 'bold', color: '#d97706' }}>(مكسب: {service.profit.toLocaleString()} ج.م)</span>
+                          </div>
                         </div>
-                        <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px' }}>
+                        <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px', marginBottom: '10px' }}>
                           <div style={{
                             width: `${(service.revenue / (totalRevenue || 1)) * 100}%`,
                             height: '100%',
                             background: '#10b981',
                             borderRadius: '4px'
                           }} />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem' }}>
+                          <label style={{ color: '#64748b' }}>حدد المكسب للطلب الواحد (ج.م):</label>
+                          <input
+                            type="number"
+                            style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', width: '80px' }}
+                            value={adminPrefs.profitCosts?.[service.id] || ''}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              const updated = { ...adminPrefs, profitCosts: { ...adminPrefs.profitCosts, [service.id]: val } };
+                              setAdminPrefs(updated);
+                              updateAdminPreferences(updated).catch(err => console.error(err));
+                            }}
+                          />
                         </div>
                       </div>
                     )

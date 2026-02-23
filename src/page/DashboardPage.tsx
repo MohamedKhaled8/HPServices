@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
 
-import { checkIsAdmin, subscribeToServiceSettings, subscribeToLatestNews, subscribeToQuickNotification } from '../services/firebaseService';
+import { checkIsAdmin, subscribeToServiceSettings, subscribeToLatestNews, subscribeToQuickNotification, subscribeToAdminPreferences } from '../services/firebaseService';
 import { ServiceSettings } from '../types';
 import '../styles/DashboardPage.css';
 import '../styles/GeometricShapes.css';
@@ -121,6 +121,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hoveredServiceId, setHoveredServiceId] = useState<string | null>(null);
   const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
+  const [adminPrefs, setAdminPrefs] = useState<any>({ serviceOrder: [], profitCosts: {} });
 
   const promoImages = [
     "/images/optimized/0T8A9628.JPG",
@@ -253,7 +254,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const unsubscribe = subscribeToServiceSettings((settings) => {
       setServiceSettings(settings);
     });
-    return () => unsubscribe();
+
+    // Subscribe to admin preferences
+    const unsubscribePrefs = subscribeToAdminPreferences((prefs) => {
+      setAdminPrefs(prefs);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribePrefs();
+    }
   }, [student]);
 
   useEffect(() => {
@@ -490,40 +500,48 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="services-grid">
 
           {
-            SERVICES.map((service) => {
-              const isActive = serviceSettings[service.id] !== false; // Default to true if not set
-              const isClickable = isActive;
+            [...SERVICES]
+              .sort((a, b) => {
+                const orderA = adminPrefs.serviceOrder?.indexOf(a.id) ?? -1;
+                const orderB = adminPrefs.serviceOrder?.indexOf(b.id) ?? -1;
+                const rankA = orderA === -1 ? 999 : orderA;
+                const rankB = orderB === -1 ? 999 : orderB;
+                return rankA - rankB;
+              })
+              .map((service) => {
+                const isActive = serviceSettings[service.id] !== false; // Default to true if not set
+                const isClickable = isActive;
 
-              return (
-                <div
-                  key={service.id}
-                  className={`service-card-premium ${!isActive ? 'service-disabled' : ''}`}
-                  onClick={() => isClickable && onServiceClick(service.id)}
-                  onMouseEnter={() => isClickable && setHoveredServiceId(service.id)}
-                  onMouseLeave={() => setHoveredServiceId(null)}
-                  style={{
-                    '--card-color': isActive ? service.color : '#94a3b8',
-                    cursor: isClickable ? 'pointer' : 'not-allowed',
-                    filter: !isActive ? 'grayscale(1)' : 'none',
-                    opacity: !isActive ? 0.8 : 1
-                  } as React.CSSProperties}
-                >
-                  <div className="service-icon mb-4 transform transition-transform duration-300 group-hover:scale-110">
-                    {renderServiceIcon(service.id, service.icon)}
-                  </div>
-                  <h3 className="card-title">{service.nameAr}</h3>
-                  <p className="card-desc">{service.descriptionAr}</p>
+                return (
+                  <div
+                    key={service.id}
+                    className={`service-card-premium ${!isActive ? 'service-disabled' : ''}`}
+                    onClick={() => isClickable && onServiceClick(service.id)}
+                    onMouseEnter={() => isClickable && setHoveredServiceId(service.id)}
+                    onMouseLeave={() => setHoveredServiceId(null)}
+                    style={{
+                      '--card-color': isActive ? service.color : '#94a3b8',
+                      cursor: isClickable ? 'pointer' : 'not-allowed',
+                      filter: !isActive ? 'grayscale(1)' : 'none',
+                      opacity: !isActive ? 0.8 : 1
+                    } as React.CSSProperties}
+                  >
+                    <div className="service-icon mb-4 transform transition-transform duration-300 group-hover:scale-110">
+                      {renderServiceIcon(service.id, service.icon)}
+                    </div>
+                    <h3 className="card-title">{service.nameAr}</h3>
+                    <p className="card-desc">{service.descriptionAr}</p>
 
-                  <div className="card-action-oval">
-                    {isActive ? (
-                      <>بدء الخدمة <ChevronRight size={16} /></>
-                    ) : (
-                      <span>الخدمة ستتوفر قريبا</span>
-                    )}
+                    <div className="card-action-oval">
+                      {isActive ? (
+                        <>بدء الخدمة <ChevronRight size={16} /></>
+                      ) : (
+                        <span>الخدمة ستتوفر قريبا</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })
           }
         </div>
 

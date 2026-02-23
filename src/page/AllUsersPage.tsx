@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StudentData } from '../types';
-import { subscribeToAllStudents, updateStudentData } from '../services/firebaseService';
-import { ArrowRight, Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
+import { subscribeToAllStudents, updateStudentData, deleteStudentData } from '../services/firebaseService';
+import { ArrowRight, Eye, EyeOff, RefreshCw, Search, Trash2 } from 'lucide-react';
 import '../styles/AllUsersPage.css';
 
 interface AllUsersPageProps {
@@ -53,6 +53,19 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
       alert('تم تحديث كلمة المرور بنجاح');
     } catch (error: any) {
       alert('حدث خطأ أثناء التحديث: ' + error.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteSubscriber = async (studentId: string) => {
+    if (!window.confirm("هل أنت متأكد من حذف هذا المشترك نهائياً من المنصة؟")) return;
+    try {
+      setIsUpdating(true);
+      await deleteStudentData(studentId);
+      alert('تم حذف المشترك بنجاح');
+    } catch (error: any) {
+      alert('حدث خطأ أثناء الحذف: ' + error.message);
     } finally {
       setIsUpdating(false);
     }
@@ -195,6 +208,15 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
                             className="edit-password-btn"
                           >
                             تعديل
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSubscriber(student.id!)}
+                            className="delete-btn"
+                            disabled={isUpdating}
+                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', marginLeft: '5px' }}
+                            title="حذف المشترك"
+                          >
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </div>

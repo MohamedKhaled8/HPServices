@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
-import { ServiceRequest, UploadedFile } from '../types';
-import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, updateStudentData } from '../services/firebaseService';
+import { ServiceRequest, UploadedFile, ServiceSettings } from '../types';
+import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, updateStudentData, subscribeToServiceSettings } from '../services/firebaseService';
 import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
 import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils/trackUtils';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
@@ -27,6 +27,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
   const [serviceData, setServiceData] = useState<Record<string, any>>({});
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
+  const [transferPhoneNumber, setTransferPhoneNumber] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [editableFields, setEditableFields] = useState<Record<string, boolean>>({});
@@ -42,10 +43,31 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
   const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
   const [showCopyToast, setShowCopyToast] = useState(false);
+  const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
+  const [wantsMalazem, setWantsMalazem] = useState(false);
 
-  // Scroll to top when service changes
+  useEffect(() => {
+    const unsubscribe = subscribeToServiceSettings(setServiceSettings);
+    return () => unsubscribe();
+  }, []);
+
+  const getDisabledFields = (serviceId: string) => {
+    const setting = serviceSettings[serviceId];
+    if (typeof setting === 'object' && setting !== null && setting.disabledFields) {
+      return setting.disabledFields;
+    }
+    return [];
+  };
+
+  const disabledFields = getDisabledFields(serviceId);
+
+  // Scroll to top and reset state when service changes
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    setReceiptFiles([]);
+    setSelectedPaymentMethod('');
+    setTransferPhoneNumber('');
+    setSubmitMessage(null);
   }, [serviceId]);
 
   // Lock scroll when uploading
@@ -489,7 +511,17 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       // Show upload progress for all services
       setUploadProgress({ uploading: true, progress: 0 });
 
-      const requestData = { ...serviceData };
+      // Fix TypeScript inferred type by typing requestData as Record<string, any>
+      const requestData: Record<string, any> = {
+        ...serviceData,
+        ...(transferPhoneNumber ? { transfer_phone_number: transferPhoneNumber } : {})
+      };
+
+      // Malazem only for service 7 (Digital Transformation)
+      if (service.id === '7' && wantsMalazem) {
+        requestData.wantsMalazem = true;
+      }
+
       if (service.id === '5') {
         requestData.selectedAssignments = selectedAssignments;
         const selectedAssignmentsData = assignmentsConfig?.assignments.filter(a => selectedAssignments.includes(a.id)) || [];
@@ -505,7 +537,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         const selectedType = digitalTransformationConfig.transformationTypes.find(t => t.id === serviceData.transformation_type);
         if (selectedType) {
           requestData.selectedTransformationType = selectedType;
-          requestData.totalPrice = selectedType.price;
+          requestData.totalPrice = selectedType.price + (wantsMalazem ? 200 : 0);
         }
         if (serviceData.exam_language) {
           requestData.selectedExamLanguage = serviceData.exam_language;
@@ -518,6 +550,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
       if (service.id === '2') {
         requestData.totalPrice = 500;
+      }
+      if (service.id === '3' && bookConfig && serviceData.number_of_copies) {
+        requestData.totalPrice = bookConfig.prices[serviceData.number_of_copies] || 0;
+      }
+      if (service.id === '4' && feesConfig && serviceData.diploma_year) {
+        requestData.totalPrice = feesConfig.prices[serviceData.diploma_year] || 0;
+      }
+      if (service.id === '10') {
+        requestData.totalPrice = 700;
       }
 
       const request: ServiceRequest = {
@@ -723,7 +764,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           <section className="form-section section-service-data">
             <h2>{service.id === '1' ? 'بيانات التسجيل' : 'بيانات الخدمة'}</h2>
             <div className="service-fields">
-              {service.fields.map(field => {
+              {service.fields.filter(field => !disabledFields.includes(field.name)).map(field => {
                 // تجاهل حقول Other إذا لم يتم اختيار Other أو أخرى
                 if (field.name.endsWith('_other')) {
                   const parentFieldName = field.name.replace('_other', '');
@@ -1481,9 +1522,27 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </section>
           )}
 
-          {service.paymentMethods.length > 0 && (
+          {!disabledFields.includes('payment_section') && service.paymentMethods && service.paymentMethods.length > 0 && (
             <section className="form-section section-payment">
               <h2>خدمات الدفع</h2>
+
+              {service.id === '7' && (
+                <div style={{ marginBottom: '20px', padding: '15px', background: 'linear-gradient(135deg, #eff6ff, #e0f2fe)', borderRadius: '12px', border: '1px solid #93c5fd', boxShadow: '0 2px 8px rgba(59,130,246,0.1)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', fontSize: '15px', fontWeight: 'bold', color: '#1e3a8a' }}>
+                    <input
+                      type="checkbox"
+                      checked={wantsMalazem}
+                      onChange={(e) => setWantsMalazem(e.target.checked)}
+                      style={{ width: '22px', height: '22px', accentColor: '#2563eb', borderRadius: '4px' }}
+                    />
+                    <div>
+                      <span>إضافة ملازم مع طلب التقديم</span>
+                      <span style={{ display: 'block', fontSize: '13px', color: '#3b82f6', fontWeight: '600', marginTop: '2px' }}>+ 200 جنيه إضافية</span>
+                    </div>
+                  </label>
+                </div>
+              )}
+
               {service.id === '3' && bookConfig && (
                 <div className="payment-amount">
                   {serviceData.number_of_copies && (
@@ -1538,8 +1597,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   <div className="selected-price">
                     <strong>
                       المبلغ المستحق للدفع: {
-                        digitalTransformationConfig.transformationTypes.find(t => t.id === serviceData.transformation_type)?.price || 0
+                        (digitalTransformationConfig.transformationTypes.find(t => t.id === serviceData.transformation_type)?.price || 0) + (wantsMalazem ? 200 : 0)
                       } جنيه
+                      {wantsMalazem && <span style={{ fontSize: '13px', color: '#2563eb', marginRight: '8px' }}>(شامل 200 جنيه ملازم)</span>}
                     </strong>
                   </div>
                 </div>
@@ -1607,7 +1667,10 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   return (
                     <label key={method} className="payment-option" onClick={(e) => {
                       e.preventDefault();
-                      setSelectedPaymentMethod(method);
+                      if (selectedPaymentMethod !== method) {
+                        setSelectedPaymentMethod(method);
+                        setTransferPhoneNumber(''); // Reset on change
+                      }
 
                       if (phoneNumber) {
                         // 1. Copy to clipboard
@@ -1646,12 +1709,47 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   );
                 })}
               </div>
+
+              {selectedPaymentMethod && selectedPaymentMethod !== 'Cash' && (
+                <div style={{ marginTop: '20px', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#1e293b', fontSize: '15px' }}>
+                    الرقم الذي قمت بالتحويل منه (سيظهر للإدارة للمطابقة)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={`اكتب رقمك المحول منه عبر ${selectedPaymentMethod} هنا...`}
+                    value={transferPhoneNumber}
+                    onChange={(e) => setTransferPhoneNumber(e.target.value)}
+                    style={{ width: '100%', padding: '12px 16px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '15px', outline: 'none', transition: 'border-color 0.2s' }}
+                    onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
+                  />
+                </div>
+              )}
             </section>
           )}
 
-          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') && (
+          {!disabledFields.includes('receipt_upload') && (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') && (
             <section className="form-section section-receipt">
               <h2>{service.id === '10' ? 'رفع المستندات وصورة الإيصال' : 'رفع صورة الإيصال'}</h2>
+
+              {service.id === '10' && (
+                <div style={{ marginBottom: '20px', padding: '18px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius: '12px', border: '1px solid #f59e0b' }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertCircle size={18} />
+                    لا بد من رفع المستندات التالية:
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+                    {['شهادة ميلاد', 'صورة شخصية', 'شهادة التخرج', 'شهادة التحول الرقمي', 'صورة تحويل المبلغ'].map((docName, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'white', borderRadius: '8px', border: '1px solid #fbbf24', fontSize: '13px', fontWeight: '600', color: '#78350f' }}>
+                        <FileText size={16} style={{ color: '#d97706', flexShrink: 0 }} />
+                        {docName}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <p className="receipt-note">
                 {service.id === '10'
                   ? 'يرجى رفع صور المستندات المطلوبة وصورة إيصال التحويل (يمكنك اختيار أكثر من ملف)'

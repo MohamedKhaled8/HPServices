@@ -266,9 +266,11 @@ export const SERVICES: Service[] = [
     ],
     paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay'],
     requiredDocuments: [
-      'شهادة الميلاد',
-      'التحول الرقمي',
-      'شهادة التخرج + صورة شخصية'
+      'شهادة ميلاد',
+      'صورة شخصية',
+      'شهادة التخرج',
+      'شهادة التحول الرقمي',
+      'صوره تحويل المبلغ'
     ]
   }
 ];

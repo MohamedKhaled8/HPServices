@@ -11,6 +11,17 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   scroll-behavior: smooth;
+  -webkit-touch-callout: none;
+}
+
+/* Fix mobile selection on scroll */
+button,
+a,
+.service-card-premium,
+.payment-option,
+.form-group label {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 body {

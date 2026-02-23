@@ -9,8 +9,12 @@ import {
   EmailAuthProvider,
   sendPasswordResetEmail,
   confirmPasswordReset,
-  verifyPasswordResetCode
+  verifyPasswordResetCode,
+  setPersistence,
+  inMemoryPersistence,
+  getAuth
 } from 'firebase/auth';
+import { initializeApp } from 'firebase/app';
 import {
   collection,
   doc,
@@ -25,7 +29,7 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
-import { auth, db, storage } from '../config/firebase';
+import { auth, db, storage, firebaseConfig } from '../config/firebase';
 import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
 import { uploadMultipleToCloudStorage, CloudProvider } from './cloudStorageService';
@@ -239,6 +243,34 @@ export const getStudentData = async (userId: string): Promise<StudentData | null
   }
 };
 
+export const changeOtherUserPasswordHelper = async (uid: string, newPassword: string): Promise<void> => {
+  try {
+    // 1. You should set up a Vercel Serverless Function or just call this endpoint.
+    // Replace with your Vercel deployment domain or use relative path since we are on Vercel
+    const response = await fetch('/api/updateUserPassword', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        uid: uid,
+        newPassword: newPassword,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Server error occurred while updating the password.');
+    }
+
+    logger.log('Password updated successfully via Admin SDK');
+  } catch (error: any) {
+    logger.error('Error in Vercel API password change:', error);
+    throw new Error('لم يتم تحديث كلمة المرور في المصادقة. السبب: ' + error.message);
+  }
+};
+
 export const updateStudentData = async (userId: string, data: Partial<StudentData>): Promise<void> => {
   try {
     await setDoc(
@@ -251,6 +283,14 @@ export const updateStudentData = async (userId: string, data: Partial<StudentDat
     );
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء تحديث البيانات');
+  }
+};
+
+export const deleteStudentData = async (userId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'students', userId));
+  } catch (error: any) {
+    throw new Error(error.message || 'حدث خطأ أثناء حذف المشترك');
   }
 };
 
@@ -510,6 +550,47 @@ export const subscribeToAllStudents = (
       onError(error);
     }
   });
+};
+
+// Service Preferences (Order and Profits)
+export const getAdminPreferences = async (): Promise<any> => {
+  try {
+    const docSnap = await getDoc(doc(db, 'config', 'adminPreferences'));
+    if (docSnap.exists()) {
+      return docSnap.data();
+    }
+    return { serviceOrder: [], profitCosts: {} };
+  } catch (error) {
+    logger.error('Error fetching admin preferences:', error);
+    return { serviceOrder: [], profitCosts: {} };
+  }
+};
+
+export const updateAdminPreferences = async (config: any): Promise<void> => {
+  try {
+    await setDoc(doc(db, 'config', 'adminPreferences'), config, { merge: true });
+  } catch (error: any) {
+    throw new Error('حدث خطأ أثناء حفظ التفضيلات');
+  }
+};
+
+export const subscribeToAdminPreferences = (
+  onUpdate: (config: any) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'adminPreferences');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data());
+      } else {
+        onUpdate({ serviceOrder: [], profitCosts: {} });
+      }
+    },
+    (error) => {
+      logger.error('Error in admin preferences subscription:', error);
+    }
+  );
 };
 
 // Search for a student by any field
@@ -946,6 +1027,26 @@ export const updateServiceRequestStatus = async (
     );
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء تحديث حالة الطلب');
+  }
+};
+
+export const updateServiceRequestData = async (
+  requestId: string,
+  serviceId: string,
+  data: any
+): Promise<void> => {
+  try {
+    const collectionName = `serviceRequests_${serviceId}`;
+    await setDoc(
+      doc(db, collectionName, requestId),
+      {
+        data,
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  } catch (error: any) {
+    throw new Error(error.message || 'حدث خطأ أثناء تحديث بيانات الطلب');
   }
 };
 
