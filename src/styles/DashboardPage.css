@@ -18,6 +18,17 @@
   --blob-gradient: linear-gradient(135deg, rgba(79, 70, 229, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%);
 }
 
+/* CRITICAL: Hide navigation links on mobile to prevent overlap */
+@media (max-width: 900px) {
+
+  .nav-links,
+  .desktop-only {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+}
+
 body {
   margin: 0;
   background-color: var(--bg-color);
@@ -37,277 +48,205 @@ body {
 /* Ensure main content stays above geometric shapes */
 .dashboard-navbar,
 .hero-pure,
-.stats-container,
 .services-section,
-.additional-info-section,
 .library-info-footer {
   position: relative;
   z-index: 3;
 }
 
 /* Navbar - Transparent to Dark Glass */
+/* =========================================
+   REBUILT NAVBAR STYLES - ROBUST & RESPONSIVE
+   ========================================= */
+
 .dashboard-navbar {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
+  right: 0;
   height: 80px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 5%;
-  z-index: 1000;
+  padding: 0 24px;
+  /* مسافة آمنة من الحواف */
+  z-index: 9999;
+  /* قيمة عالية جداً */
   transition: all 0.3s ease;
-  /* Transparent at top */
   background: transparent;
-  backdrop-filter: none;
-  border-bottom: 1px solid transparent;
-  box-shadow: none;
-  transform: translateZ(0);
+  direction: rtl;
 }
 
+/* Scrolled State */
 .dashboard-navbar.scrolled {
-  /* Dark Glass on Scroll */
-  background: rgba(15, 23, 42, 0.85);
-  /* Slate 900 with opacity */
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  background: rgba(15, 23, 42, 0.98);
+  /* لون داكن شبه معتم */
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
   height: 70px;
+  padding: 0 32px;
 }
 
+/* 1. BRAND SECTION (Right) */
 .nav-brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 24px;
-  font-weight: 800;
-  color: white;
-  /* Always white */
-  text-shadow: none;
+  flex-shrink: 0;
+  /* منع التقلص */
+  z-index: 20;
 }
 
 .nav-logo-img {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   background: white;
-  padding: 4px;
+  padding: 2px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
-.dashboard-navbar.scrolled .nav-brand {
+.nav-brand span {
+  font-size: 22px;
+  font-weight: 800;
   color: white;
-  /* Keep white */
-  text-shadow: none;
+  letter-spacing: -0.5px;
 }
 
-/* Navbar Links */
-.nav-links {
+/* 2. LINKS SECTION (Center) */
+.nav-links-container {
   display: flex;
+  align-items: center;
   gap: 40px;
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
+  z-index: 10;
 }
 
-.nav-link {
-  color: rgba(255, 255, 255, 0.9);
-  /* Always light */
-  font-weight: 700;
+.nav-link-item {
+  color: rgba(255, 255, 255, 0.85);
   font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
-  position: relative;
-  padding: 8px 0;
-  transition: color 0.3s;
+  padding: 8px 16px;
+  border-radius: 99px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  /* منع التفاف النص */
 }
 
-.nav-link::before {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 3px;
-  background: var(--primary);
-  /* Accent color */
-  border-radius: 2px;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.nav-link:hover::before {
-  width: 80%;
-}
-
-.dashboard-navbar.scrolled .nav-link {
+.nav-link-item:hover {
   color: white;
-  /* Keep white */
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.dashboard-navbar.scrolled .nav-link::before {
-  background: var(--primary);
+/* CRITICAL: HIDE LINKS ON TABLET & MOBILE */
+@media (max-width: 1100px) {
+  .nav-links-container {
+    display: none !important;
+  }
 }
 
-/* Profiles & Buttons */
-.nav-profile-container {
+/* 3. ACTIONS SECTION (Left) */
+.nav-right-actions {
   display: flex;
   align-items: center;
   gap: 16px;
-  position: relative;
+  flex-shrink: 0;
+  z-index: 20;
 }
 
-/* Ultimate Profile Card - Redesigned */
+/* Hide Profile on Small Screens */
+.nav-profile-container {
+  display: flex;
+  /* Default flex */
+}
+
+@media (max-width: 900px) {
+  .desktop-only-profile {
+    display: none !important;
+  }
+}
+
+/* Mobile Toggle Button */
+.mobile-menu-toggle {
+  display: none;
+  /* Hidden by default on desktop */
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mobile-menu-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Show toggle only on smaller screens where links are hidden */
+@media (max-width: 1100px) {
+  .mobile-menu-toggle {
+    display: flex;
+  }
+}
+
+/* Styles specifically for the profile badge */
 .unique-profile-badge {
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  /* Very subtle light on dark */
-  padding: 6px 6px 6px 20px;
-  /* Tighter padding */
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  /* Glass effect */
+  padding: 5px 6px 5px 16px;
   border-radius: 50px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  min-width: 160px;
-  justify-content: flex-end;
-}
-
-.unique-profile-badge:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
-}
-
-.dashboard-navbar.scrolled .unique-profile-badge {
-  /* Keep consistent style on scroll - no white background */
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: none;
-}
-
-.profile-text {
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-}
-
-.profile-name {
-  display: block;
-  font-weight: 700;
-  font-size: 15px;
-  color: white;
-  /* Always white */
-}
-
-.profile-track {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  justify-content: flex-end;
-  font-size: 11px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
-  /* Muted white */
-  text-transform: uppercase;
-}
-
-.dashboard-navbar.scrolled .profile-name {
-  color: white;
-  /* Fix: Keep white on scroll */
-}
-
-.dashboard-navbar.scrolled .profile-track {
-  color: rgba(255, 255, 255, 0.6);
-  /* Fix: Keep muted white on scroll */
-}
-
-/* Modern Circular Avatar */
-.profile-avatar-hexagon {
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(135deg, #4F46E5, #8B5CF6);
-  /* Fresh gradient */
-  border-radius: 50%;
-  /* Circle instead of hexagon */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
-}
-
-.unique-profile-badge:hover .profile-avatar-hexagon {
-  transform: scale(1.05);
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.profile-dropdown-menu {
-  position: absolute;
-  top: 64px;
-  right: 0;
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
-  padding: 8px 0;
-  min-width: 220px;
-  z-index: 50;
-}
-
-.profile-dropdown-item {
-  width: 100%;
-  padding: 10px 16px;
-  border: none;
-  background: transparent;
-  text-align: right;
-  font-size: 14px;
-  color: #0f172a;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.profile-dropdown-item:hover {
-  background: #f3f4f6;
-  color: #2563eb;
-}
-
-.logout-btn-minimal {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   cursor: pointer;
   transition: all 0.3s;
 }
 
+.unique-profile-badge:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.profile-avatar-hexagon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.logout-btn-minimal {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
 .logout-btn-minimal:hover {
   background: rgba(239, 68, 68, 0.2);
-  /* Soft red bg */
   color: #ef4444;
   border-color: #ef4444;
-}
-
-.dashboard-navbar.scrolled .logout-btn-minimal {
-  background: rgba(255, 255, 255, 0.05);
-  /* Keep consistent */
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.dashboard-navbar.scrolled .logout-btn-minimal:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
 }
 
 /* Hero Section with Slideshow */
@@ -373,13 +312,14 @@ body {
   background-size: cover;
   background-position: center center;
   background-repeat: no-repeat;
-  /* Centered to show the most "complete" part of the photo */
   opacity: 0;
-  transition: opacity 1.5s ease-in-out;
+  transition: opacity 1.2s ease-in-out;
   transform: translateZ(0);
+  will-change: opacity;
 }
 
-.hero-slide.active {
+.hero-slide.active,
+.hero-slide.prev {
   opacity: 1;
 }
 
@@ -402,26 +342,49 @@ body {
   position: relative;
   z-index: 2;
   margin-top: 80px;
-  /* Balanced margin */
   color: white;
-  transform: translateY(10px);
-  transition: transform .32s ease, margin .32s ease;
+  /* Hardware acceleration to prevent lag */
+  transform: translateZ(0);
+  will-change: transform, opacity;
 }
 
-/* Typography Enhancements */
 .hero-title {
-  font-size: 42px;
-  /* Slightly smaller for better balance */
-  font-weight: 800;
-  margin-bottom: 4px;
-  background: linear-gradient(180deg, #FFFFFF 0%, #E2E8F0 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  font-size: 46px;
+  /* Slightly larger */
+  font-weight: 900;
+  margin-bottom: 8px;
+  color: #ffffff;
+  /* Solid Black Text */
+  background: none;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  display: block;
+
+  /* The Magic Glow/Stroke Effect: Orange/Gold */
+  text-shadow:
+    0 0 10px rgba(158, 119, 41, 0.836),
+    0 0 20px rgba(109, 93, 62, 0.4),
+    2px 2px 4px rgba(236, 166, 26, 0.3);
+
   letter-spacing: -0.5px;
-  line-height: 1.1;
-  animation: slideDown 0.8s ease-out;
+  line-height: 1.2;
+  animation: heroFadeDown 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+
+@keyframes heroFadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) translateZ(0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
 }
 
 .hero-subtitle {
@@ -435,7 +398,8 @@ body {
   max-width: 400px;
   margin-left: auto;
   margin-right: auto;
-  animation: slideDown 1s ease-out;
+  animation: heroFadeDown 1s cubic-bezier(0.16, 1, 0.3, 1) backward;
+  will-change: transform, opacity;
 }
 
 /* Cleaned up redundant hero rules */
@@ -462,6 +426,13 @@ body {
   /* reduced from larger value */
 }
 
+/* Hide desktop-only elements on mobile */
+@media (max-width: 900px) {
+  .desktop-only {
+    display: none !important;
+  }
+}
+
 /* MOBILE: emphasize raising the header image and reducing vertical gaps */
 @media (max-width: 640px) {
   .dashboard-navbar {
@@ -470,10 +441,11 @@ body {
   }
 
   .hero-pure {
-    height: 280px !important;
-    /* Enlarge downwards for mobile */
-    padding-top: 70px;
-    padding-bottom: 20px;
+    height: 180px !important;
+    /* Reduced for mobile */
+    clip-path: polygon(0 0, 100% 0, 100% 90%, 50% 100%, 0 90%);
+    padding-top: 50px;
+    padding-bottom: 10px;
     align-items: center;
   }
 
@@ -503,7 +475,11 @@ body {
   }
 
   .services-section .section-header {
-    margin-bottom: 20px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .title-decoration {
+    display: none !important;
   }
 
   .services-section .section-header .section-title {
@@ -516,35 +492,45 @@ body {
 
   /* Fixed to 2 Column Grid for much better visibility on mobile */
   .services-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 15px !important;
-    padding: 0 10px !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+    padding: 0 6px !important;
+    margin-top: 0 !important;
   }
 
   .service-card-premium {
-    padding: 15px 8px !important;
-    border-radius: 16px !important;
-    min-height: 120px !important;
-    justify-content: flex-start !important;
+    padding: 8px 4px !important;
+    border-radius: 12px !important;
+    min-height: 90px !important;
+    justify-content: center !important;
+    background: #e2e8f0 !important;
+    /* Darker Gray for mobile cards */
+    border: 1px solid rgba(0, 0, 0, 0.06) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03) !important;
   }
 
-  .card-icon-float {
-    width: 70px !important;
-    height: 70px !important;
-    border-radius: 18px !important;
-    margin-bottom: 12px !important;
-    overflow: visible !important;
+  .service-icon-wrapper {
+    width: 38px !important;
+    height: 38px !important;
+    border-width: 1.5px !important;
+    margin-bottom: 4px !important;
+    /* Animation re-enabled per request */
   }
 
-  .card-icon-float svg {
-    width: 22px !important;
-    height: 22px !important;
+  .service-icon-wrapper::after {
+    /* Re-enabled pulse */
+  }
+
+  .service-icon-svg {
+    width: 18px !important;
+    height: 18px !important;
   }
 
   .card-title {
-    font-size: 12px !important;
-    line-height: 1.3 !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
     font-weight: 700 !important;
+    margin-top: 4px !important;
   }
 
   .card-desc,
@@ -587,11 +573,98 @@ body {
 /* Student Tabs (Profile / Assignments / Approved Requests) */
 .student-tabs-section {
   margin: 0 5% 32px;
-  background: rgba(255, 255, 255, 0.9);
+  background: white;
   border-radius: 20px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
   padding: 18px 18px 20px;
-  backdrop-filter: blur(12px);
+  /* Removed backdrop filter for speed */
+}
+
+/* Profile Dropdown Menu - Modern & Clean */
+.profile-dropdown-menu {
+  position: absolute;
+  top: 60px;
+  /* Space from the profile badge */
+  left: 0;
+  width: 240px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  /* Ensure vertical stacking */
+  gap: 4px;
+  z-index: 10000;
+  animation: slideDown 0.2s ease-out forwards;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.profile-dropdown-item {
+  width: 100%;
+  display: flex !important;
+  /* Force flex */
+  align-items: center;
+  justify-content: flex-start;
+  /* Align text to right (RTL) or start */
+  flex-direction: row-reverse;
+  /* For RTL: Icon then text */
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  color: #1e293b;
+  font-family: 'Cairo', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  text-align: right;
+  outline: none;
+}
+
+.profile-dropdown-item:hover {
+  background: #f1f5f9;
+  color: #4f46e5;
+  transform: translateX(-4px);
+  /* Subtle movement */
+}
+
+/* Fix icon size inside dropdown */
+.profile-dropdown-item svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2px;
+  opacity: 0.7;
+}
+
+.profile-dropdown-item:hover svg {
+  opacity: 1;
+  color: #4f46e5;
+}
+
+/* Logout specific style */
+.profile-dropdown-item:last-child {
+  margin-top: 4px;
+  color: #ef4444;
+}
+
+.profile-dropdown-item:last-child:hover {
+  background: #fef2f2;
+  color: #dc2626;
 }
 
 .student-tabs-nav {
@@ -939,17 +1012,13 @@ lottie-player {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Faster transition: 0.15s */
-  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease;
+  /* Super Fast Transition */
+  transition: transform 0.2s cubic-bezier(0.17, 0.67, 0.83, 0.67), border-color 0.2s ease;
   cursor: pointer;
   overflow: visible;
   height: 100%;
   transform: translateZ(0);
-  backface-visibility: hidden;
   will-change: transform;
-  contain: paint layout;
-  /* Isolate rendering */
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(241, 245, 249, 0.3) 100%);
 }
 
 /* Glassy Top Indicator */
@@ -997,10 +1066,7 @@ lottie-player {
 
 .service-card-premium:hover .card-icon-float {
   background: transparent;
-  /* Hide container on hover to make lottie stand out */
-  color: white;
-  /* Removed scale completely - just hide background */
-  transform: none;
+  transform: translateY(-5px);
   box-shadow: none;
 }
 
@@ -1279,6 +1345,99 @@ lottie-player {
   transform: scale(0.95);
 }
 
+/* ULTRA-SMOOTH TECH ANIMATIONS 🚀 */
+.service-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: white;
+  color: var(--service-color, #4f46e5);
+  /* Dynamic Color based on service */
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.1);
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  /* Bouncy Elastic Feel */
+  animation: techFloat 4s ease-in-out infinite;
+  position: relative;
+  z-index: 2;
+  border: 3px solid rgba(255, 255, 255, 0.8);
+}
+
+/* Pulsing Tech Ring (Radar Effect) */
+.service-icon-wrapper::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--service-color, #4f46e5);
+  opacity: 0;
+  animation: techPulseRing 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  z-index: -1;
+}
+
+/* Strong Hover Interaction */
+.service-card:hover .service-icon-wrapper {
+  transform: translateY(-10px) scale(1.1);
+  background: var(--service-color, #4f46e5);
+  /* Fill with color */
+  color: white;
+  /* Turn icon white */
+  box-shadow: 0 20px 50px -12px var(--service-color, #4f46e5);
+  /* Colored Glow */
+  border-color: white;
+}
+
+.service-card:hover .service-icon-wrapper::after {
+  animation: none;
+  /* Stop pulse to focus attention */
+  transform: scale(1.1);
+  opacity: 0;
+}
+
+.service-icon-svg {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.service-card:hover .service-icon-svg {
+  transform: rotate(-10deg) scale(1.1);
+  /* Playful tilt */
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+/* Keyframes */
+@keyframes techFloat {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes techPulseRing {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+    box-shadow: 0 0 0 0 var(--service-color, #4f46e5);
+  }
+
+  70% {
+    transform: scale(1.4);
+    opacity: 0;
+    box-shadow: 0 0 20px 10px rgba(0, 0, 0, 0);
+  }
+
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
 .nav-right-actions {
   display: flex;
   align-items: center;
@@ -1331,7 +1490,8 @@ lottie-player {
 }
 
 .mobile-profile-section {
-  padding: 60px 20px 30px !important;
+  padding: 40px 20px 15px !important;
+  /* Reduced from 60/30 */
   text-align: center !important;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
@@ -1363,10 +1523,12 @@ lottie-player {
 }
 
 .mobile-menu-content {
-  padding: 24px !important;
+  padding: 15px 20px !important;
+  /* Reduced from 24 */
   display: flex !important;
   flex-direction: column !important;
-  gap: 12px !important;
+  gap: 8px !important;
+  /* Reduced from 12 */
   width: 100% !important;
   max-width: 450px !important;
   margin: 0 auto !important;
@@ -1374,16 +1536,19 @@ lottie-player {
 
 .mobile-nav-link {
   background: rgba(255, 255, 255, 0.03) !important;
-  padding: 16px 20px !important;
+  padding: 12px 18px !important;
+  /* Reduced from 16/20 */
   border-radius: 12px !important;
   border: 1px solid rgba(255, 255, 255, 0.05) !important;
   color: #e2e8f0 !important;
-  font-size: 17px !important;
+  font-size: 16px !important;
+  /* Slightly smaller */
   font-weight: 700 !important;
   transition: all 0.2s ease !important;
   display: flex !important;
   align-items: center !important;
-  gap: 15px !important;
+  gap: 12px !important;
+  /* Reduced from 15 */
   text-decoration: none !important;
 }
 
@@ -1401,7 +1566,8 @@ lottie-player {
   background: rgba(225, 29, 72, 0.05) !important;
   color: #fb7185 !important;
   border-color: rgba(225, 29, 72, 0.1) !important;
-  margin-top: 20px !important;
+  margin-top: 10px !important;
+  /* Reduced from 20 */
   justify-content: center !important;
 }
 
@@ -1475,31 +1641,101 @@ lottie-player {
 }
 
 /* Mobile Menu Overlay Redesigned */
+/* Premium Side Drawer Animation */
 .mobile-menu-overlay {
   position: fixed;
   top: 0;
-  left: 0;
+  right: 0;
+  /* Align to right for Arabic RTL */
   width: 100%;
   height: 100vh;
-  background: rgba(15, 23, 42, 0.98);
-  backdrop-filter: blur(15px);
+  /* REMOVED backdrop-filter blur - it's the #1 reason for mobile lag */
+  background: rgba(15, 23, 42, 0.99);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   z-index: 9999;
   display: flex !important;
   flex-direction: column;
-  animation: mobileMenuFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: premiumSideReveal 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   overflow-y: auto;
+  will-change: transform, opacity;
 }
 
-@keyframes mobileMenuFadeIn {
+@keyframes premiumSideReveal {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* THE MAGIC FIX: Hide background when menu is open to save 100% of paint/reflow effort */
+.dashboard-page.is-menu-open header.hero-pure,
+.dashboard-page.is-menu-open main.services-section,
+.dashboard-page.is-menu-open .body-geometric-shapes,
+.dashboard-page.is-menu-open .footer-clipped-wrapper {
+  display: none !important;
+  /* Total removal during menu open */
+}
+
+/* Staggered Item Animation - Optimized */
+.mobile-profile-section,
+.mobile-nav-link {
+  opacity: 0;
+  animation: itemFadeIn 0.3s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes itemFadeIn {
   from {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateX(15px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(0);
   }
+}
+
+.mobile-profile-section {
+  animation-delay: 0.1s;
+}
+
+.mobile-nav-link:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.mobile-nav-link:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.mobile-nav-link:nth-child(4) {
+  animation-delay: 0.25s;
+}
+
+.mobile-nav-link:nth-child(5) {
+  animation-delay: 0.3s;
+}
+
+.mobile-nav-link:nth-child(6) {
+  animation-delay: 0.35s;
+}
+
+.mobile-nav-link:nth-child(7) {
+  animation-delay: 0.4s;
+}
+
+.mobile-nav-link:nth-child(8) {
+  animation-delay: 0.45s;
+}
+
+.mobile-nav-link.logout {
+  animation-delay: 0.5s;
 }
 
 .mobile-menu-close {
@@ -1596,10 +1832,20 @@ lottie-player {
 }
 
 /* Modern Glass Feature Cards */
+.footer-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 50px;
+}
+
 .features-list {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 20px;
+  width: 100%;
+  margin-top: 50px !important;
+  /* Huge gap forced */
+  padding-top: 60px;
 }
 
 .feature-pill {
@@ -1677,6 +1923,100 @@ lottie-player {
   font-weight: 700;
   letter-spacing: 0.5px;
   opacity: 0.8;
+}
+
+/* Wider & Premium Profile Badge */
+.unique-profile-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  /* Keep it simple */
+  padding: 6px 20px;
+  /* More padding for width */
+  border-radius: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 200px;
+  /* Enforce wide width */
+  justify-content: space-between;
+  /* Spread elements */
+}
+
+.profile-name {
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  color: #ffffff !important;
+  line-height: normal;
+}
+
+.profile-track {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9) !important;
+  text-transform: uppercase;
+}
+
+.profile-avatar-hexagon {
+  width: 38px;
+  /* Slightly larger */
+  height: 38px;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 16px;
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Fix Lag: Remove heavy blurs globally during scroll or generally simplify */
+.dashboard-navbar.scrolled {
+  backdrop-filter: none !important;
+  /* Killer of FPS - Removed */
+  background: #0f172a !important;
+  /* Solid color is fast */
+}
+
+/* Optimize geometric shapes */
+.geo-shape {
+  filter: none !important;
+  /* Remove blur filters if any */
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+  /* Simplify shadows */
+  opacity: 0.4;
+  /* Keep opacity instead */
+}
+
+/* Performance Optimization for "Rocket" Speed */
+* {
+  /* Use hardware acceleration for smoother rendering */
+  -webkit-font-smoothing: antialiased;
+}
+
+.body-geometric-shapes,
+.geo-shape {
+  /* Optimize background elements to prevent lag */
+  will-change: transform;
+  transform: translateZ(0);
+  pointer-events: none;
+  /* Ignore mouse events for performance */
+}
+
+/* Ensure smooth scroll is handled by JS for better control */
+html {
+  scroll-behavior: auto !important;
+  /* Disable default smooth scroll to fix slowness */
 }
 
 .social-links {
@@ -1791,6 +2131,23 @@ lottie-player {
   .footer-main-grid {
     grid-template-columns: 1fr;
     gap: 40px;
+  }
+}
+
+/* Lottie Optimization */
+.lottie-icon-container {
+  width: 130px;
+  height: 130px;
+  transition: all 0.3s ease;
+}
+
+@media (max-width: 640px) {
+  .lottie-icon-container {
+    width: 90px !important;
+    /* Smaller on mobile for performance and fit */
+    height: 90px !important;
+    margin: -10px !important;
+    /* Adjust margin for smaller size */
   }
 }
 

@@ -5,7 +5,7 @@ import { SERVICES } from '../constants/services';
 import { ServiceRequest, UploadedFile } from '../types';
 import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, updateStudentData } from '../services/firebaseService';
 import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
-import { calculateTrack, getAvailableTracks } from '../utils/trackUtils';
+import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils/trackUtils';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import { logger } from '../utils/logger';
@@ -107,11 +107,21 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         try {
           const config = await getFeesServiceConfig();
           if (config) {
+            if (!config.paymentMethods) {
+              config.paymentMethods = {
+                instaPay: '01017180923',
+                cashWallet: '01050889591'
+              };
+            }
             setFeesConfig(config);
           } else {
             // Default config
             setFeesConfig({
-              prices: {}
+              prices: {},
+              paymentMethods: {
+                instaPay: '01017180923',
+                cashWallet: '01050889591'
+              }
             });
           }
         } catch (error) {
@@ -220,7 +230,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     }
   }, [service?.id]);
 
-  // ملء البيانات الشخصية تلقائياً من بيانات المستخدم للخدمة الأولى و VIP و دفع المصروفات
+  // ملء البيانات الشخصية تلقائياً من بيانات المستخدم للخدمة الأول و VIP و دفع المصروفات
   useEffect(() => {
     if (!service || !student) return;
 
@@ -244,6 +254,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               initialData[field.name] = student.nationalID || '';
               break;
             case 'address':
+            case 'address_details':
               initialData[field.name] = addressString;
               break;
             case 'email':
@@ -254,22 +265,31 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               break;
           }
         } else if (field.type === 'select') {
-          if (service.id === '4' || service.id === '5' || service.id === '8' || service.id === '9' || service.id === '10') {
+          if (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '8' || service.id === '9' || service.id === '10') {
             // Set default values for service 4, 5, 8, 9, and 10 fields
             switch (field.name) {
               case 'diploma_type':
-                initialData[field.name] = 'اختر نوع الدبلومة';
+                if (student.diplomaType && student.diplomaType.trim() !== '') {
+                  initialData[field.name] = student.diplomaType;
+                } else {
+                  initialData[field.name] = 'اختر نوع الدبلومة';
+                }
                 break;
               case 'diploma_year':
                 if (service.id === '10') {
-                  // For Service 10, diploma_year will be populated dynamically
                   initialData[field.name] = 'اختر سنة الدبلومة';
+                } else if (student.diplomaYear && student.diplomaYear.trim() !== '') {
+                  initialData[field.name] = student.diplomaYear;
                 } else {
                   initialData[field.name] = 'اختر السنه';
                 }
                 break;
               case 'educational_specialization':
-                initialData[field.name] = 'اختر التخصص';
+                if (student.course && student.course.trim() !== '') {
+                  initialData[field.name] = student.course;
+                } else {
+                  initialData[field.name] = 'اختر التخصص';
+                }
                 break;
               case 'track_category':
               case 'track':
@@ -294,6 +314,16 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                 break;
             }
           }
+        } else if (field.type === 'text') {
+          // Auto-fill text fields that contain phone/whatsapp
+          if (field.name.includes('phone') || field.name.includes('whatsapp')) {
+            initialData[field.name] = student.whatsappNumber || '';
+          }
+        } else if (field.type === 'textarea') {
+          // Auto-fill textarea fields like address_details
+          if (field.name.includes('address')) {
+            initialData[field.name] = addressString;
+          }
         }
       });
 
@@ -303,7 +333,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         initialData['names_array'] = [''];
         initialData['tracks_array'] = [''];
         initialData['phone_whatsapp'] = student.whatsappNumber || '';
-        initialData['diploma_type'] = 'اختر نوع الدبلومة';
+        initialData['diploma_type'] = student.diplomaType || 'اختر نوع الدبلومة';
       }
 
       setServiceData(initialData);
@@ -733,10 +763,18 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         ) : (
                           <input
                             id={field.name}
-                            type={field.name === 'email' ? 'email' : 'text'}
+                            type={field.name === 'email' ? 'email' : (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id') ? 'tel' : 'text')}
+                            inputMode={(field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) ? 'numeric' : 'text'}
+                            maxLength={(field.name.includes('phone') || field.name.includes('whatsapp')) ? 11 : (field.name.includes('national_id') ? 14 : undefined)}
                             value={serviceData[field.name] || ''}
-                            onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
-                            placeholder={field.name === 'email' ? 'EX******@gmail.com' : field.label}
+                            onChange={(e) => {
+                              let val = e.target.value;
+                              if (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) {
+                                val = val.replace(/\D/g, '');
+                              }
+                              handleServiceDataChange(field.name, val);
+                            }}
+                            placeholder={field.name === 'email' ? 'example@gmail.com' : field.label}
                             required={field.required}
                             className="editable-input"
                           />
@@ -749,8 +787,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         id={field.name}
                         type={field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('mobile') || field.name.includes('id') ? 'tel' : 'text'}
                         inputMode={field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('mobile') || field.name.includes('id') ? 'numeric' : 'text'}
+                        maxLength={field.name.includes('phone') || field.name.includes('whatsapp') ? 11 : (field.name.includes('id') ? 14 : undefined)}
                         value={serviceData[field.name] || ''}
-                        onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
+                        onChange={(e) => {
+                          let val = e.target.value;
+                          if (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('mobile') || field.name.includes('id')) {
+                            val = val.replace(/\D/g, '');
+                          }
+                          handleServiceDataChange(field.name, val);
+                        }}
                         placeholder={field.label}
                         required={field.required}
                       />
@@ -818,7 +863,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             <div className="editable-field-container">
                               <div className="editable-field-display">
                                 <div className="calculated-track-display-mini">
-                                  {student.track || 'لم يتم تحديد المسار'}
+                                  {normalizeTrackName(student.track)}
                                 </div>
                                 <button
                                   type="button"
@@ -910,8 +955,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             >
                               <option value="">اختر سنة الدبلومة</option>
                               {Array.from({ length: 60 }, (_, i) => {
-                                const startYear = 2049 - i;
-                                const endYear = 2050 - i;
+                                const startYear = 2029 - i;
+                                const endYear = 2030 - i;
                                 return (
                                   <option key={startYear} value={`${startYear}/${endYear}`}>
                                     {startYear}/{endYear}
@@ -1092,7 +1137,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                     <div className="editable-field-container">
                       <div className="editable-field-display">
                         <div className="calculated-track-display-mini">
-                          {student.track}
+                          {normalizeTrackName(student.track)}
                         </div>
                         <button
                           type="button"
@@ -1201,7 +1246,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             {/* حقل المسار */}
                             <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                               <label htmlFor={`track_${index}`} style={{ fontSize: '14px' }}>
-                                اكتب المسار والتخصص
+                                اكتب المسار و التخصص
                                 <span className="required">*</span>
                               </label>
                               <input
@@ -1217,7 +1262,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     tracks: tracksArray.join('\n')
                                   }));
                                 }}
-                                placeholder="اكتب المسار أو التخصص"
+                                placeholder="اكتب المسار و التخصص"
                                 required
                                 style={{ width: '100%' }}
                               />
@@ -1572,8 +1617,10 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         setShowCopyToast(true);
                         setTimeout(() => setShowCopyToast(false), 3000);
 
-                        // 2. No deep linking anymore as per user request
-                        // Removing window.location.href for InstaPay and others
+                        // Redirect for InstaPay
+                        if (method === 'instaPay') {
+                          window.location.href = "https://ipn.eg/S/raoufpk97/instapay/3jZFKt";
+                        }
                       }
                     }}>
                       <input
@@ -1588,6 +1635,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         <span className="payment-label">{method}</span>
                         {phoneNumber && (
                           <span className="payment-number">{phoneNumber}</span>
+                        )}
+                        {method === 'instaPay' && (
+                          <span className="instapay-id" style={{ display: 'block', direction: 'ltr', fontSize: '0.9em', color: '#6366f1', marginTop: '2px' }}>
+                            raoufpk97@instapay
+                          </span>
                         )}
                       </div>
                     </label>
@@ -1641,7 +1693,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         </div>
       </form >
 
-      {(isSubmitting || uploadProgress.uploading) && createPortal(
+      {((isSubmitting || uploadProgress.uploading) || (submitMessage?.type === 'success')) && createPortal(
         <div className="loading-overlay-root">
           <div className="loading-backdrop"></div>
           <div className="floating-orbs-container">
@@ -1650,27 +1702,45 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             <div className="floating-orb orb-3"></div>
           </div>
           <div className="loading-modal-wrapper">
-            <div className="loading-modal">
-              <div className="loading-spinner-container">
-                <Loader2 className="spinning-loader-large" size={64} />
-              </div>
-              <h3 className="loading-title">
-                {uploadProgress.progress > 0
-                  ? (service.id === '2' && receiptFiles.length > 0 ? 'جاري رفع الملفات' : 'جاري التقديم')
-                  : 'جاري معالجة الطلب'}
-              </h3>
-              <p className="loading-subtitle">يرجى الانتظار، نحن نجهز طلبك...</p>
-              <div className="progress-bar-wrapper">
-                <div className="progress-bar-track">
-                  <div
-                    className="progress-bar-fill"
-                    style={{ width: `${uploadProgress.progress}%` }}
-                  ></div>
-                </div>
-                <span className="progress-percentage-text">
-                  {uploadProgress.progress > 0 ? `${uploadProgress.progress}%` : 'جاري البدء...'}
-                </span>
-              </div>
+            <div className={`loading-modal ${submitMessage?.type === 'success' ? 'success-state' : ''}`}>
+              {submitMessage?.type === 'success' ? (
+                <>
+                  <div className="success-animation-container">
+                    <CheckCircle className="success-icon-animated" size={80} />
+                  </div>
+                  <h3 className="loading-title">تم بنجاح!</h3>
+                  <p className="loading-subtitle">
+                    تم إرسال طلبك بنجاح، جاري تحويلك...
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="loading-spinner-container">
+                    <Loader2 className="spinning-loader-large" size={60} />
+                  </div>
+                  <h3 className="loading-title">
+                    {uploadProgress.progress > 0
+                      ? (receiptFiles.length > 0 ? 'جاري رفع الملفات' : 'جاري إرسال الطلب')
+                      : 'جاري المعالجة'}
+                  </h3>
+                  <p className="loading-subtitle">
+                    نحن نقوم بتأمين طلبك ومعالجة البيانات، يرجى عدم إغلاق الصفحة.
+                  </p>
+                  <div className="progress-bar-wrapper">
+                    <div className="progress-bar-track">
+                      <div
+                        className="progress-bar-fill"
+                        style={{ width: `${uploadProgress.progress || 5}%` }}
+                      ></div>
+                    </div>
+                    <div className="progress-stats">
+                      <span className="progress-percentage-text">
+                        {uploadProgress.progress > 0 ? `${uploadProgress.progress}%` : 'جاري الاتصال...'}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>,

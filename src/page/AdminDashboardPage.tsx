@@ -3,6 +3,7 @@ import { useStudent } from '../context';
 import {
   subscribeToAllServiceRequests,
   updateServiceRequestStatus,
+  deleteServiceRequest,
   getBookServiceConfig,
   updateBookServiceConfig,
   getFeesServiceConfig,
@@ -26,10 +27,16 @@ import {
   subscribeToDigitalTransformationCodes,
   saveElectronicPaymentCode,
   subscribeToElectronicPaymentCodes,
+  deleteDigitalTransformationCode,
+  deleteElectronicPaymentCode,
   getLatestNews,
   updateLatestNews,
+  sendQuickNotification,
+  subscribeToServiceSettings,
+  updateServiceSettings
 } from '../services/firebaseService';
-import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice } from '../types';
+import { normalizeTrackName } from '../utils/trackUtils';
+import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
 import {
   LogOut,
   Package,
@@ -45,6 +52,7 @@ import {
   CreditCard,
   BookOpen,
   GraduationCap,
+  Copy,
   FileCheck,
   Award,
   ClipboardList,
@@ -52,19 +60,23 @@ import {
   Search,
   Pencil,
   Zap,
+  Trash2,
   Image,
   EyeOff,
   Newspaper,
+  Download,
   Bell,
   Send,
   BarChart2,
   TrendingUp,
   DollarSign,
   PieChart,
-  Activity
+  Activity,
+  Settings
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
+import CustomToast from '../components/CustomToast';
 import '../styles/AdminDashboardPage.css';
 import '../styles/AdminExpandableRows.css';
 import '../styles/AdminNewsEditor.css';
@@ -81,7 +93,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [students, setStudents] = useState<Record<string, StudentData>>({});
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services'>('requests');
+  const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
+  const [selectedDTColumns, setSelectedDTColumns] = useState<Set<number>>(new Set());
+  const [selectedEPRows, setSelectedEPRows] = useState<Set<number>>(new Set());
+  const [selectedEPColumns, setSelectedEPColumns] = useState<Set<number>>(new Set());
   const [bookConfig, setBookConfig] = useState<BookServiceConfig | null>(null);
   const [feesConfig, setFeesConfig] = useState<FeesServiceConfig | null>(null);
   const [assignmentsConfig, setAssignmentsConfig] = useState<AssignmentsServiceConfig | null>(null);
@@ -116,12 +132,38 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newFeeAmount, setNewFeeAmount] = useState<string>('');
   const [latestNews, setLatestNews] = useState<string>('');
   const [isPublishingNews, setIsPublishingNews] = useState(false);
+  const [isSendingQuickMessage, setIsSendingQuickMessage] = useState(false);
+  const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
+  const [toastState, setToastState] = useState<{ message: string; type: 'loading' | 'success' | 'error'; duration?: number } | null>(null);
+
+  // Custom Alert Modal State
+  const [alertConfig, setAlertConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    setAlertConfig({ isOpen: true, title, message, type, onConfirm: undefined });
+  };
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setAlertConfig({ isOpen: true, title, message, type: 'warning', onConfirm });
+  };
 
   const translateKey = (key: string) => {
     const keys: Record<string, string> = {
       fullNameArabic: 'الاسم بالعربية',
       fullNameEnglish: 'الاسم بالإنجليزية',
-      nationalID: 'الرقم القومي',
+      nationalID: 'رقم الهوية',
+      track: 'التخصص',
       whatsappNumber: 'رقم الواتساب',
       email: 'البريد الإلكتروني',
       address: 'العنوان',
@@ -147,7 +189,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       track_name: 'اسم المسار الخاص بالطالب',
       educational_specialization_other: 'التخصص التعليمي (أخر)',
       student_type: 'نوع الطالب',
-      academic_year: 'العام الدراسي'
+      academic_year: 'العام الدراسي',
+      number_of_copies: 'عدد النسخ',
+      phone_whatsapp: 'رقم للتواصل والشحن',
+      address_details: 'العنوان بالتفصيل',
+      diploma_type: 'نوع الدبلومة',
+      names: 'الأسماء',
+      tracks: 'المسارات'
     };
     return keys[key] || key;
   };
@@ -178,6 +226,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [newGradProjectFeature, setNewGradProjectFeature] = useState<string>('');
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!student?.id) return;
@@ -261,11 +310,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       try {
         const config = await getFeesServiceConfig();
         if (config) {
+          if (!config.paymentMethods) {
+            config.paymentMethods = {
+              instaPay: '01017180923',
+              cashWallet: '01050889591'
+            };
+          }
           setFeesConfig(config);
         } else {
           // Default config
           setFeesConfig({
-            prices: {}
+            prices: {},
+            paymentMethods: {
+              instaPay: '01017180923',
+              cashWallet: '01050889591'
+            }
           });
         }
       } catch (error) {
@@ -521,9 +580,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return () => {
       unsubscribe();
       if (unsubscribeDtCodes) unsubscribeDtCodes();
+      if (unsubscribeDtCodes) unsubscribeDtCodes();
       if (unsubscribeEpCodes) unsubscribeEpCodes();
     };
   }, [isLoading]);
+
+  // Subscribe to service settings
+  useEffect(() => {
+    const unsubscribe = subscribeToServiceSettings((settings) => {
+      setServiceSettings(settings);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Subscribe to all students for users tab
   useEffect(() => {
@@ -542,7 +610,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       setAllStudents(students);
     }, (error) => {
       logger.error('Error subscribing to students:', error);
-      alert('حدث خطأ أثناء جلب بيانات المستخدمين');
+      showAlert('خطأ', 'حدث خطأ أثناء جلب بيانات المستخدمين', 'error');
     });
 
     return () => unsubscribe();
@@ -558,43 +626,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         if (request) {
           const studentData = students[request.studentId];
           if (studentData) {
+            setToastState({ message: 'جاري الحصول على كود التحول الرقمي...', type: 'loading', duration: 3000 });
 
-            // Notify Admin
-            alert('🔄 جاري بدء الأتمتة (Backend Service)... \nسيقوم السيرفر بإنشاء الحساب وحجز الدورة تلقائياً.');
-
+            // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
             const payload = {
               requestId: requestId,
               studentId: request.studentId,
-              email: request.data.email || studentData.email,
-              fullNameArabic: request.data.full_name_arabic || studentData.fullNameArabic,
-              fullNameEnglish: request.data.full_name_english || studentData.vehicleNameEnglish,
-              nationalID: request.data.national_id || studentData.nationalID,
-              phone: request.data.whatsapp_number || studentData.whatsappNumber,
+              email: request.data.email || studentData.email || '',
+              fullNameArabic: request.data.full_name_arabic || request.data.full_name || studentData.fullNameArabic || '',
+              fullNameEnglish: request.data.full_name_english || studentData.vehicleNameEnglish || '',
+              nationalID: request.data.national_id || studentData.nationalID || '',
+              phone: request.data.whatsapp_number || studentData.whatsappNumber || '',
               examLanguage: request.data.exam_language || request.data.selectedExamLanguage || 'عربي'
             };
 
-            // Debug: Print payload
-            logger.log('📤 Sending Payload to Backend:', payload);
-            logger.log('📊 Student Data:', studentData);
-            logger.log('📋 Request Data:', request.data);
-
-            // Show user what we're sending
-            const debugInfo = `
-البيانات المرسلة للأتمتة:
-✉️ الإيميل: ${payload.email}
-👤 الاسم بالعربي: ${payload.fullNameArabic}
-🔤 الاسم بالإنجليزي: ${payload.fullNameEnglish || 'غير موجود'}
-🆔 الرقم القومي: ${payload.nationalID || 'غير موجود'}
-📱 الموبايل: ${payload.phone || 'غير موجود'}
-🌐 نوع التدريب: ${payload.examLanguage}
-            `.trim();
-
-            logger.log(debugInfo);
-            alert('🔍 فحص البيانات:\n\n' + debugInfo + '\n\nسيتم بدء الأتمتة الآن...');
-
-            // Call Node.js Backend
             const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
-            logger.log('Using API_BASE_URL:', API_BASE_URL);
             const apiUrl = `${API_BASE_URL}/api/digital-transformation/register`;
 
             fetch(apiUrl, {
@@ -605,49 +651,45 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               .then(async (res) => {
                 const data = await res.json();
                 if (data.success) {
-                  // 1. Show Success Message
-                  alert(`✅ تمت العملية بنجاح!\nتم استخراج الكود: ${data.data.fawryCode}\nجاري الحفظ في قاعدة البيانات...`);
+                  // إخفاء رسالة التحميل بعد 2 ثانية
+                  setToastState(null);
 
-                  // 2. Save to Firebase (Frontend Side)
-                  try {
-                    const codeData = {
-                      studentId: request.studentId || '',
-                      requestId: requestId || '',
-                      email: payload.email || '',
-                      fullNameArabic: payload.fullNameArabic || '',
-                      fullNameEnglish: payload.fullNameEnglish || '',
-                      phone: payload.phone || '',
-                      examLanguage: payload.examLanguage || '',
+                  setTimeout(async () => {
+                    try {
+                      const codeData = {
+                        studentId: request.studentId || '',
+                        requestId: requestId || '',
+                        email: payload.email || '',
+                        fullNameArabic: payload.fullNameArabic || '',
+                        fullNameEnglish: payload.fullNameEnglish || '',
+                        phone: payload.phone || '',
+                        examLanguage: payload.examLanguage || '',
+                        serialNumber: data.data.serialNumber || '',
+                        name: data.data.name || '',
+                        fawryCode: data.data.fawryCode || '',
+                        mobile: data.data.mobile || '',
+                        whatsapp: data.data.whatsapp || '',
+                        type: data.data.type || '',
+                        value: data.data.value || '',
+                        status: data.data.status || '',
+                        createdAt: new Date().toISOString()
+                      };
 
-                      // Extracted Data - Ensure no undefined
-                      serialNumber: data.data.serialNumber || '',
-                      name: data.data.name || '',
-                      fawryCode: data.data.fawryCode || '',
-                      mobile: data.data.mobile || '',
-                      whatsapp: data.data.whatsapp || '',
-                      type: data.data.type || '',
-                      value: data.data.value || '',
-                      status: data.data.status || '',
-
-                      createdAt: new Date().toISOString()
-                    };
-
-                    await saveDigitalTransformationCode(codeData);
-                    alert('🎉 تم الحفظ في "أكواد التحول الرقمي" بنجاح!');
-
-                  } catch (saveError) {
-                    logger.error('Save Error:', saveError);
-                    alert('⚠️ نجحت الأتمتة ولكن فشل الحفظ في قاعدة البيانات.');
-                  }
-
+                      await saveDigitalTransformationCode(codeData);
+                      setToastState({ message: `تم الانتهاء مبروك رقم الطلب هو ${data.data.fawryCode}`, type: 'success', duration: 5000 });
+                    } catch (saveError) {
+                      logger.error('Save Error:', saveError);
+                      setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ في قاعدة البيانات', type: 'error', duration: 5000 });
+                    }
+                  }, 500); // تأخير بسيط لظهور رسالة النجاح بشكل منفصل
                 } else {
                   logger.error('Automation Error:', data.error);
-                  alert(`❌ فشلت الأتمتة:\n${data.error}`);
+                  setToastState({ message: `فشلت الأتمتة: ${data.error}`, type: 'error' });
                 }
               })
               .catch(err => {
                 logger.error('Connection Error:', err);
-                alert('⚠️ لا يمكن الاتصال بخدمة الأتمتة (Backend Service).\nتأكد من تشغيل: node server.js');
+                setToastState({ message: 'لا يمكن الاتصال بخدمة الأتمتة', type: 'error' });
               });
           }
         }
@@ -659,21 +701,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         if (request) {
           const studentData = students[request.studentId];
           if (studentData) {
-            alert('💳 جاري بدء أتمتة الدفع الإلكتروني...\nسيقوم السيرفر بإنشاء عملية الدفع وجلب رقم الطلب تلقائياً.');
+            setToastState({ message: 'جاري الحصول على رقم الطلب...', type: 'loading', duration: 3000 });
 
+            // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
             const payload = {
               requestId: requestId,
               studentId: request.studentId,
-              email: request.data.email || studentData.email,
-              fullNameArabic: request.data.full_name_arabic || studentData.fullNameArabic,
-              nationalID: request.data.national_id || studentData.nationalID,
-              phone: request.data.whatsapp_number || studentData.whatsappNumber
+              email: request.data.email || studentData.email || '',
+              fullNameArabic: request.data.full_name_arabic || request.data.full_name || studentData.fullNameArabic || '',
+              nationalID: request.data.national_id || studentData.nationalID || '',
+              phone: request.data.whatsapp_number || studentData.whatsappNumber || ''
             };
 
-            logger.log('📤 [EP] Sending Payload to Backend:', payload);
-
             const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
-            logger.log('Using API_BASE_URL:', API_BASE_URL);
             const apiUrl = `${API_BASE_URL}/api/electronic-payment/create`;
 
             fetch(apiUrl, {
@@ -684,46 +724,108 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               .then(async (res) => {
                 const data = await res.json();
                 if (data.success) {
-                  const ep = data.data || {};
-                  alert(`✅ تمت عملية الدفع الإلكتروني بنجاح!\nرقم الطلب: ${ep.orderNumber || 'غير متوفر'}`);
+                  // إخفاء رسالة التحميل بعد 2 ثانية
+                  setToastState(null);
 
-                  try {
-                    const codeData = {
-                      studentId: ep.studentId || '',
-                      requestId: ep.requestId || '',
-                      name: ep.name || '',
-                      email: ep.email || '',
-                      nationalID: ep.nationalID || '',
-                      mobile: ep.mobile || '',
-                      entity: ep.entity || 'كلية التربية',
-                      serviceType: ep.serviceType || 'دبلوم (2025 - 2026)',
-                      orderNumber: ep.orderNumber || '',
-                      status: ep.status || 'NEW',
-                      rawText: ep.rawText || '',
-                      createdAt: new Date().toISOString()
-                    };
+                  setTimeout(async () => {
+                    const ep = data.data || {};
+                    try {
+                      const codeData = {
+                        studentId: ep.studentId || '',
+                        requestId: ep.requestId || '',
+                        name: ep.name || '',
+                        email: ep.email || '',
+                        nationalID: ep.nationalID || '',
+                        mobile: ep.mobile || '',
+                        entity: ep.entity || 'كلية التربية',
+                        serviceType: ep.serviceType || 'دبلوم (2025 - 2026)',
+                        orderNumber: ep.orderNumber || '',
+                        status: ep.status || 'NEW',
+                        rawText: ep.rawText || '',
+                        createdAt: new Date().toISOString()
+                      };
 
-                    await saveElectronicPaymentCode(codeData);
-                    alert('🎉 تم الحفظ في "أكواد الدفع الإلكتروني" بنجاح!');
-                  } catch (saveError) {
-                    logger.error('[EP] Save Error:', saveError);
-                    alert('⚠️ نجحت الأتمتة ولكن فشل الحفظ في "أكواد الدفع الإلكتروني".');
-                  }
+                      await saveElectronicPaymentCode(codeData);
+                      setToastState({ message: `تم الانتهاء مبروك رقم الطلب هو ${ep.orderNumber}`, type: 'success', duration: 5000 });
+                    } catch (saveError) {
+                      logger.error('[EP] Save Error:', saveError);
+                      setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ', type: 'error', duration: 5000 });
+                    }
+                  }, 500); // تأخير بسيط لظهور رسالة النجاح بشكل منفصل
                 } else {
                   logger.error('[EP] Automation Error:', data.error);
-                  alert(`❌ فشلت أتمتة الدفع الإلكتروني:\n${data.error}`);
+                  setToastState({ message: `فشلت الأتمتة: ${data.error}`, type: 'error' });
                 }
               })
               .catch(err => {
                 logger.error('[EP] Connection Error:', err);
-                alert('⚠️ لا يمكن الاتصال بخدمة أتمتة الدفع الإلكتروني.\nتأكد من تشغيل: node server.js');
+                setToastState({ message: 'لا يمكن الاتصال بخدمة الأتمتة', type: 'error' });
               });
           }
         }
       }
 
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء تحديث حالة الطلب');
+      setToastState({ message: error.message || 'حدث خطأ أثناء تحديث حالة الطلب', type: 'error' });
+    }
+  };
+
+  const handleDeleteRequest = async (requestId: string, serviceId: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذا الطلب نهائياً؟')) {
+      return;
+    }
+    try {
+      await deleteServiceRequest(requestId, serviceId);
+      setToastState({ message: 'تم حذف الطلب بنجاح', type: 'success' });
+    } catch (error: any) {
+      setToastState({ message: error.message || 'حدث خطأ أثناء حذف الطلب', type: 'error' });
+    }
+  };
+
+  const handleDownloadAll = async (request: ServiceRequest) => {
+    const imagesToDownload: { url: string; name: string }[] = [];
+
+    // إيصال الدفع الرئيسي
+    if (request.data?.receiptUrl) {
+      imagesToDownload.push({ url: request.data.receiptUrl, name: `receipt_${request.id}.jpg` });
+    }
+
+    // المرفقات الأخرى
+    if (request.documents && request.documents.length > 0) {
+      request.documents.forEach((doc, idx) => {
+        if (doc.type !== 'PDF') {
+          imagesToDownload.push({
+            url: doc.url,
+            name: `${doc.name || 'attachment'}_${idx + 1}.jpg`
+          });
+        }
+      });
+    }
+
+    if (imagesToDownload.length === 0) {
+      setToastState({ message: 'لا توجد صور للتحميل', type: 'error' });
+      return;
+    }
+
+    setToastState({ message: 'جاري بدء تحميل الصور...', type: 'loading', duration: 2000 });
+
+    for (const img of imagesToDownload) {
+      try {
+        const response = await fetch(img.url);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = img.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Download error:', error);
+        // Fallback: open in new tab if blob download fails
+        window.open(img.url, '_blank');
+      }
     }
   };
 
@@ -733,9 +835,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     try {
       await updateBookServiceConfig(bookConfig);
       setIsEditingBooks(false);
-      alert('تم حفظ الإعدادات بنجاح');
+      showAlert('نجاح', 'تم حفظ الإعدادات بنجاح', 'success');
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء حفظ الإعدادات', 'error');
     } finally {
       setIsSaving(null);
     }
@@ -747,9 +849,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     try {
       await updateFeesServiceConfig(feesConfig);
       setIsEditingFees(false);
-      alert('تم حفظ إعدادات المصروفات بنجاح');
+      showAlert('نجاح', 'تم حفظ إعدادات المصروفات بنجاح', 'success');
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء حفظ الإعدادات', 'error');
     } finally {
       setIsSaving(null);
     }
@@ -775,7 +877,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (!newAssignmentName || !newAssignmentPrice || !assignmentsConfig) return;
     const price = parseFloat(newAssignmentPrice);
     if (isNaN(price) || price <= 0) {
-      alert('يرجى إدخال سعر صحيح');
+      showAlert('تنبيه', 'يرجى إدخال سعر صحيح', 'warning');
       return;
     }
     const newAssignment: AssignmentItem = {
@@ -807,9 +909,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     setIsSaving('certificates');
     try {
       await updateCertificatesServiceConfig(certificatesConfig);
-      alert('تم حفظ إعدادات الشهادات بنجاح');
+      showAlert('نجاح', 'تم حفظ إعدادات الشهادات بنجاح', 'success');
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء حفظ الإعدادات', 'error');
     } finally {
       setIsSaving(null);
     }
@@ -819,7 +921,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (!newCertificateName || !newCertificatePrice || !certificatesConfig) return;
     const price = parseFloat(newCertificatePrice);
     if (isNaN(price) || price <= 0) {
-      alert('يرجى إدخال سعر صحيح');
+      showAlert('تنبيه', 'يرجى إدخال سعر صحيح', 'warning');
       return;
     }
     const newCertificate: CertificateItem = {
@@ -854,9 +956,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     setIsSaving('digitalTransformation');
     try {
       await updateDigitalTransformationConfig(digitalTransformationConfig);
-      alert('تم حفظ الإعدادات بنجاح!');
+      showAlert('نجاح', 'تم حفظ الإعدادات بنجاح!', 'success');
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء حفظ الإعدادات', 'error');
     } finally {
       setIsSaving(null);
     }
@@ -866,7 +968,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (!newTransformationTypeName || !newTransformationTypePrice || !digitalTransformationConfig) return;
     const price = parseFloat(newTransformationTypePrice);
     if (isNaN(price) || price <= 0) {
-      alert('يرجى إدخال سعر صحيح');
+      showAlert('تنبيه', 'يرجى إدخال سعر صحيح', 'warning');
       return;
     }
 
@@ -922,9 +1024,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     setIsSaving('finalReview');
     try {
       await updateFinalReviewConfig(finalReviewConfig);
-      alert('تم حفظ إعدادات المراجعة النهائية بنجاح!');
+      showAlert('نجاح', 'تم حفظ إعدادات المراجعة النهائية بنجاح!', 'success');
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء حفظ الإعدادات', 'error');
     } finally {
       setIsSaving(null);
     }
@@ -936,9 +1038,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     setIsSaving('graduationProject');
     try {
       await updateGraduationProjectConfig(graduationProjectConfig);
-      alert('تم حفظ إعدادات مشروع التخرج بنجاح!');
+      showAlert('نجاح', 'تم حفظ إعدادات مشروع التخرج بنجاح!', 'success');
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء حفظ الإعدادات');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء حفظ الإعدادات', 'error');
     } finally {
       setIsSaving(null);
     }
@@ -947,7 +1049,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const handleAddGraduationProjectPrice = () => {
     if (!graduationProjectConfig) return;
     if (!newGradProjectPriceAmount) {
-      alert('يرجى إدخال السعر');
+      showAlert('تنبيه', 'يرجى إدخال السعر', 'warning');
       return;
     }
     const newPrice: GraduationProjectPrice = {
@@ -972,7 +1074,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const handleAddGraduationProjectFeature = () => {
     if (!graduationProjectConfig) return;
     if (!newGradProjectFeature.trim()) {
-      alert('يرجى إدخال الميزة');
+      showAlert('تنبيه', 'يرجى إدخال الميزة', 'warning');
       return;
     }
     setGraduationProjectConfig({
@@ -1014,9 +1116,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     // Save to Firebase
     try {
       await updateCertificatesServiceConfig(updatedConfig);
-      alert('تم حفظ التعديلات بنجاح');
+      showAlert('نجاح', 'تم حفظ التعديلات بنجاح', 'success');
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء حفظ التعديلات');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء حفظ التعديلات', 'error');
     } finally {
       setIsSaving(null);
     }
@@ -1030,13 +1132,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      alert('يرجى اختيار ملف صورة صحيح');
+      showAlert('تنبيه', 'يرجى اختيار ملف صورة صحيح', 'warning');
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      alert('حجم الصورة كبير جداً. الحد الأقصى 5 ميجابايت');
+      showAlert('تنبيه', 'حجم الصورة كبير جداً. الحد الأقصى 5 ميجابايت', 'warning');
       return;
     }
 
@@ -1049,7 +1151,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       }
     };
     reader.onerror = () => {
-      alert('حدث خطأ أثناء قراءة الصورة');
+      showAlert('خطأ', 'حدث خطأ أثناء قراءة الصورة', 'error');
     };
     reader.readAsDataURL(file);
   };
@@ -1058,7 +1160,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (!newFeeYear || !newFeeAmount || !feesConfig) return;
     const amount = parseFloat(newFeeAmount);
     if (isNaN(amount) || amount <= 0) {
-      alert('يرجى إدخال مبلغ صحيح');
+      showAlert('تنبيه', 'يرجى إدخال مبلغ صحيح', 'warning');
       return;
     }
     setFeesConfig({
@@ -1095,7 +1197,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       setAllStudents(results);
     } catch (error: any) {
       logger.error('Search error:', error);
-      alert(error.message || 'حدث خطأ أثناء البحث');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء البحث', 'error');
     }
   };
 
@@ -1127,9 +1229,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     try {
       await updateStudentData(editedStudentData.id, editedStudentData);
       setIsEditingStudent(false);
-      alert('تم تحديث بيانات المستخدم بنجاح');
+      showAlert('نجاح', 'تم تحديث بيانات المستخدم بنجاح', 'success');
     } catch (error: any) {
-      alert(error.message || 'حدث خطأ أثناء تحديث البيانات');
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء تحديث البيانات', 'error');
     } finally {
       setIsSaving(null);
     }
@@ -1166,19 +1268,37 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const handlePublishNews = async () => {
     if (!latestNews.trim()) {
-      alert('يرجى كتابة خبر لنشره');
+      showAlert('تنبيه', 'يرجى كتابة خبر لنشره', 'warning');
       return;
     }
 
     setIsPublishingNews(true);
     try {
       await updateLatestNews(latestNews);
-      alert('تم نشر الخبر بنجاح لجميع المستخدمين');
+      showAlert('نجاح', 'تم نشر الخبر بنجاح لجميع المستخدمين', 'success');
     } catch (error: any) {
       logger.error('Error publishing news:', error);
-      alert('حدث خطأ أثناء النشر');
+      showAlert('خطأ', 'حدث خطأ أثناء النشر', 'error');
     } finally {
       setIsPublishingNews(false);
+    }
+  };
+
+  const handleSendQuickMessage = async () => {
+    if (!latestNews.trim()) {
+      showAlert('تنبيه', 'يرجى كتابة نص الرسالة السريعة أولاً', 'warning');
+      return;
+    }
+
+    setIsSendingQuickMessage(true);
+    try {
+      await sendQuickNotification(latestNews);
+      showAlert('تم الإرسال', 'تم إرسال الرسالة السريعة لجميع المستخدمين الآن', 'success');
+    } catch (error: any) {
+      logger.error('Error sending quick notification:', error);
+      showAlert('خطأ', 'حدث خطأ أثناء إرسال الرسالة السريعة', 'error');
+    } finally {
+      setIsSendingQuickMessage(false);
     }
   };
 
@@ -1193,6 +1313,160 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   };
 
+  // Helper functions for table selection
+  const toggleDTRow = (rowIndex: number) => {
+    const newSelected = new Set(selectedDTRows);
+    if (newSelected.has(rowIndex)) {
+      newSelected.delete(rowIndex);
+    } else {
+      newSelected.add(rowIndex);
+    }
+    setSelectedDTRows(newSelected);
+    setSelectedDTColumns(new Set()); // Clear column selection
+  };
+
+  const toggleDTColumn = (colIndex: number) => {
+    const newSelected = new Set(selectedDTColumns);
+    if (newSelected.has(colIndex)) {
+      newSelected.delete(colIndex);
+    } else {
+      newSelected.add(colIndex);
+    }
+    setSelectedDTColumns(newSelected);
+    setSelectedDTRows(new Set()); // Clear row selection
+  };
+
+  const toggleEPRow = (rowIndex: number) => {
+    const newSelected = new Set(selectedEPRows);
+    if (newSelected.has(rowIndex)) {
+      newSelected.delete(rowIndex);
+    } else {
+      newSelected.add(rowIndex);
+    }
+    setSelectedEPRows(newSelected);
+    setSelectedEPColumns(new Set());
+  };
+
+  const toggleEPColumn = (colIndex: number) => {
+    const newSelected = new Set(selectedEPColumns);
+    if (newSelected.has(colIndex)) {
+      newSelected.delete(colIndex);
+    } else {
+      newSelected.add(colIndex);
+    }
+    setSelectedEPColumns(newSelected);
+    setSelectedEPRows(new Set());
+  };
+
+  const copyDTSelection = () => {
+    if (selectedDTRows.size === 0 && selectedDTColumns.size === 0) return;
+
+    let textToCopy = '';
+    if (selectedDTRows.size > 0) {
+      // Copy selected rows
+      const sortedRows = Array.from(selectedDTRows).sort((a, b) => a - b);
+      textToCopy = sortedRows.map(rowIndex => {
+        const code = dtCodes[rowIndex];
+        return `${code.name}\t${code.mobile || code.phone}\t${code.email}\t${code.type}\t${code.value}\t${code.status}\t${code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}\t${code.fawryCode}`;
+      }).join('\n');
+    } else if (selectedDTColumns.size > 0) {
+      // Copy selected columns
+      const sortedCols = Array.from(selectedDTColumns).sort((a, b) => a - b);
+      textToCopy = dtCodes.map(code => {
+        const values = [code.name, code.mobile || code.phone, code.email, code.type, code.value, code.status, code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان', code.fawryCode];
+        return sortedCols.map(colIndex => values[colIndex]).join('\t');
+      }).join('\n');
+    }
+
+    navigator.clipboard.writeText(textToCopy);
+    setToastState({ message: 'تم نسخ التحديد بنجاح!', type: 'success', duration: 2000 });
+  };
+
+  const copyEPSelection = () => {
+    if (selectedEPRows.size === 0 && selectedEPColumns.size === 0) return;
+
+    let textToCopy = '';
+    if (selectedEPRows.size > 0) {
+      const sortedRows = Array.from(selectedEPRows).sort((a, b) => a - b);
+      textToCopy = sortedRows.map(rowIndex => {
+        const code = epCodes[rowIndex];
+        return `${code.name}\t${code.mobile}\t${code.email}\t${code.nationalID}\t${code.entity}\t${code.serviceType}\t${code.createdAt?.seconds ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG') : (code.createdAt || 'الان')}\t${code.orderNumber}`;
+      }).join('\n');
+    } else if (selectedEPColumns.size > 0) {
+      const sortedCols = Array.from(selectedEPColumns).sort((a, b) => a - b);
+      textToCopy = epCodes.map(code => {
+        const values = [code.name, code.mobile, code.email, code.nationalID, code.entity, code.serviceType, code.createdAt?.seconds ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG') : (code.createdAt || 'الان'), code.orderNumber];
+        return sortedCols.map(colIndex => values[colIndex]).join('\t');
+      }).join('\n');
+    }
+
+    navigator.clipboard.writeText(textToCopy);
+    setToastState({ message: 'تم نسخ التحديد بنجاح!', type: 'success', duration: 2000 });
+  };
+
+  // Copy specific column from DT table
+  const copyDTColumn = (columnName: string, columnIndex: number) => {
+    const columnData = dtCodes.map(code => {
+      const values = [
+        code.name,
+        code.mobile || code.phone,
+        code.email,
+        code.type,
+        code.value,
+        code.status,
+        code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان',
+        code.fawryCode
+      ];
+      return values[columnIndex];
+    }).join('\n');
+
+    navigator.clipboard.writeText(columnData);
+    setToastState({ message: `تم نسخ عمود "${columnName}" بنجاح!`, type: 'success', duration: 2000 });
+  };
+
+  // Copy specific column from EP table
+  const copyEPColumn = (columnName: string, columnIndex: number) => {
+    const columnData = epCodes.map(code => {
+      const values = [
+        code.name,
+        code.mobile,
+        code.email,
+        code.nationalID,
+        code.entity,
+        code.serviceType,
+        code.createdAt?.seconds ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG') : (code.createdAt || 'الان'),
+        code.orderNumber
+      ];
+      return values[columnIndex];
+    }).join('\n');
+
+    navigator.clipboard.writeText(columnData);
+    setToastState({ message: `تم نسخ عمود "${columnName}" بنجاح!`, type: 'success', duration: 2000 });
+  };
+
+  const handleDeleteDTCode = async (id: string) => {
+    if (!id) return;
+    showConfirm('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الكود نهائياً؟', async () => {
+      try {
+        await deleteDigitalTransformationCode(id);
+        showAlert('نجاح', 'تم حذف الكود بنجاح', 'success');
+      } catch (error: any) {
+        showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
+      }
+    });
+  };
+
+  const handleDeleteEPCode = async (id: string) => {
+    if (!id) return;
+    showConfirm('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الكود نهائياً؟', async () => {
+      try {
+        await deleteElectronicPaymentCode(id);
+        showAlert('نجاح', 'تم حذف الكود بنجاح', 'success');
+      } catch (error: any) {
+        showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
+      }
+    });
+  };
 
   if (isLoading) {
     return (
@@ -1224,6 +1498,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         </div>
       </div>
 
+      {toastState && (
+        <CustomToast
+          message={toastState.message}
+          type={toastState.type}
+          onClose={() => setToastState(null)}
+          autoClose={true} // Allow auto-close for all types, as now controlled by duration/type intent
+          duration={toastState.duration}
+        />
+      )}
+
       <div className="admin-tabs">
         <button
           className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
@@ -1250,14 +1534,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           onClick={() => setActiveTab('books')}
         >
           <Package size={18} />
-          إدارة الكتب
+          كتب
         </button>
         <button
           className={`tab-button ${activeTab === 'fees' ? 'active' : ''}`}
           onClick={() => setActiveTab('fees')}
         >
           <CreditCard size={18} />
-          مصروفات السنة الدراسية للدبلومة
+          مصروفات
         </button>
         {onAssignmentsClick && (
           <button
@@ -1266,7 +1550,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             title="فتح صفحة إدارة التكليفات الدراسية الجزئية"
           >
             <FileCheck size={18} />
-            إدارة التكليفات الدراسية الجزئية
+            تكليف
           </button>
         )}
         <button
@@ -1274,42 +1558,49 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           onClick={() => setActiveTab('certificates')}
         >
           <Award size={18} />
-          إدارة الشهادات
+          اونلاين
         </button>
         <button
           className={`tab-button ${activeTab === 'digitalTransformation' ? 'active' : ''}`}
           onClick={() => setActiveTab('digitalTransformation')}
         >
           <Zap size={18} />
-          التحول الرقمي
+          تحول
         </button>
         <button
           className={`tab-button ${activeTab === 'digitalTransformationCodes' ? 'active' : ''}`}
           onClick={() => setActiveTab('digitalTransformationCodes')}
         >
           <Zap size={18} />
-          أكواد التحول الرقمي
+          كود تحول
         </button>
         <button
           className={`tab-button ${activeTab === 'electronicPaymentCodes' ? 'active' : ''}`}
           onClick={() => setActiveTab('electronicPaymentCodes')}
         >
           <CreditCard size={18} />
-          أكواد الدفع الإلكتروني
+          اكواد مصاريف
         </button>
         <button
           className={`tab-button ${activeTab === 'finalReview' ? 'active' : ''}`}
           onClick={() => setActiveTab('finalReview')}
         >
           <Search size={18} />
-          المراجعة النهائية
+          مراجعة
         </button>
         <button
           className={`tab-button ${activeTab === 'graduationProject' ? 'active' : ''}`}
           onClick={() => setActiveTab('graduationProject')}
         >
           <GraduationCap size={18} />
-          مشروع التخرج
+          مشروع
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'services' ? 'active' : ''}`}
+          onClick={() => setActiveTab('services')}
+        >
+          <Settings size={18} />
+          إدارة الخدمات
         </button>
         <button
           className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
@@ -1345,7 +1636,38 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 />
               </div>
 
-              <div className="action-row-end" style={{ marginTop: '20px' }}>
+              <div className="action-row-end" style={{ marginTop: '20px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  className="quick-message-button-premium"
+                  onClick={handleSendQuickMessage}
+                  disabled={isSendingQuickMessage}
+                  style={{
+                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    color: 'white',
+                    padding: '12px 24px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                >
+                  {isSendingQuickMessage ? (
+                    'جاري الإرسال...'
+                  ) : (
+                    <>
+                      <Zap size={18} />
+                      إرسال رسالة سريعة
+                    </>
+                  )}
+                </button>
+
                 <button
                   className="publish-button-premium"
                   onClick={handlePublishNews}
@@ -1495,10 +1817,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   {/* Right Side: User Info */}
                                   <div className="request-row-info">
                                     <div className="request-user-name">
-                                      {studentData?.fullNameArabic || 'غير متاح'}
+                                      {request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}
                                     </div>
                                     <div className="request-meta">
-                                      <span className="request-email">{studentData?.email || 'غير متاح'}</span>
+                                      <span className="request-email">{request.data.email || studentData?.email || 'غير متاح'}</span>
                                       <span className="request-date">
                                         {request.createdAt
                                           ? new Date(request.createdAt).toLocaleDateString('ar-EG', {
@@ -1518,15 +1840,17 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                                   {/* Left Side: Actions */}
                                   <div className="request-row-actions">
-                                    <button
-                                      onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
-                                      className={`action-btn accept-btn ${request.status === 'completed' ? 'active' : ''}`}
-                                      disabled={request.status === 'completed'}
-                                      title="قبول الطلب"
-                                    >
-                                      <CheckCircle size={18} />
-                                      <span>قبول</span>
-                                    </button>
+                                    {request.status !== 'rejected' && (
+                                      <button
+                                        onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
+                                        className={`action-btn accept-btn ${request.status === 'completed' ? 'active' : ''}`}
+                                        disabled={request.status === 'completed'}
+                                        title="قبول الطلب"
+                                      >
+                                        <CheckCircle size={18} />
+                                        <span>قبول</span>
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
                                       className={`action-btn reject-btn ${request.status === 'rejected' ? 'active' : ''}`}
@@ -1535,6 +1859,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                     >
                                       <XCircle size={18} />
                                       <span>رفض</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteRequest(request.id || '', request.serviceId)}
+                                      className="action-btn delete-btn"
+                                      title="حذف الطلب نهائياً"
+                                    >
+                                      <X size={18} />
+                                      <span>حذف</span>
                                     </button>
                                     <button
                                       onClick={toggleExpand}
@@ -1567,15 +1899,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                         <div className="details-items">
                                           <div className="detail-item-row">
                                             <span className="detail-label">الاسم الكامل:</span>
-                                            <span className="detail-value">{studentData?.fullNameArabic || 'غير متاح'}</span>
+                                            <span className="detail-value">{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
                                           </div>
                                           <div className="detail-item-row">
                                             <span className="detail-label">الرقم القومي:</span>
-                                            <span className="detail-value">{studentData?.nationalID || 'غير متاح'}</span>
+                                            <span className="detail-value">{request.data.national_id || studentData?.nationalID || 'غير متاح'}</span>
                                           </div>
                                           <div className="detail-item-row">
                                             <span className="detail-label">رقم الواتساب:</span>
-                                            <span className="detail-value">{studentData?.whatsappNumber || 'غير متاح'}</span>
+                                            <span className="detail-value">{request.data.whatsapp_number || studentData?.whatsappNumber || 'غير متاح'}</span>
                                           </div>
 
                                           {/* الذكاء المحسن: عرض البيانات الأكاديمية والمسارات إذا وجدت في البروفايل */}
@@ -1618,13 +1950,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                           {studentData?.track_category && (
                                             <div className="detail-item-row">
                                               <span className="detail-label">فئة المسار:</span>
-                                              <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{studentData.track_category}</span>
+                                              <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{normalizeTrackName(studentData.track_category)}</span>
                                             </div>
                                           )}
                                           {studentData?.track_name && (
                                             <div className="detail-item-row">
                                               <span className="detail-label">اسم المسار:</span>
-                                              <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{studentData.track_name}</span>
+                                              <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{normalizeTrackName(studentData.track_name)}</span>
                                             </div>
                                           )}
                                           <div className="detail-item-row">
@@ -1669,14 +2001,45 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                               )}
                                             </>
                                           )}
+                                          {/* Special Handling for Service 3 (Book Shipping) - Display Names and Tracks Table */}
+                                          {request.serviceId === '3' && request.data.names_array && Array.isArray(request.data.names_array) && (
+                                            <div className="detail-item-row full-width" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '10px', marginTop: '10px', background: '#f8fafc', padding: '10px', borderRadius: '8px' }}>
+                                              <span className="detail-label" style={{ marginBottom: '5px' }}>تفاصيل النسخ ({request.data.names_array.length}):</span>
+                                              <div style={{ width: '100%', overflowX: 'auto' }}>
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                                  <thead>
+                                                    <tr style={{ background: '#e2e8f0' }}>
+                                                      <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>#</th>
+                                                      <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>الاسم رباعي</th>
+                                                      <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>المسار والتخصص</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {request.data.names_array.map((name: string, idx: number) => (
+                                                      <tr key={idx} style={{ background: idx % 2 === 0 ? 'white' : '#f1f5f9' }}>
+                                                        <td style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'center', width: '40px' }}>{idx + 1}</td>
+                                                        <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{name}</td>
+                                                        <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{normalizeTrackName(request.data.tracks_array?.[idx])}</td>
+                                                      </tr>
+                                                    ))}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            </div>
+                                          )}
+
                                           {/* Display all other request data - Only show if value exists */}
                                           {Object.entries(request.data || {}).map(([key, value]) => {
                                             const stringValue = String(value || '').trim();
 
                                             // Skip if key is special or if value is empty/null/undefined
+                                            // Also skip the array fields we handled above or raw joined strings if we showed the table
                                             if (
                                               key === 'selectedCertificate' ||
                                               key === 'receiptUrl' ||
+                                              key === 'names_array' ||
+                                              key === 'tracks_array' ||
+                                              (request.serviceId === '3' && (key === 'names' || key === 'tracks')) ||
                                               typeof value === 'object' ||
                                               !stringValue ||
                                               stringValue === 'undefined' ||
@@ -1686,7 +2049,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                             return (
                                               <div key={key} className="detail-item-row">
                                                 <span className="detail-label">{translateKey(key)}:</span>
-                                                <span className="detail-value">{stringValue}</span>
+                                                <span className="detail-value" style={{ whiteSpace: 'pre-wrap' }}>{key.includes('track') ? normalizeTrackName(stringValue) : stringValue}</span>
                                               </div>
                                             );
                                           })}
@@ -1695,7 +2058,35 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                                       {/* Attachments Section (Receipts, etc.) */}
                                       <div className="details-section">
-                                        <h4 className="details-section-title">المرفقات وإيصال الدفع</h4>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
+                                          <h4 className="details-section-title" style={{ borderBottom: 'none', paddingBottom: 0, margin: 0 }}>المرفقات وإيصال الدفع</h4>
+                                          {(request.data?.receiptUrl || (request.documents && request.documents.length > 0)) && (
+                                            <button
+                                              onClick={() => handleDownloadAll(request)}
+                                              className="download-all-btn"
+                                              style={{
+                                                padding: '8px 16px',
+                                                fontSize: '13px',
+                                                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '10px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                cursor: 'pointer',
+                                                fontWeight: '600',
+                                                boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.2)',
+                                                transition: 'all 0.2s ease'
+                                              }}
+                                              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                                            >
+                                              <Download size={16} />
+                                              تحميل جميع الصور
+                                            </button>
+                                          )}
+                                        </div>
                                         <div className="documents-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px' }}>
                                           {/* Main Receipt from data.receiptUrl */}
                                           {request.data?.receiptUrl && (
@@ -1996,6 +2387,50 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div className="form-group">
+                  <label>أرقام الدفع</label>
+                  <div className="payment-numbers">
+                    <div className="payment-item">
+                      <label>instaPay</label>
+                      {isEditingFees ? (
+                        <input
+                          type="text"
+                          value={feesConfig.paymentMethods?.instaPay || ''}
+                          onChange={(e) => setFeesConfig({
+                            ...feesConfig,
+                            paymentMethods: {
+                              ...feesConfig.paymentMethods,
+                              instaPay: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      ) : (
+                        <div className="config-display">{feesConfig.paymentMethods?.instaPay || 'غير محدد'}</div>
+                      )}
+                    </div>
+                    <div className="payment-item">
+                      <label>محفظة الكاش</label>
+                      {isEditingFees ? (
+                        <input
+                          type="text"
+                          value={feesConfig.paymentMethods?.cashWallet || ''}
+                          onChange={(e) => setFeesConfig({
+                            ...feesConfig,
+                            paymentMethods: {
+                              ...feesConfig.paymentMethods,
+                              cashWallet: e.target.value
+                            }
+                          })}
+                          className="config-input"
+                        />
+                      ) : (
+                        <div className="config-display">{feesConfig.paymentMethods?.cashWallet || 'غير محدد'}</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -2521,139 +2956,288 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       {
         activeTab === 'users' && (
           <div className="admin-content">
-            <div className="users-section">
-              <h2>المستخدمين ({allStudents.length})</h2>
-
-              {/* Search Bar */}
-              <div className="search-bar">
-                <div className="search-input-wrapper">
-                  <Search size={20} className="search-icon" />
-                  <input
-                    type="text"
-                    placeholder="ابحث بأي بيانات: الاسم، الإيميل، رقم الهاتف، الرقم القومي، نوع الدبلومة، المسار، العنوان..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="search-input"
-                  />
-                </div>
+            <div className="section-header">
+              <h2>إدارة المستخدمين ({allStudents.length})</h2>
+              <div className="search-box">
+                <Search size={18} />
+                <input
+                  type="text"
+                  placeholder="ابحث عن مستخدم بالإسم أو الرقم القومي أو الهاتف..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="search-input"
+                />
               </div>
+            </div>
 
-              {/* Users List */}
-              <div className="users-grid">
-                {allStudents.length === 0 ? (
-                  <div className="no-users-message">
-                    <p>لا يوجد مستخدمين</p>
-                  </div>
-                ) : (
-                  allStudents.map((student) => {
-                    const studentRequests = getStudentRequests(student.id || '');
-                    // Check if this student matches the search criteria
-                    const isExactMatch = searchTerm.trim() && (
-                      (student.nationalID && student.nationalID === searchTerm.trim()) ||
-                      (student.whatsappNumber && student.whatsappNumber.includes(searchTerm.trim())) ||
-                      (student.email && student.email.toLowerCase() === searchTerm.trim().toLowerCase())
-                    );
-                    return (
-                      <div key={student.id} className={`user-card ${isExactMatch ? 'highlighted-match' : ''}`}>
-                        <div className="user-card-header">
-                          <div className="user-info">
-                            <h3>{student.fullNameArabic}</h3>
-                            <span className="user-email">{student.email}</span>
+            <div className="requests-list-container">
+              {(() => {
+                const filteredStudents = allStudents.filter(student => {
+                  if (!searchTerm.trim()) return true;
+                  const term = searchTerm.toLowerCase().trim();
+                  return (
+                    student.fullNameArabic?.toLowerCase().includes(term) ||
+                    student.email?.toLowerCase().includes(term) ||
+                    student.nationalID?.includes(term) ||
+                    student.whatsappNumber?.includes(term) ||
+                    student.diplomaType?.toLowerCase().includes(term) ||
+                    student.diplomaYear?.includes(term)
+                  );
+                });
+
+                if (filteredStudents.length === 0) {
+                  return (
+                    <div className="no-requests-message">
+                      <p>لا يوجد مستخدمين يطابقون بحثك</p>
+                    </div>
+                  );
+                }
+
+                return filteredStudents.map((student) => {
+                  const studentRequests = getStudentRequests(student.id || '');
+                  const isExpanded = expandedUsers.has(student.id || '');
+
+                  const toggleExpand = () => {
+                    const newExpanded = new Set(expandedUsers);
+                    if (isExpanded) {
+                      newExpanded.delete(student.id || '');
+                    } else {
+                      newExpanded.add(student.id || '');
+                    }
+                    setExpandedUsers(newExpanded);
+                  };
+
+                  return (
+                    <div key={student.id} className="request-row-wrapper">
+                      <div className={`request-row ${isExpanded ? 'expanded' : ''}`}>
+                        {/* Main Row Content */}
+                        <div className="request-row-main">
+                          {/* Right Side: User Info */}
+                          <div className="request-row-info">
+                            <div className="request-user-name">
+                              {student.fullNameArabic}
+                            </div>
+                            <div className="request-meta">
+                              <span className="request-email">{student.email}</span>
+                              <span className="request-date">
+                                {studentRequests.length} طلبات مسجلة
+                              </span>
+                            </div>
                           </div>
-                          <button
-                            onClick={() => handleEditStudent(student)}
-                            className="edit-user-button"
-                            title="تعديل البيانات"
-                          >
-                            <Edit2 size={18} />
-                          </button>
+
+                          {/* Center: Meta Info Badge */}
+                          <div className="request-row-status">
+                            <div className="status-badge completed" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
+                              <User size={14} />
+                              <span>{student.nationalID || 'بدون رقم قومي'}</span>
+                            </div>
+                          </div>
+
+                          {/* Left Side: Actions */}
+                          <div className="request-row-actions">
+                            <button
+                              onClick={() => handleEditStudent(student)}
+                              className="action-btn accept-btn"
+                              style={{ background: '#3b82f6', color: 'white', borderColor: '#3b82f6' }}
+                              title="تعديل البيانات"
+                            >
+                              <Edit2 size={18} />
+                              <span>تعديل</span>
+                            </button>
+
+                            <button
+                              onClick={toggleExpand}
+                              className={`expand-btn ${isExpanded ? 'expanded' : ''}`}
+                              title={isExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}
+                            >
+                              <svg
+                                width="20"
+                                height="20"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                              </svg>
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="user-card-body">
-                          <div className="user-details-grid">
-                            <div className="detail-item">
-                              <span className="detail-label">الاسم بالإنجليزية:</span>
-                              <span className="detail-value">{student.vehicleNameEnglish || 'غير متاح'}</span>
-                            </div>
-                            <div className="detail-item">
-                              <span className="detail-label">رقم الواتساب:</span>
-                              <span className="detail-value">{student.whatsappNumber || 'غير متاح'}</span>
-                            </div>
-                            <div className="detail-item">
-                              <span className="detail-label">الرقم القومي:</span>
-                              <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
-                            </div>
-                            <div className="detail-item password-detail-item">
-                              <span className="detail-label">كلمة المرور:</span>
-                              <div className="password-toggle-row">
-                                <span className="password-text-value">
-                                  {showPasswords[student.id || ''] ? (student.password || 'غير متاح') : '••••••••'}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
-                                  className="icon-toggle-button"
-                                  title={showPasswords[student.id || ''] ? 'إخفاء' : 'إظهار'}
-                                >
-                                  {showPasswords[student.id || ''] ? <EyeOff size={16} /> : <Eye size={16} />}
-                                </button>
+                        {/* Expanded Details */}
+                        {isExpanded && (
+                          <div className="request-row-details">
+                            <div className="details-grid">
+                              {/* Account Info Column */}
+                              <div className="details-section">
+                                <h4 className="details-section-title">بيانات الحساب الأساسية</h4>
+                                <div className="details-items">
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">الاسم الكامل:</span>
+                                    <span className="detail-value">{student.fullNameArabic}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">الاسم بالإنجليزية:</span>
+                                    <span className="detail-value">{student.vehicleNameEnglish || 'غير متاح'}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">الرقم القومي:</span>
+                                    <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">البريد الإلكتروني:</span>
+                                    <span className="detail-value">{student.email}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">كلمة المرور:</span>
+                                    <div className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span>{showPasswords[student.id || ''] ? (student.password || 'غير متاح') : '••••••••'}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: 0 }}
+                                      >
+                                        {showPasswords[student.id || ''] ? <EyeOff size={16} /> : <Eye size={16} />}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">نوع الدبلومة:</span>
+                                    <span className="detail-value">{student.diplomaType || 'غير متاح'}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">سنة الدبلومة:</span>
+                                    <span className="detail-value">{student.diplomaYear || 'غير متاح'}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Contact & Address Column */}
+                              <div className="details-section">
+                                <h4 className="details-section-title">بيانات التواصل والآنوان</h4>
+                                <div className="details-items">
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">رقم الهاتف/الواتساب:</span>
+                                    <span className="detail-value">{student.whatsappNumber || 'غير متاح'}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">المحافظة:</span>
+                                    <span className="detail-value">{student.address?.governorate || 'غير متاح'}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">المدينة/المركز:</span>
+                                    <span className="detail-value">{student.address?.city || 'غير متاح'}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">الشارع:</span>
+                                    <span className="detail-value">{student.address?.street || 'غير متاح'}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">رقم المبنى:</span>
+                                    <span className="detail-value">{student.address?.building || 'غير متاح'}</span>
+                                  </div>
+                                  <div className="detail-item-row">
+                                    <span className="detail-label">تاريخ الانضمام:</span>
+                                    <span className="detail-value">
+                                      {student.createdAt
+                                        ? new Date(student.createdAt).toLocaleDateString('ar-EG', {
+                                          year: 'numeric',
+                                          month: 'long',
+                                          day: 'numeric'
+                                        })
+                                        : 'غير متاح'}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                            <div className="detail-item">
-                              <span className="detail-label">نوع الدبلومة:</span>
-                              <span className="detail-value">{student.diplomaType || 'غير متاح'}</span>
-                            </div>
 
-                            <div className="detail-item">
-                              <span className="detail-label">سنة الدبلومة:</span>
-                              <span className="detail-value">{student.diplomaYear || 'غير متاح'}</span>
-                            </div>
-                            <div className="detail-item">
-                              <span className="detail-label">المحافظة:</span>
-                              <span className="detail-value">{student.address?.governorate || 'غير متاح'}</span>
-                            </div>
-                            <div className="detail-item">
-                              <span className="detail-label">المدينة:</span>
-                              <span className="detail-value">{student.address?.city || 'غير متاح'}</span>
-                            </div>
-                            <div className="detail-item">
-                              <span className="detail-label">الشارع:</span>
-                              <span className="detail-value">{student.address?.street || 'غير متاح'}</span>
-                            </div>
-                            <div className="detail-item">
-                              <span className="detail-label">رقم المبنى:</span>
-                              <span className="detail-value">{student.address?.building || 'غير متاح'}</span>
-                            </div>
-                          </div>
-
-                          <div className={`user-requests-section ${studentRequests.length === 0 ? 'no-data' : ''}`}>
+                            {/* Linked Requests Summary */}
                             {studentRequests.length > 0 && (
-                              <>
-                                <h4>الطلبات ({studentRequests.length})</h4>
-                                <div className="user-requests-list">
-                                  {studentRequests.map((request) => (
-                                    <div key={request.id} className="user-request-item">
-                                      <div className="request-item-header">
-                                        <span className="request-service-name">
-                                          {getServiceName(request.serviceId)}
-                                        </span>
-                                        {getStatusBadge(request.status)}
+                              <div className="details-section" style={{ marginTop: '24px' }}>
+                                <h4 className="details-section-title">نشاط المستخدم (آخر الطلبات)</h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginTop: '16px' }}>
+                                  {studentRequests.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()).slice(0, 6).map((req) => (
+                                    <div key={req.id} className="detail-item-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: '14px', fontWeight: '700' }}>{getServiceName(req.serviceId)}</span>
+                                        <span style={{ fontSize: '11px', color: '#64748b' }}>{req.createdAt ? new Date(req.createdAt).toLocaleDateString('ar-EG') : ''}</span>
                                       </div>
-                                      <div className="request-item-date">
-                                        {request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : 'غير متاح'}
-                                      </div>
+                                      {getStatusBadge(req.status)}
                                     </div>
                                   ))}
                                 </div>
-                              </>
+                              </div>
                             )}
                           </div>
-                        </div>
+                        )}
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                      <div className="request-row-separator"></div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        )
+      }
+
+
+
+      {
+        activeTab === 'services' && (
+          <div className="admin-content">
+            <div className="section-header">
+              <h2>إدارة الخدمات (تفعيل/تعطيل)</h2>
+            </div>
+            <div className="services-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', padding: '20px 0' }}>
+              {SERVICES.map((service) => {
+                const isActive = serviceSettings[service.id] !== false; // Default true
+                return (
+                  <div key={service.id} className="service-card-premium" style={{ '--card-color': service.color } as React.CSSProperties}>
+                    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                      <h3 style={{ margin: 0 }}>{service.nameAr}</h3>
+                      <div className={`status-badge ${isActive ? 'status-completed' : 'status-rejected'}`}>
+                        {isActive ? 'نشطة' : 'متوقفة'}
+                      </div>
+                    </div>
+
+                    <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
+                      {service.descriptionAr}
+                    </p>
+
+                    <div className="card-actions">
+                      <button
+                        onClick={async () => {
+                          const newSettings = { ...serviceSettings, [service.id]: !isActive };
+                          setServiceSettings(newSettings);
+                          try {
+                            await updateServiceSettings(newSettings);
+                          } catch (e) {
+                            alert('فشل تحديث الحالة');
+                          }
+                        }}
+                        className={`action-btn ${isActive ? 'reject-btn' : 'accept-btn'}`}
+                        style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
+                      >
+                        {isActive ? (
+                          <>
+                            <XCircle size={18} />
+                            تعطيل الخدمة
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle size={18} />
+                            تفعيل الخدمة
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )
@@ -3041,9 +3625,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <div className="admin-content">
             <div className="section-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h2>أكواد التحول الرقمي المحفوظة ({dtCodes.length})</h2>
+                <h2>أكواد التحول الرقمي  ({dtCodes.length})</h2>
                 <span style={{
-                  fontSize: '0.8rem',
+                  fontSize: '0.6rem',
                   background: '#dcfce7',
                   color: '#166534',
                   padding: '4px 8px',
@@ -3052,50 +3636,126 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   alignItems: 'center',
                   gap: '4px'
                 }}>
-                  <span style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', display: 'inline-block' }}></span>
+                  <span style={{ width: '18px', height: '8px', background: '#22c55e', borderRadius: '50%', display: 'inline-block' }}></span>
                   مباشر (Real-time)
                 </span>
               </div>
             </div>
 
-            <div className="table-container" style={{ overflowX: 'auto' }}>
+            <div className="table-container" style={{ userSelect: 'text', WebkitUserSelect: 'text', MozUserSelect: 'text', overflowX: 'auto', maxWidth: '100%' }}>
               {dtCodes.length > 0 ? (
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', userSelect: 'text', minWidth: '800px' }}>
                   <thead>
                     <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>موبايل</th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>البريد</th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>النوع</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>القيمة</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>الحالة</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الحفظ</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>رقم فوري</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                          الاسم
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('الاسم', 0)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          موبايل
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('موبايل', 1)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                          البريد
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('البريد', 2)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                          النوع
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('النوع', 3)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          القيمة
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('القيمة', 4)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          الحالة
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('الحالة', 5)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          تاريخ الحفظ
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('تاريخ الحفظ', 6)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          رقم فوري
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('رقم فوري', 7)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>إجراءات</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dtCodes.map((code, index) => (
-                      <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '12px' }}>{code.name}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile || code.phone}</td>
-                        <td style={{ padding: '12px', fontSize: '0.85rem' }}>{code.email}</td>
-                        <td style={{ padding: '12px' }}>{code.type}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>{code.value}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                      <tr
+                        key={code.id || index}
+                        style={{
+                          borderBottom: '1px solid #e2e8f0',
+                          transition: 'background 0.15s ease',
+                          userSelect: 'text'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile || code.phone}</td>
+                        <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email}</td>
+                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.type}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.value}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>
                           <span style={{
                             padding: '4px 8px',
                             borderRadius: '12px',
                             fontSize: '0.85rem',
                             background: code.status === 'NEW' ? '#dcfce7' : '#f1f5f9',
-                            color: code.status === 'NEW' ? '#166534' : '#64748b'
+                            color: code.status === 'NEW' ? '#166534' : '#64748b',
+                            userSelect: 'text'
                           }}>
                             {code.status}
                           </span>
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b', userSelect: 'text', cursor: 'text' }}>
                           {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff' }}>{code.fawryCode}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.fawryCode}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          <button
+                            onClick={() => handleDeleteDTCode(code.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
+                            title="حذف"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -3114,10 +3774,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         activeTab === 'electronicPaymentCodes' && (
           <div className="admin-content">
             <div className="section-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                 <h2>أكواد الدفع الإلكتروني ({epCodes.length})</h2>
                 <span style={{
-                  fontSize: '0.8rem',
+                  fontSize: '0.6rem',
                   background: '#dcfce7',
                   color: '#166534',
                   padding: '4px 8px',
@@ -3132,36 +3792,111 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               </div>
             </div>
 
-            <div className="table-container" style={{ overflowX: 'auto' }}>
+            <div className="table-container" style={{ userSelect: 'text', WebkitUserSelect: 'text', MozUserSelect: 'text', overflowX: 'auto', maxWidth: '100%' }}>
               {epCodes.length > 0 ? (
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', userSelect: 'text', minWidth: '900px' }}>
                   <thead>
                     <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>الاسم</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>الموبايل</th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>البريد الإلكتروني</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>الرقم القومي</th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>الجهة</th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>نوع الخدمة</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>تاريخ الإنشاء</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>رقم الطلب</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                          الاسم
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الاسم', 0)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          الموبايل
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الموبايل', 1)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                          البريد الإلكتروني
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('البريد الإلكتروني', 2)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          الرقم القومي
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الرقم القومي', 3)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                          الجهة
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الجهة', 4)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                          نوع الخدمة
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('نوع الخدمة', 5)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          تاريخ الإنشاء
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('تاريخ الإنشاء', 6)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                          رقم الطلب
+                          <span title="نسخ العمود كامل">
+                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('رقم الطلب', 7)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                          </span>
+                        </div>
+                      </th>
+                      <th style={{ padding: '12px', textAlign: 'center' }}>إجراءات</th>
                     </tr>
                   </thead>
                   <tbody>
                     {epCodes.map((code, index) => (
-                      <tr key={code.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '12px' }}>{code.name}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>{code.mobile}</td>
-                        <td style={{ padding: '12px', fontSize: '0.85rem' }}>{code.email}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem' }}>{code.nationalID}</td>
-                        <td style={{ padding: '12px' }}>{code.entity}</td>
-                        <td style={{ padding: '12px' }}>{code.serviceType}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b' }}>
+                      <tr
+                        key={code.id || index}
+                        style={{
+                          borderBottom: '1px solid #e2e8f0',
+                          transition: 'background 0.15s ease',
+                          userSelect: 'text'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile}</td>
+                        <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.nationalID}</td>
+                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.entity}</td>
+                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.serviceType}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b', userSelect: 'text', cursor: 'text' }}>
                           {code.createdAt?.seconds
                             ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG')
                             : (code.createdAt || 'الان')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff' }}>{code.orderNumber}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.orderNumber}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          <button
+                            onClick={() => handleDeleteEPCode(code.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
+                            title="حذف"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -3349,9 +4084,107 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         );
       })()}
 
-    </div >
+      {/* Custom Alert Modal */}
+      {alertConfig.isOpen && (
+        <div className="request-modal-overlay">
+          <div className="request-modal" style={{ maxWidth: '450px', height: 'auto', maxHeight: '90vh', padding: '0', borderRadius: '20px', overflow: 'hidden' }}>
+            <div className="modal-header" style={{
+              background: alertConfig.type === 'error' ? '#fef2f2' : alertConfig.type === 'success' ? '#f0fdf4' : '#f8fafc',
+              borderBottom: '1px solid #e2e8f0',
+              padding: '20px'
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                color: alertConfig.type === 'error' ? '#ef4444' : alertConfig.type === 'success' ? '#16a34a' : '#1e293b',
+                margin: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                {alertConfig.type === 'success' && <CheckCircle size={20} />}
+                {alertConfig.type === 'error' && <XCircle size={20} />}
+                {alertConfig.type === 'info' && <Bell size={20} />}
+                {alertConfig.title || (alertConfig.type === 'error' ? 'تنبيه' : alertConfig.type === 'success' ? 'نجاح' : 'معلومة')}
+              </h2>
+              <button
+                onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                className="close-button"
+                style={{ width: '32px', height: '32px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-content" style={{ padding: '32px 24px', textAlign: 'center' }}>
+              <p style={{ fontSize: '16px', color: '#1e293b', fontWeight: '600', lineHeight: '1.6', margin: 0 }}>
+                {alertConfig.message}
+              </p>
+            </div>
+            <div className="modal-footer" style={{ justifyContent: 'center', padding: '16px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', gap: '12px' }}>
+              {alertConfig.onConfirm ? (
+                <>
+                  <button
+                    onClick={() => {
+                      alertConfig.onConfirm?.();
+                      setAlertConfig(prev => ({ ...prev, isOpen: false }));
+                    }}
+                    style={{
+                      padding: '12px 24px',
+                      background: '#ef4444',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      minWidth: '100px',
+                      boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.2)',
+                    }}
+                  >
+                    نعم، حذف
+                  </button>
+                  <button
+                    onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                    style={{
+                      padding: '12px 24px',
+                      background: '#f1f5f9',
+                      color: '#475569',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '10px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      minWidth: '100px',
+                    }}
+                  >
+                    تراجع
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                  style={{
+                    padding: '12px 32px',
+                    background: alertConfig.type === 'error' ? '#ef4444' : '#2563eb',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '10px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    minWidth: '120px',
+                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                    transition: 'transform 0.2s'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                >
+                  حسناً
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
   );
 };
 
 export default AdminDashboardPage;
-

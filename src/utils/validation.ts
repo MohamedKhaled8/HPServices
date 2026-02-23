@@ -153,9 +153,7 @@ export const validateStudentData = (data: Partial<StudentData>): ValidationError
     if (!data.address.building) {
       errors.push({ field: 'address.building', message: 'هذا الحقل مطلوب' });
     }
-    if (!data.address.siteNumber) {
-      errors.push({ field: 'address.siteNumber', message: 'هذا الحقل مطلوب' });
-    }
+    // siteNumber is optional - removed from validation
   }
 
   if (!data.course) {

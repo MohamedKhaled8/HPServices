@@ -114,6 +114,10 @@ export interface FeesServiceConfig {
   prices: {
     [year: string]: number; // "2026": 5000, "2027": 5500, etc.
   };
+  paymentMethods: {
+    instaPay: string;
+    cashWallet: string;
+  };
 }
 
 export interface AssignmentItem {
@@ -194,4 +198,8 @@ export interface GraduationProjectConfig {
     instaPay: string;
     cashWallet: string;
   };
+}
+
+export interface ServiceSettings {
+  [serviceId: string]: boolean;
 }

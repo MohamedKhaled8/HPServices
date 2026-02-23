@@ -77,15 +77,17 @@
 /* Modern Floating Tabs */
 .admin-tabs {
   display: flex;
+  flex-wrap: wrap;
+  /* Allow wrapping to multiple rows */
+  justify-content: center;
+  /* Center items */
   gap: 12px;
-  padding: 20px 40px;
-  max-width: 1400px;
+  padding: 24px 20px;
+  max-width: 1200px;
   margin: 0 auto;
   border-bottom: none;
   background: transparent;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  align-items: center;
+  /* Removed scroll behavior to allow wrapping */
 }
 
 .assignments-link-button {
@@ -1220,9 +1222,9 @@
 
 .section-header h2 {
   font-size: 20px;
-  color: #334155;
+  color: #000000;
   margin: 0;
-  font-weight: 600;
+  font-weight: 800;
   transition: all 0.2s ease;
   cursor: pointer;
   order: 1;
@@ -1265,7 +1267,7 @@
 }
 
 .edit-button:hover {
-  background: #5568d3;
+  background: hwb(231 76% 19%);
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
 }
@@ -1319,13 +1321,14 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+
 }
 
 .form-group label {
   display: block;
   font-size: 16px;
-  font-weight: 600;
-  color: #1a202c;
+  font-weight: 800;
+  color: #000000 !important;
   margin-bottom: 12px;
 }
 
@@ -1366,9 +1369,9 @@
 }
 
 .price-item label {
-  font-size: 14px;
-  color: #718096;
-  font-weight: 500;
+  font-size: 16px;
+  color: #000000 !important;
+  font-weight: 800;
   margin: 0;
 }
 
@@ -3838,8 +3841,8 @@
 
   /* Statistics Dashboard Grid */
   .stats-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
   }
 
   .stat-card {
@@ -3867,5 +3870,123 @@
   .stats-grid {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 16px !important;
+  }
+}
+
+/* Mobile Table Alternative (Card View) */
+.mobile-only {
+  display: none;
+}
+
+.desktop-only {
+  display: table;
+}
+
+@media (max-width: 768px) {
+  .mobile-only {
+    display: block;
+  }
+
+  .desktop-only {
+    display: none !important;
+  }
+}
+
+.card-view-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.mobile-data-card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.card-header-premium {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.card-title-main {
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 15px;
+}
+
+.status-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-pill.new {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-pill.blue {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.card-body-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-item-mini {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.detail-item-mini .label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.detail-item-mini .value {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.fawry-highlight,
+.order-highlight {
+  background: #f0f9ff;
+  padding: 8px;
+  margin-top: 4px;
+  border-radius: 6px;
+  border-right: 3px solid #2563eb;
+}
+
+.fawry-highlight .value,
+.order-highlight .value {
+  color: #2563eb;
+  font-weight: 800;
+}
+
+/* Fix payment numbers layout on mobile */
+@media (max-width: 520px) {
+  .payment-numbers {
+    grid-template-columns: 1fr !important;
+  }
+
+  .payment-item {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
   }
 }

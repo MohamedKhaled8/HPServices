@@ -174,7 +174,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
               <button
                 type="button"
                 onClick={() => setShowForgotModal(true)}
-                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.85rem', cursor: 'pointer', padding: 0 }}
+                className="forgot-password-btn"
               >
                 نسيت كلمة المرور؟
               </button>

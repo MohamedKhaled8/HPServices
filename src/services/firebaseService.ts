@@ -28,7 +28,8 @@ import { ref, deleteObject } from 'firebase/storage';
 import { auth, db, storage } from '../config/firebase';
 import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
-import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile } from '../types';
+import { uploadMultipleToCloudStorage, CloudProvider } from './cloudStorageService';
+import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings } from '../types';
 import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
 
@@ -285,63 +286,38 @@ export const uploadAssignmentFilesForTrack = async (
       }
     }
 
-    let completedCount = 0;
-    const totalCount = files.length;
+    // Use the new Cloud Storage Service (Google Drive / Mega)
+    // This distributes files between providers automatically
+    const uploadResults = await uploadMultipleToCloudStorage(files, onProgress);
 
-    // Use Promise.all to upload files in parallel (Faster)
-    const uploadPromises = files.map(async (file) => {
-      const timestamp = Date.now();
-      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-      const filePath = `${track}/${timestamp}_${safeName}`;
+    // Save metadata to Firestore
+    const savedFiles: AssignmentFileMeta[] = [];
+    const filesCollection = collection(db, 'assignments', track, 'files');
 
-      // 1. رفع الملف إلى Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from(ASSIGNMENTS_BUCKET)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (uploadError) {
-        logger.error('Supabase Upload Error:', uploadError);
-        throw new Error(`خطأ في رفع الملف ${file.name}: ${uploadError.message}`);
-      }
-
-      // 2. الحصول على الرابط العام
-      const { data: { publicUrl } } = supabase.storage
-        .from(ASSIGNMENTS_BUCKET)
-        .getPublicUrl(filePath);
-
-      // 3. حفظ الميتاداتا في Firebase Firestore
-      const filesCollection = collection(db, 'assignments', track, 'files');
+    for (const result of uploadResults) {
       const fileDocRef = doc(filesCollection);
 
       const meta: AssignmentFileMeta = {
         id: fileDocRef.id,
-        name: file.name,
-        url: publicUrl,
+        name: result.fileName,
+        url: result.url,
         track,
-        storagePath: filePath,
+        storagePath: result.fileId || result.url, // Store ID if available, else URL
         uploadedAt: serverTimestamp()
       };
 
       await setDoc(fileDocRef, {
         ...meta,
         adminId,
-        provider: 'supabase',
-        bucket: ASSIGNMENTS_BUCKET,
+        provider: result.provider, // 'google-drive' or 'mega'
+        bucket: 'cloud-storage', // Placeholder
         uploadedAt: serverTimestamp()
       });
 
-      completedCount++;
-      if (onProgress) onProgress(completedCount, totalCount);
+      savedFiles.push(meta);
+    }
 
-      return meta;
-    });
-
-    const results = await Promise.all(uploadPromises);
-
-    return results;
+    return savedFiles;
   } catch (error: any) {
     logger.error('Error uploading assignment files:', error);
     throw new Error(error.message || 'حدث خطأ أثناء رفع ملفات التكاليف');
@@ -733,7 +709,7 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
       const uploadIndex = optimizedUrl.indexOf('/upload/');
       if (uploadIndex > 0) {
         // Insert transformations after /upload/
-        optimizedUrl = optimizedUrl.substring(0, uploadIndex + 8) + 'w_1200,c_limit,q_auto,f_auto/' + optimizedUrl.substring(uploadIndex + 8);
+        optimizedUrl = optimizedUrl.substring(0, uploadIndex + 8) + 'q_auto:best,f_auto/' + optimizedUrl.substring(uploadIndex + 8);
       }
     }
 
@@ -973,6 +949,18 @@ export const updateServiceRequestStatus = async (
   }
 };
 
+export const deleteServiceRequest = async (
+  requestId: string,
+  serviceId: string
+): Promise<void> => {
+  try {
+    const collectionName = `serviceRequests_${serviceId}`;
+    await deleteDoc(doc(db, collectionName, requestId));
+  } catch (error: any) {
+    throw new Error(error.message || 'حدث خطأ أثناء حذف الطلب');
+  }
+};
+
 // Book Service Configuration
 export const getBookServiceConfig = async (): Promise<BookServiceConfig | null> => {
   try {
@@ -1026,7 +1014,7 @@ export const updateFeesServiceConfig = async (config: FeesServiceConfig): Promis
         ...config,
         updatedAt: serverTimestamp()
       },
-      { merge: true }
+      { merge: false }
     );
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات المصروفات');
@@ -1447,6 +1435,28 @@ export const subscribeToElectronicPaymentCodes = (
   }
 };
 
+export const deleteDigitalTransformationCode = async (id: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'digitalTransformationCodes', id);
+    await deleteDoc(docRef);
+    logger.log('Digital transformation code deleted successfully');
+  } catch (error: any) {
+    logger.error('Error deleting digital transformation code:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء حذف كود التحول الرقمي');
+  }
+};
+
+export const deleteElectronicPaymentCode = async (id: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'electronicPaymentCodes', id);
+    await deleteDoc(docRef);
+    logger.log('Electronic payment code deleted successfully');
+  } catch (error: any) {
+    logger.error('Error deleting electronic payment code:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء حذف كود الدفع الإلكتروني');
+  }
+};
+
 // ============================================
 // Latest News (أخر الأخبار)
 // ============================================
@@ -1476,5 +1486,118 @@ export const updateLatestNews = async (content: string): Promise<void> => {
   } catch (error: any) {
     logger.error('Error updating latest news:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث أخر الأخبار');
+  }
+};
+
+export const sendQuickNotification = async (content: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'config', 'quickNotification');
+    await setDoc(docRef, {
+      content,
+      timestamp: serverTimestamp(),
+      id: Math.random().toString(36).substring(7) // To trigger change even if content is same
+    }, { merge: true });
+    logger.log('Quick notification sent successfully');
+  } catch (error: any) {
+    logger.error('Error sending quick notification:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء إرسال الرسالة السريعة');
+  }
+};
+
+export const subscribeToQuickNotification = (
+  onUpdate: (data: { content: string; timestamp?: any; id: string } | null) => void,
+  onError?: (error: any) => void
+) => {
+  try {
+    const docRef = doc(db, 'config', 'quickNotification');
+    return onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as { content: string; timestamp?: any; id: string });
+      } else {
+        onUpdate(null);
+      }
+    }, (error) => {
+      logger.error('Error subscribing to quick notification:', error);
+      if (onError) onError(error);
+    });
+  } catch (error: any) {
+    logger.error('Error in quick notification subscription:', error);
+    if (onError) onError(error);
+    return () => { };
+  }
+};
+
+export const subscribeToLatestNews = (
+  onUpdate: (news: { content: string; updatedAt?: any } | null) => void,
+  onError?: (error: any) => void
+) => {
+  try {
+    const docRef = doc(db, 'config', 'latestNews');
+    return onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as { content: string; updatedAt?: any });
+      } else {
+        onUpdate(null);
+      }
+    }, (error) => {
+      logger.error('Error subscribing to latest news:', error);
+      if (onError) onError(error);
+    });
+  } catch (error: any) {
+    logger.error('Error in news subscription:', error);
+    if (onError) onError(error);
+    return () => { };
+  }
+};
+
+// ============================================
+// Service Settings (Enable/Disable Services)
+// ============================================
+
+export const getServiceSettings = async (): Promise<ServiceSettings> => {
+  try {
+    const docRef = doc(db, 'config', 'services');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as ServiceSettings;
+    }
+    return {};
+  } catch (error: any) {
+    logger.error('Error fetching service settings:', error);
+    return {};
+  }
+};
+
+export const updateServiceSettings = async (settings: ServiceSettings): Promise<void> => {
+  try {
+    const docRef = doc(db, 'config', 'services');
+    await setDoc(docRef, settings, { merge: true });
+    logger.log('Service settings updated successfully');
+  } catch (error: any) {
+    logger.error('Error updating service settings:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات الخدمات');
+  }
+};
+
+export const subscribeToServiceSettings = (
+  onUpdate: (settings: ServiceSettings) => void,
+  onError?: (error: any) => void
+) => {
+  try {
+    const docRef = doc(db, 'config', 'services');
+    return onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as ServiceSettings);
+      } else {
+        onUpdate({});
+      }
+    }, (error) => {
+      logger.error('Error subscribing to service settings:', error);
+      if (onError) onError(error);
+    });
+  } catch (error: any) {
+    logger.error('Error in service settings subscription:', error);
+    if (onError) onError(error);
+    return () => { };
   }
 };

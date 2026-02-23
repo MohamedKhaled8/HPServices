@@ -43,7 +43,7 @@ export const calculateTrack = (college: string | undefined, department: string |
 
     // Rule 2: High Institute + Acceptable -> Track 1
     if (normCollege.includes(HIGH_INSTITUTE_KEYWORD) && normGrade === ACCEPTABLE_GRADE) {
-        return 'الأولى';
+        return 'الأول';
     }
 
     // Rule 3: Academic + Good or higher -> Track 3
@@ -51,7 +51,7 @@ export const calculateTrack = (college: string | undefined, department: string |
     const isGoodOrHigher = GOOD_GRADES.includes(normGrade);
 
     if (isAcademic && isGoodOrHigher) {
-        return 'الثالثة';
+        return 'الثالث';
     }
 
     // Rule 4: Acceptable + Specific Departments -> Track 2
@@ -66,20 +66,31 @@ export const calculateTrack = (college: string | undefined, department: string |
         ];
 
         if (allTrack2Depts.some(d => normDept.includes(d))) {
-            return 'الثانية';
+            return 'الثاني';
         }
     }
 
     // Rule 5: Else -> Track 1
-    return 'الأولى';
+    return 'الأول';
 };
 
 export const getAvailableTracks = (calculatedTrack: string | null): string[] => {
-    if (!calculatedTrack) return ['الأولى', 'الثانية', 'الثالثة'];
+    if (!calculatedTrack) return ['الأول', 'الثاني', 'الثالث'];
 
     // Allow editing from current to lower ONLY
-    // Order: الأولى (Low) < الثانية < الثالثة (High)
-    if (calculatedTrack === 'الثالثة') return ['الثالثة', 'الثانية', 'الأولى'];
-    if (calculatedTrack === 'الثانية') return ['الثانية', 'الأولى'];
-    return ['الأولى'];
+    // Order: الأول (Low) < الثاني < الثالث (High)
+    if (calculatedTrack === 'الثالث') return ['الثالث', 'الثاني', 'الأول'];
+    if (calculatedTrack === 'الثاني') return ['الثاني', 'الأول'];
+    return ['الأول'];
+};
+
+export const normalizeTrackName = (track: string | undefined | null): string => {
+    if (!track) return 'لم يتم تحديد المسار';
+
+    let normalized = track.trim();
+    if (normalized === 'الأولى') return 'الأول';
+    if (normalized === 'الثانية') return 'الثاني';
+    if (normalized === 'الثالثة') return 'الثالث';
+
+    return normalized;
 };

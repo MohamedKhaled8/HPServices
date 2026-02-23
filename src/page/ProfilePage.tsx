@@ -4,6 +4,7 @@ import { StudentData, ValidationError } from '../types';
 import { validateStudentData } from '../utils/validation';
 import { GOVERNORATES, DIPLOMA_YEARS, TRACKS, COURSES, DIPLOMA_TYPES } from '../constants/services';
 import { updateStudentData } from '../services/firebaseService';
+import { normalizeTrackName } from '../utils/trackUtils';
 import { ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
 import '../styles/ProfilePage.css';
 
@@ -78,7 +79,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
 
       // Update in Firestore
       await updateStudentData(student.id, updatedStudent);
-      
+
       // Update local state
       setStudent(updatedStudent);
       setMessage({ type: 'success', text: 'تم تحديث البيانات بنجاح' });
@@ -145,7 +146,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="vehicleNameEnglish">Vehicle Name (English)</label>
+              <label htmlFor="vehicleNameEnglish">اسمك باللغة الانجليزية</label>
               <input
                 id="vehicleNameEnglish"
                 type="text"
@@ -166,9 +167,13 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                 <input
                   id="whatsappNumber"
                   type="tel"
+                  inputMode="numeric"
                   disabled={!isEditing}
                   value={displayData.whatsappNumber || ''}
-                  onChange={(e) => handleInputChange('whatsappNumber', e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '');
+                    handleInputChange('whatsappNumber', value);
+                  }}
                   className={getFieldError('whatsappNumber') ? 'error' : ''}
                 />
                 {getFieldError('whatsappNumber') && (
@@ -177,13 +182,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
               </div>
 
               <div className="form-group">
-                <label htmlFor="nationalID">رقم الهوية</label>
+                <label htmlFor="nationalID">الرقم القومي</label>
                 <input
                   id="nationalID"
                   type="text"
+                  inputMode="numeric"
                   disabled={!isEditing}
                   value={displayData.nationalID || ''}
-                  onChange={(e) => handleInputChange('nationalID', e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '');
+                    handleInputChange('nationalID', value);
+                  }}
                   className={getFieldError('nationalID') ? 'error' : ''}
                 />
                 {getFieldError('nationalID') && (
@@ -229,18 +238,27 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
 
             <div className="form-row">
               <div className="form-group">
-                <label htmlFor="track">التخصص</label>
-                <select
-                  id="track"
-                  disabled={!isEditing}
-                  value={displayData.track || ''}
-                  onChange={(e) => handleInputChange('track', e.target.value as any)}
-                >
-                  <option value="">اختر التخصص</option>
-                  {TRACKS.map(track => (
-                    <option key={track} value={track}>{track}</option>
-                  ))}
-                </select>
+                <label htmlFor="track">المسار</label>
+                {!isEditing ? (
+                  <input
+                    id="track"
+                    type="text"
+                    disabled
+                    value={normalizeTrackName(student.track)}
+                    placeholder="لم يتم تحديد المسار"
+                  />
+                ) : (
+                  <select
+                    id="track"
+                    value={displayData.track || ''}
+                    onChange={(e) => handleInputChange('track', e.target.value as any)}
+                  >
+                    <option value="">اختر المسار</option>
+                    {TRACKS.map(track => (
+                      <option key={track} value={track}>{track}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="form-group">

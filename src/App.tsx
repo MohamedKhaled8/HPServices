@@ -16,6 +16,48 @@ import NewsPage from './page/NewsPage';
 import ResetPasswordPage from './page/ResetPasswordPage';
 import './styles/App.css';
 
+// --- Security Script to prevent Inspect Element & Content Theft ---
+// TEMPORARILY DISABLED FOR DEBUGGING
+/*
+if (typeof window !== 'undefined') {
+    const initSecurity = () => {
+        try {
+            // Disable Right Click
+            document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            // Disable Keyboard Shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (
+                    e.keyCode === 123 ||
+                    (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) ||
+                    (e.ctrlKey && (e.keyCode === 85 || e.keyCode === 83 || e.keyCode === 80 || e.keyCode === 67))
+                ) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+
+            // Disable Text Selection and Copy
+            document.addEventListener('selectstart', (e) => e.preventDefault());
+            document.addEventListener('copy', (e) => e.preventDefault());
+
+            // Safely add style rule for non-selection
+            const style = document.createElement('style');
+            style.textContent = 'body { -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; }';
+            document.head.appendChild(style);
+        } catch (e) {
+            console.warn('Security script initialization failed', e);
+        }
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSecurity);
+    } else {
+        initSecurity();
+    }
+}
+*/
+
 // --- Error Boundary ---
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
     constructor(props: { children: ReactNode }) {

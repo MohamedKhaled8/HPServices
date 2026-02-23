@@ -17,17 +17,15 @@
 
 .geo-shape {
     position: absolute;
-    border: 3px solid;
-    opacity: 0.3;
-    /* High visibility default */
-    animation: floatGeoShape 25s infinite ease-in-out;
+    border: 2px solid;
+    opacity: 0.15;
+    /* Reduced opacity and border for performance */
+    animation: floatGeoShape 40s infinite linear;
     animation-play-state: paused;
-    transition: transform 0.4s ease, opacity 0.4s ease;
-    transform-origin: center;
     will-change: transform;
+    pointer-events: none;
     backface-visibility: hidden;
     transform: translateZ(0);
-    z-index: 1;
 }
 
 /* Clearer & Larger shapes for Laptop/Desktop */
@@ -36,9 +34,14 @@
     /* Make them 40% larger on desktop */
 }
 
-/* Run animation constantly and smoothly */
-.geo-shape {
+/* Run animation smoothly ONLY when scrolling and NOT when menu is open */
+.is-scrolled:not(.is-menu-open) .geo-shape {
     animation-play-state: running;
+}
+
+/* Force pause if menu is open for maximum performance */
+.is-menu-open .geo-shape {
+    animation-play-state: paused !important;
 }
 
 /* ========== TOP SECTION (0-20%) - Hero Area ========== */
@@ -572,26 +575,12 @@
 }
 
 @keyframes floatGeoShape {
-
-    0%,
-    100% {
+    0% {
         transform: translate3d(0, 0, 0) rotate(0deg);
     }
 
-    20% {
-        transform: translate3d(20px, -25px, 0) rotate(36deg);
-    }
-
-    40% {
-        transform: translate3d(-25px, 20px, 0) rotate(72deg);
-    }
-
-    60% {
-        transform: translate3d(30px, 15px, 0) rotate(108deg);
-    }
-
-    80% {
-        transform: translate3d(-15px, -20px, 0) rotate(144deg);
+    100% {
+        transform: translate3d(30px, 30px, 0) rotate(360deg);
     }
 }
 

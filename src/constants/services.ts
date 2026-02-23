@@ -66,6 +66,8 @@ export const VIP_DIPLOMA_TYPES = [
   'مهني ادارة'
 ];
 
+export const DIPLOMA_YEARS = Array.from({ length: 75 }, (_, i) => (2030 - i).toString());
+
 export const DIPLOMA_TYPES = [
   'عام تربوي',
   'خاص مناهج',
@@ -114,7 +116,7 @@ export const SERVICES: Service[] = [
     ],
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
-      { name: 'full_name_english', label: 'الاسم رباعي باللغة الانجليزية', type: 'editable', required: true },
+      { name: 'full_name_english', label: 'ادخل اسمك باللغة الانجليزية', type: 'editable', required: true },
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true },
       { name: 'whatsapp_number', label: 'رقم واتس اب', type: 'editable', required: true },
       { name: 'email', label: 'جيميل', type: 'editable', required: true },
@@ -150,10 +152,10 @@ export const SERVICES: Service[] = [
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true },
-      { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: ['اختر نوع الدبلومة', 'عام تربوي', 'خاص', 'مهني'] },
-      { name: 'track_category', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة', 'أخرى'] },
+      { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: ['اختر نوع الدبلومة', ...DIPLOMA_TYPES] },
+      { name: 'track_category', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث', 'أخرى'] },
       { name: 'track_other', label: 'اذكر المسار', type: 'text', required: false },
-      { name: 'diploma_year', label: 'سنة الدبلومة', type: 'select', required: true, options: ['اختر سنة الدبلومة'] }
+      { name: 'diploma_year', label: 'سنة الدبلومة', type: 'select', required: true, options: ['اختر سنة الدبلومة', ...DIPLOMA_YEARS] }
     ],
     paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
   },
@@ -168,8 +170,7 @@ export const SERVICES: Service[] = [
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
       { name: 'educational_specialization', label: 'تخصصك التربوي', type: 'select', required: true, options: ['اختر التخصص', 'عربي', 'رياضيات', 'دراسات', 'علوم', 'إنجليزي', 'أخرى'], hasOther: true },
-      { name: 'educational_specialization_other', label: 'اذكر التخصص', type: 'text', required: false },
-      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة'] },
+      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] },
       { name: 'whatsapp_number', label: 'رقم واتساب باللغة الإنجليزية', type: 'editable', required: true }
     ],
     paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
@@ -184,7 +185,7 @@ export const SERVICES: Service[] = [
     color: '#06B6D4',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
-      { name: 'full_name_english', label: 'الاسم رباعي باللغة الإنجليزية', type: 'editable', required: true },
+      { name: 'full_name_english', label: 'ادخل اسمك باللغة الانجليزية', type: 'editable', required: true },
       { name: 'email', label: 'الجيميل', type: 'editable', required: true },
       { name: 'whatsapp_number', label: 'رقم واتساب', type: 'editable', required: true },
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true },
@@ -202,7 +203,7 @@ export const SERVICES: Service[] = [
     color: '#14B8A6',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
-      { name: 'full_name_english', label: 'الاسم رباعي باللغة الإنجليزية', type: 'editable', required: true },
+      { name: 'full_name_english', label: 'ادخل اسمك باللغة الانجليزية', type: 'editable', required: true },
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true },
       { name: 'whatsapp_number', label: 'رقم واتساب', type: 'editable', required: true },
       { name: 'email', label: 'الجيميل', type: 'editable', required: true },
@@ -221,7 +222,7 @@ export const SERVICES: Service[] = [
     fields: [
       { name: 'full_name_arabic', label: 'الاسم الرباعي', type: 'editable', required: true },
       { name: 'whatsapp_number', label: 'رقم هاتف (واتس اب)', type: 'editable', required: true },
-      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة'] },
+      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] },
       { name: 'address', label: 'العنوان', type: 'editable', required: true }
     ],
     paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
@@ -242,7 +243,7 @@ export const SERVICES: Service[] = [
     fields: [
       { name: 'student_names', label: 'اسماء الطلاب المشتركين في المشروع', type: 'dynamic_list', required: true },
       { name: 'leader_whatsapp', label: 'رقم واتس اب ليدر المجموعة المسؤول عن المشروع', type: 'text', required: true },
-      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة'] },
+      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] },
       { name: 'project_title', label: 'عنوان المشروع كامل كما تم كتابته في الاستمارة', type: 'textarea', required: true },
       { name: 'group_link', label: 'لينك الجروب الخاص بالمجموعة', type: 'text', required: true }
     ],
@@ -259,9 +260,9 @@ export const SERVICES: Service[] = [
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
       { name: 'whatsapp_number', label: 'رقم واتساب', type: 'editable', required: true },
-      { name: 'diploma_year', label: 'سنة الدبلومة', type: 'select', required: true, options: ['اختر سنة الدبلومة'] },
-      { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: ['اختر نوع الدبلومة', 'دبلوم عام تربوي', 'دبلوم خاص'] },
-      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأولى', 'الثانية', 'الثالثة'] }
+      { name: 'diploma_year', label: 'سنة الدبلومة', type: 'select', required: true, options: ['اختر سنة الدبلومة', ...DIPLOMA_YEARS] },
+      { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: ['اختر نوع الدبلومة', ...DIPLOMA_TYPES] },
+      { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] }
     ],
     paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay'],
     requiredDocuments: [
@@ -295,12 +296,11 @@ export const GOVERNORATES = [
   'أسوان'
 ];
 
-export const DIPLOMA_YEARS = Array.from({ length: 75 }, (_, i) => (2090 - i).toString());
 
 export const TRACKS = [
-  'الأولى',
-  'الثانية',
-  'الثالثة'
+  'الأول',
+  'الثاني',
+  'الثالث'
 ];
 
 export const COURSES = [

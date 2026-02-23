@@ -61,6 +61,16 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     track2: false,
     track3: false
   });
+  const [isDeletingAssignments, setIsDeletingAssignments] = useState<Record<TrackKey, boolean>>({
+    track1: false,
+    track2: false,
+    track3: false
+  });
+  const [animatingDeleteIds, setAnimatingDeleteIds] = useState<Record<TrackKey, Set<string>>>({
+    track1: new Set(),
+    track2: new Set(),
+    track3: new Set()
+  });
 
   const [isDistributingAssignments, setIsDistributingAssignments] = useState(false);
   const [assignmentsMessage, setAssignmentsMessage] = useState<string | null>(null);
@@ -273,11 +283,24 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const handleDeleteSelected = async (track: TrackKey) => {
     const ids = Array.from(selectedFileIds[track] || []);
     if (ids.length === 0) return;
-    try {
-      setAssignmentsMessage(null);
-      await deleteAssignmentFilesForTrack(track, ids);
 
-      // تحديث فوري للحالة (Optimistic Update)
+    if (!confirm(`هل أنت متأكد من مسح ${ids.length} ملف محدد؟`)) return;
+
+    try {
+      setIsDeletingAssignments(prev => ({ ...prev, [track]: true }));
+      setAssignmentsMessage(null);
+
+      // 1. بدء أنيميشن المسح (إضافة كلاس للملفات)
+      setAnimatingDeleteIds(prev => ({
+        ...prev,
+        [track]: new Set(ids)
+      }));
+
+      // الانتظار قليلاً لظهور الأنيميشن قبل الحذف الفعلي من الواجهة
+      await new Promise(resolve => setTimeout(resolve, 600));
+
+      // 2. الحذف الفوري من الواجهة (Optimistic Update)
+      // لا ننتظر السيرفر هنا لكي لا تشعر بالتعليق
       setTrackFiles(prev => ({
         ...prev,
         [track]: (prev[track] || []).filter(file => !ids.includes(file.id))
@@ -287,10 +310,22 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         [track]: new Set()
       }));
 
-      // Show snackbar instead of message
-      showSnackbarNotification(`تم حذف ${ids.length} ملف بنجاح`, 'success');
+      // 3. الحذف الفعلي من السيرفر في الخلفية
+      deleteAssignmentFilesForTrack(track, ids).then(() => {
+        showSnackbarNotification(`تم مسح ${ids.length} ملف بنجاح`, 'success');
+      }).catch((error) => {
+        showSnackbarNotification('حدث خطأ أثناء الحذف من السيرفر', 'error');
+        // هنا يمكن إعادة الملفات في حال الفشل التام (اختياري)
+      }).finally(() => {
+        setIsDeletingAssignments(prev => ({ ...prev, [track]: false }));
+        setAnimatingDeleteIds(prev => ({
+          ...prev,
+          [track]: new Set()
+        }));
+      });
     } catch (error: any) {
-      showSnackbarNotification(error.message || 'حدث خطأ أثناء حذف الملفات', 'error');
+      showSnackbarNotification('حدث خطأ غير متوقع', 'error');
+      setIsDeletingAssignments(prev => ({ ...prev, [track]: false }));
     }
   };
 
@@ -641,13 +676,23 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                       type="button"
                       className="delete-button"
                       disabled={
+                        isDeletingAssignments[openedTrack] ||
                         !selectedFileIds[openedTrack] ||
                         selectedFileIds[openedTrack].size === 0
                       }
                       onClick={() => handleDeleteSelected(openedTrack)}
                     >
-                      <Trash2 size={16} />
-                      مسح المحدد
+                      {isDeletingAssignments[openedTrack] ? (
+                        <>
+                          <Loader2 className="spinning-loader-small" size={16} />
+                          <span className="uploading-text">جاري المسح...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={16} />
+                          مسح المحدد
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -691,13 +736,15 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                         <tbody>
                           {trackFiles[openedTrack].map((file: any) => {
                             const isSelected = selectedFileIds[openedTrack]?.has(file.id);
+                            const isAnimatingDelete = animatingDeleteIds[openedTrack]?.has(file.id);
                             return (
-                              <tr key={file.id} className={isSelected ? 'selected-row' : ''}>
+                              <tr key={file.id} className={`${isSelected ? 'selected-row' : ''} ${isAnimatingDelete ? 'deleting-row' : ''}`}>
                                 <td>
                                   <label className="checkbox-label">
                                     <input
                                       type="checkbox"
                                       checked={isSelected || false}
+                                      disabled={isDeletingAssignments[openedTrack]}
                                       onChange={() => {
                                         setSelectedFileIds(prev => {
                                           const currentSet = new Set(prev[openedTrack] || []);
@@ -731,24 +778,43 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                                 <td>
                                   <button
                                     className="icon-button delete"
-                                    onClick={() => {
+                                    disabled={isDeletingAssignments[openedTrack]}
+                                    onClick={async () => {
                                       if (confirm('هل أنت متأكد من حذف هذا الملف؟')) {
-                                        // يمكن استدعاء دالة حذف فردية هنا إذا أردت، أو استخدام التحديد
-                                        // لكن للتسهيل سأجعلها تحذف المحدد فقط أو هذا العنصر
-                                        // هنا سأقوم بعمل خدعة بسيطة: تحديد هذا العنصر فقط وحذفه، أو إنشاء دالة جديدة
-                                        // سأستخدم الدالة الموجودة handleDeleteSelected لكن يجب أن أعدل الstate أولاً
-                                        // الأفضل إنشاء دالة حذف فردية، لكن سأستخدم الموجود لتجنب تعقيد الكود
-                                        // سأغير السلوك: الزر يحذف هذا الملف فقط
-                                        deleteAssignmentFilesForTrack(openedTrack, [file.id])
-                                          .then(async () => {
-                                            const refreshed = await getAssignmentFilesForTrack(openedTrack);
-                                            setTrackFiles(prev => ({ ...prev, [openedTrack]: refreshed }));
-                                          });
+                                        try {
+                                          // إضافة أنيميشن لهذا الملف فقط
+                                          setAnimatingDeleteIds(prev => ({
+                                            ...prev,
+                                            [openedTrack]: new Set([...Array.from(prev[openedTrack]), file.id])
+                                          }));
+
+                                          await new Promise(res => setTimeout(res, 600));
+
+                                          await deleteAssignmentFilesForTrack(openedTrack, [file.id]);
+
+                                          setTrackFiles(prev => ({
+                                            ...prev,
+                                            [openedTrack]: (prev[openedTrack] || []).filter(f => f.id !== file.id)
+                                          }));
+
+                                          showSnackbarNotification('تم حذف الملف بنجاح', 'success');
+                                        } catch (err: any) {
+                                          showSnackbarNotification('فشل حذف الملف', 'error');
+                                        } finally {
+                                          setAnimatingDeleteIds(prev => ({
+                                            ...prev,
+                                            [openedTrack]: new Set(Array.from(prev[openedTrack]).filter(id => id !== file.id))
+                                          }));
+                                        }
                                       }
                                     }}
                                     title="حذف الملف"
                                   >
-                                    <X size={16} />
+                                    {animatingDeleteIds[openedTrack]?.has(file.id) ? (
+                                      <Loader2 size={16} className="spinning-loader-small" />
+                                    ) : (
+                                      <X size={16} />
+                                    )}
                                   </button>
                                 </td>
                               </tr>

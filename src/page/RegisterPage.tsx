@@ -24,6 +24,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isCourseOther, setIsCourseOther] = useState(false);
 
   const getFieldError = (fieldName: string): string | undefined => {
     return errors.find(e => e.field === fieldName)?.message;
@@ -51,14 +52,49 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('🔵 Registration form submitted');
+    console.log('Form data:', formData);
+
     setIsSubmitting(true);
     setSubmitError('');
 
     const validationErrors = validateStudentData(formData as StudentData);
+    console.log('Validation errors:', validationErrors);
 
     if (validationErrors.length > 0) {
       setErrors(validationErrors);
       setIsSubmitting(false);
+
+      // عرض رسالة خطأ واضحة للمستخدم مع تفاصيل الحقول
+      console.log('❌ Validation failed - Errors:', validationErrors);
+
+      // ترجمة أسماء الحقول للعربية
+      const fieldNames: Record<string, string> = {
+        'fullNameArabic': 'الاسم الكامل بالعربية',
+        'vehicleNameEnglish': 'الاسم بالإنجليزية',
+        'whatsappNumber': 'رقم الواتساب',
+        'nationalID': 'الرقم القومي',
+        'diplomaYear': 'سنة الدبلوم',
+        'diplomaType': 'نوع الدبلوم',
+        'course': 'الشعبة الدراسية',
+        'address.governorate': 'المحافظة',
+        'address.city': 'المدينة',
+        'address.street': 'الشارع',
+        'address.building': 'رقم المبنى',
+        'address.siteNumber': 'رقم الموقع',
+        'email': 'البريد الإلكتروني',
+        'password': 'كلمة المرور'
+      };
+
+      const errorList = validationErrors.map(e => {
+        const fieldName = fieldNames[e.field] || e.field;
+        return `• ${fieldName}: ${e.message}`;
+      }).join('\n');
+
+      setSubmitError(`يرجى تصحيح الأخطاء التالية:\n${errorList}`);
+
+      // Scroll to top to show errors
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -69,6 +105,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
       if (!email || !password) {
         setSubmitError('البريد الإلكتروني وكلمة المرور مطلوبان');
         setIsSubmitting(false);
+        console.log('❌ Email or password missing');
         return;
       }
 
@@ -92,8 +129,10 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
         password: password
       };
 
+      console.log('🔄 Calling registerUser...');
       // Register with Firebase
       const user = await registerUser(email, password, studentData);
+      console.log('✅ User registered successfully:', user.uid);
 
       // Get the saved student data with the ID from Firebase
       const savedStudentData: StudentData = {
@@ -103,8 +142,10 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
       };
 
       setStudent(savedStudentData);
+      console.log('✅ Registration complete, calling onRegistrationSuccess');
       onRegistrationSuccess();
     } catch (error: any) {
+      console.error('❌ Registration error:', error);
       setSubmitError(error.message || 'حدث خطأ أثناء التسجيل. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsSubmitting(false);
@@ -136,50 +177,62 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           <div className="form-section">
             <h2>البيانات الشخصية</h2>
 
-            <div className="form-group">
-              <label htmlFor="fullNameArabic">الاسم الكامل (عربي) *</label>
-              <input
-                id="fullNameArabic"
-                type="text"
-                dir="rtl"
-                placeholder="ادخل اسمك رباعي باللغة العربية"
-                value={formData.fullNameArabic || ''}
-                onChange={(e) => handleInputChange('fullNameArabic', e.target.value)}
-                className={getFieldError('fullNameArabic') ? 'error' : ''}
-              />
-              {getFieldError('fullNameArabic') && (
-                <span className="error-message">{getFieldError('fullNameArabic')}</span>
-              )}
-            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="fullNameArabic">الاسم الكامل (عربي) *</label>
+                <input
+                  id="fullNameArabic"
+                  type="text"
+                  dir="rtl"
+                  placeholder="ادخل اسمك رباعي باللغة العربية"
+                  value={formData.fullNameArabic || ''}
+                  onChange={(e) => handleInputChange('fullNameArabic', e.target.value)}
+                  className={getFieldError('fullNameArabic') ? 'error' : ''}
+                />
+                {getFieldError('fullNameArabic') && (
+                  <span className="error-message">{getFieldError('fullNameArabic')}</span>
+                )}
+              </div>
 
-            <div className="form-group">
-              <label htmlFor="vehicleNameEnglish">Vehicle Name (English) *</label>
-              <input
-                id="vehicleNameEnglish"
-                type="text"
-                dir="ltr"
-                style={{ textAlign: 'right' }}
-                placeholder="ادخل الاسم الرباعي باللغة الانجليزية"
-                value={formData.vehicleNameEnglish || ''}
-                onChange={(e) => handleInputChange('vehicleNameEnglish', e.target.value)}
-                className={getFieldError('vehicleNameEnglish') ? 'error' : ''}
-              />
-              {getFieldError('vehicleNameEnglish') && (
-                <span className="error-message">{getFieldError('vehicleNameEnglish')}</span>
-              )}
+              <div className="form-group">
+                <label htmlFor="vehicleNameEnglish">الاسم بالإنجليزية *</label>
+                <input
+                  id="vehicleNameEnglish"
+                  type="text"
+                  dir="ltr"
+                  style={{ textAlign: 'right' }}
+                  placeholder="الاسم الرباعي بالإنجليزية"
+                  value={formData.vehicleNameEnglish || ''}
+                  onChange={(e) => handleInputChange('vehicleNameEnglish', e.target.value)}
+                  className={getFieldError('vehicleNameEnglish') ? 'error' : ''}
+                />
+                {getFieldError('vehicleNameEnglish') && (
+                  <span className="error-message">{getFieldError('vehicleNameEnglish')}</span>
+                )}
+              </div>
             </div>
 
             <div className="form-row">
               <div className="form-group">
-                <label htmlFor="whatsappNumber">رقم الواتس *</label>
-                <input
-                  id="whatsappNumber"
-                  type="tel"
-                  placeholder="01xxxxxxxxx"
-                  value={formData.whatsappNumber || ''}
-                  onChange={(e) => handleInputChange('whatsappNumber', e.target.value)}
-                  className={getFieldError('whatsappNumber') ? 'error' : ''}
-                />
+                <label htmlFor="whatsappNumber">رقم الواتس * (11 رقم)</label>
+                <div className="input-container">
+                  <input
+                    id="whatsappNumber"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="01xxxxxxxxx"
+                    maxLength={11}
+                    value={formData.whatsappNumber || ''}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '');
+                      handleInputChange('whatsappNumber', value);
+                    }}
+                    className={getFieldError('whatsappNumber') ? 'error' : ''}
+                  />
+                  <small className={`char-count ${formData.whatsappNumber?.length === 11 ? 'success' : ''}`}>
+                    {formData.whatsappNumber?.length || 0} / 11
+                  </small>
+                </div>
                 {getFieldError('whatsappNumber') && (
                   <span className="error-message">{getFieldError('whatsappNumber')}</span>
                 )}
@@ -257,15 +310,37 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
               <label htmlFor="course">الشعبة الدراسية *</label>
               <select
                 id="course"
-                value={formData.course || ''}
-                onChange={(e) => handleInputChange('course', e.target.value as any)}
+                value={isCourseOther ? 'other' : (formData.course || '')}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === 'other') {
+                    setIsCourseOther(true);
+                    handleInputChange('course', '');
+                  } else {
+                    setIsCourseOther(false);
+                    handleInputChange('course', val);
+                  }
+                }}
                 className={getFieldError('course') ? 'error' : ''}
               >
                 <option value="">اختر الشعبة الدراسية</option>
                 {COURSES.map(course => (
                   <option key={course} value={course}>{course}</option>
                 ))}
+                <option value="other">أخرى</option>
               </select>
+
+              {isCourseOther && (
+                <input
+                  type="text"
+                  placeholder="اكتب اسم الشعبة هنا"
+                  value={formData.course || ''}
+                  onChange={(e) => handleInputChange('course', e.target.value)}
+                  className={`mt-2 ${getFieldError('course') ? 'error' : ''}`}
+                  style={{ marginTop: '8px' }}
+                />
+              )}
+
               {getFieldError('course') && (
                 <span className="error-message">{getFieldError('course')}</span>
               )}
@@ -360,58 +435,60 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           <div className="form-section">
             <h2>بيانات الحساب</h2>
 
-            <div className="form-group">
-              <label htmlFor="email">البريد الإلكتروني *</label>
-              <input
-                id="email"
-                name="register-email"
-                type="email"
-                placeholder="example@example.com"
-                autoComplete="off"
-                readOnly={true}
-                onFocus={(e) => (e.currentTarget.readOnly = false)}
-                value={formData.email || ''}
-                onChange={(e) => handleInputChange('email', e.target.value)}
-                className={getFieldError('email') ? 'error' : ''}
-              />
-              {getFieldError('email') && (
-                <span className="error-message">{getFieldError('email')}</span>
-              )}
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="password">كلمة المرور *</label>
-              <div className="password-wrapper">
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="email">البريد الإلكتروني *</label>
                 <input
-                  id="password"
-                  name="register-password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="أدخل كلمة المرور"
-                  autoComplete="new-password"
+                  id="email"
+                  name="register-email"
+                  type="email"
+                  placeholder="example@example.com"
+                  autoComplete="off"
                   readOnly={true}
                   onFocus={(e) => (e.currentTarget.readOnly = false)}
-                  value={formData.password || ''}
-                  onChange={(e) => handleInputChange('password', e.target.value)}
-                  className={getFieldError('password') ? 'error' : ''}
+                  value={formData.email || ''}
+                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  className={getFieldError('email') ? 'error' : ''}
                 />
-                <button
-                  type="button"
-                  className="password-toggle"
-                  aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-                  onClick={() => setShowPassword(prev => !prev)}
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
+                {getFieldError('email') && (
+                  <span className="error-message">{getFieldError('email')}</span>
+                )}
               </div>
-              {getFieldError('password') && (
-                <span className="error-message">{getFieldError('password')}</span>
-              )}
+
+              <div className="form-group">
+                <label htmlFor="password">كلمة المرور *</label>
+                <div className="password-wrapper">
+                  <input
+                    id="password"
+                    name="register-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="أدخل كلمة المرور"
+                    autoComplete="new-password"
+                    readOnly={true}
+                    onFocus={(e) => (e.currentTarget.readOnly = false)}
+                    value={formData.password || ''}
+                    onChange={(e) => handleInputChange('password', e.target.value)}
+                    className={getFieldError('password') ? 'error' : ''}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                    onClick={() => setShowPassword(prev => !prev)}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {getFieldError('password') && (
+                  <span className="error-message">{getFieldError('password')}</span>
+                )}
+              </div>
             </div>
           </div>
 
           <button
             type="submit"
-            disabled={isSubmitting || errors.length > 0}
+            disabled={isSubmitting}
             className="submit-button"
           >
             {isSubmitting ? 'جاري التسجيل...' : 'التسجيل'}
