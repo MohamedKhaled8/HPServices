@@ -1617,9 +1617,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         setShowCopyToast(true);
                         setTimeout(() => setShowCopyToast(false), 3000);
 
-                        // Redirect for InstaPay
+                        // Open InstaPay in new tab
                         if (method === 'instaPay') {
-                          window.location.href = "https://ipn.eg/S/raoufpk97/instapay/3jZFKt";
+                          window.open("https://ipn.eg/S/raoufpk97/instapay/3jZFKt", '_blank', 'noopener,noreferrer');
                         }
                       }
                     }}>

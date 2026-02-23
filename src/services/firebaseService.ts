@@ -637,7 +637,7 @@ export const searchStudent = async (searchTerm: string): Promise<StudentData[]> 
 
 // Validate file type (images only for security)
 const isValidImageType = (fileType: string): boolean => {
-  const allowedTypes = ['JPEG', 'JPG', 'PNG', 'PDF'];
+  const allowedTypes = ['JPEG', 'JPG', 'PNG', 'PDF', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF'];
   return allowedTypes.includes(fileType.toUpperCase());
 };
 
