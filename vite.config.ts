@@ -42,8 +42,8 @@ export default defineConfig({
       }
     }
   },
-  // تعريف متغيرات البيئة الأساسية كـ fallback لو لم تكن موجودة
-  define: {
-    'process.env': {}
-  }
+  // تعريف متغيرات البيئة الأساسية كـ fallback لو لم تكن موجودة - تم إيقافها لأنها تسبب مشاكل في production مع polyfills
+  // define: {
+  //   'process.env': {}
+  // }
 })
