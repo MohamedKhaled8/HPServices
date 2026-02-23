@@ -4,12 +4,21 @@ import * as admin from 'firebase-admin';
 // Initialize Firebase Admin only once
 if (!admin.apps.length) {
     try {
+        const privateKey = process.env.FIREBASE_PRIVATE_KEY
+            ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/gm, '\n')
+            : undefined;
+
+        console.log("Initializing Firebase Admin with:", {
+            projectId: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            hasPrivateKey: !!privateKey
+        });
+
         admin.initializeApp({
             credential: admin.credential.cert({
                 projectId: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
                 clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                // Handle newline characters in private key string
-                privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+                privateKey: privateKey,
             }),
         });
     } catch (error) {
