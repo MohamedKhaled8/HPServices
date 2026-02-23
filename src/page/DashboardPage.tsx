@@ -175,27 +175,40 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const unsubscribe = subscribeToLatestNews((news) => {
       if (news && news.content) {
         setLatestNewsData(news);
-        // Check local storage to see if user has seen this news update
-        const lastSeenTimestamp = localStorage.getItem('lastSeenNewsDate');
-        // Handle various timestamp formats from Firebase
+
+        // استخراج الـ timestamp الحالي للخبر
         const currentNewsTimestamp = news.updatedAt?.seconds ||
           (news.updatedAt instanceof Date ? news.updatedAt.getTime() / 1000 :
             (typeof news.updatedAt === 'string' ? new Date(news.updatedAt).getTime() / 1000 : 0));
 
-        // If no record or news is newer than last record
-        if (!lastSeenTimestamp || Number(lastSeenTimestamp) < currentNewsTimestamp) {
-          // Slight delay for better UX
-          setTimeout(() => setNewsPopupOpen(true), 2000);
-        }
+        // لا تظهر البوب أب إذا لم يكن هناك timestamp حقيقي
+        if (!currentNewsTimestamp || currentNewsTimestamp === 0) return;
+
+        // مفتاح الجلسة: إذا كان المستخدم شاهد هذا الخبر في هذه الجلسة، لا تُظهره مرة أخرى
+        const sessionKey = `news_seen_${currentNewsTimestamp}`;
+        if (sessionStorage.getItem(sessionKey)) return;
+
+        // تحقق من localStorage: إذا كان المستخدم شاهد هذا الخبر من قبل، لا تُظهره
+        const lastSeenTimestamp = localStorage.getItem('lastSeenNewsDate');
+        if (lastSeenTimestamp && Number(lastSeenTimestamp) >= currentNewsTimestamp) return;
+
+        // الخبر جديد ولم يُشاهَد → ضع علامة في sessionStorage وأظهره
+        sessionStorage.setItem(sessionKey, '1');
+        setTimeout(() => setNewsPopupOpen(true), 2000);
       }
     });
 
     const unsubscribeQuick = subscribeToQuickNotification((data) => {
-      if (data && data.content) {
-        // Only show if it's the first time we see this ID in this session or if it's new
+      if (data && data.content && data.id) {
+        // تحقق من sessionStorage: هل رأى المستخدم هذه الرسالة في هذه الجلسة؟
+        const sessionKey = `quick_seen_${data.id}`;
+        if (sessionStorage.getItem(sessionKey)) return;
+
+        // الرسالة جديدة → ضع علامة وأظهرها مرة واحدة فقط
+        sessionStorage.setItem(sessionKey, '1');
         setQuickNotification(data);
         setShowQuickNotify(true);
-        // Auto-hide after 6 seconds
+        // إخفاء تلقائي بعد 6 ثوانٍ
         setTimeout(() => setShowQuickNotify(false), 6000);
       }
     });
@@ -209,8 +222,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const handleCloseNewsPopup = () => {
     setNewsPopupOpen(false);
     if (latestNewsData) {
-      const currentNewsTimestamp = latestNewsData.updatedAt?.seconds || (new Date(latestNewsData.updatedAt).getTime() / 1000);
-      localStorage.setItem('lastSeenNewsDate', String(currentNewsTimestamp));
+      const currentNewsTimestamp = latestNewsData.updatedAt?.seconds ||
+        (latestNewsData.updatedAt instanceof Date ? latestNewsData.updatedAt.getTime() / 1000 :
+          (typeof latestNewsData.updatedAt === 'string' ? new Date(latestNewsData.updatedAt).getTime() / 1000 : 0));
+      if (currentNewsTimestamp) {
+        localStorage.setItem('lastSeenNewsDate', String(currentNewsTimestamp));
+      }
     }
   };
 
