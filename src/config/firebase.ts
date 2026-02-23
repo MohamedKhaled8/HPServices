@@ -17,9 +17,7 @@ const firebaseConfig = {
 
 // فحص سريع لمتغيرات البيئة لحل مشكلة الشاشة البيضاء في Vercel
 if (!firebaseConfig.apiKey) {
-  console.error("FIREBASE API KEY IS MISSING. Make sure to add VITE_FIREBASE_API_KEY in Vercel Environment Variables.");
-  // يمكننا رمي خطأ صريح ليتم التقاطه بواسطة الـ Event Listener في index.html
-  throw new Error("Missing Firebase Configuration in Environment Variables (Vercel). Please check Vercel Settings -> Environment Variables.");
+  console.warn("FIREBASE API KEY IS MISSING. Make sure to add VITE_FIREBASE_API_KEY in Vercel Environment Variables. Using default local values if possible.");
 }
 
 // Initialize Firebase
