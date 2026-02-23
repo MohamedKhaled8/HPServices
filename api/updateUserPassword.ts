@@ -1,35 +1,10 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import * as admin from 'firebase-admin';
 
-// Initialize Firebase Admin only once
-if (!admin.apps.length) {
-    try {
-        const privateKey = process.env.FIREBASE_PRIVATE_KEY
-            ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/gm, '\n')
-            : undefined;
-
-        console.log("Initializing Firebase Admin with:", {
-            projectId: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
-            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-            hasPrivateKey: !!privateKey
-        });
-
-        admin.initializeApp({
-            credential: admin.credential.cert({
-                projectId: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
-                clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                privateKey: privateKey,
-            }),
-        });
-    } catch (error) {
-        console.error('Firebase Admin Initialization Error:', error);
-    }
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Add CORS headers
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Origin', '*'); // adjust in production
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
     res.setHeader(
         'Access-Control-Allow-Headers',
@@ -47,14 +22,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
+        // Initialize Firebase Admin only once
+        if (!admin.apps.length) {
+            const privateKey = process.env.FIREBASE_PRIVATE_KEY
+                ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/gm, '\n')
+                : undefined;
+
+            admin.initializeApp({
+                credential: admin.credential.cert({
+                    projectId: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
+                    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+                    privateKey: privateKey,
+                }),
+            });
+        }
+
         const { uid, newPassword } = req.body;
 
         if (!uid || !newPassword) {
-            return res.status(400).json({ error: 'Missing uid or newPassword' });
-        }
-
-        if (!admin.apps.length) {
-            return res.status(500).json({ error: 'Firebase Admin SDK not initialized correctly. Check Environment Variables.' });
+            return res.status(400).json({ error: 'Missing uid or newPassword keys in body' });
         }
 
         // Update password via Admin SDK
@@ -70,9 +56,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     } catch (error: any) {
         console.error('Error updating user password:', error);
-        return res.status(500).json({
+        // We use status 400 here instead of 500 so Vercel doesn't intercept it with an HTML error page
+        return res.status(400).json({
             error: 'Failed to update password',
-            details: error.message
+            details: error.message || error.toString()
         });
     }
 }

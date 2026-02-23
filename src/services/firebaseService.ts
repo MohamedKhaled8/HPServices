@@ -258,7 +258,14 @@ export const changeOtherUserPasswordHelper = async (uid: string, newPassword: st
       }),
     });
 
-    const data = await response.json();
+    const contentType = response.headers.get("content-type");
+    let data;
+    if (contentType && contentType.includes("application/json")) {
+      data = await response.json();
+    } else {
+      const textData = await response.text();
+      throw new Error(`خطأ من الخادم: ${textData.slice(0, 100)}...`);
+    }
 
     if (!response.ok) {
       throw new Error(data.error || 'Server error occurred while updating the password.');
