@@ -1830,8 +1830,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </div>
                   <h3 className="loading-title">
                     {uploadProgress.progress > 0
-                      ? (receiptFiles.length > 0 ? 'جاري رفع الملفات' : 'جاري إرسال الطلب')
-                      : 'جاري المعالجة'}
+                      ? (receiptFiles.length > 0 ? 'جاري رفع الإيصال' : 'جاري معالجة الطلب')
+                      : 'جاري التحضير'}
                   </h3>
                   <p className="loading-subtitle">
                     نحن نقوم بتأمين طلبك ومعالجة البيانات، يرجى عدم إغلاق الصفحة.

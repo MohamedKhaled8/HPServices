@@ -321,7 +321,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               '7': 11885,
               '8': 13580,
               '9': 15210,
-              '9': 15210,
               '10': 16900,
               '11': 18500
             },

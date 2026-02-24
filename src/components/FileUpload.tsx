@@ -15,7 +15,7 @@ interface FileUploadProps {
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesSelected,
   maxFileSize = 10 * 1024 * 1024, // 10 MB - Security: Reduced from 20MB for better safety
-  acceptedFormats = ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF'],
+  acceptedFormats = ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF'],
   resetTrigger
 }) => {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -125,7 +125,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         // Show success when all files are processed
         if (processedCount === validFiles.length) {
           setIsProcessing(false);
-          setSuccess(`تم تحميل ${newFiles.length} ملف(ات) بنجاح`);
+          setSuccess(`تم تحميل ${newFiles.length} صورة بنجاح`);
         }
       };
 
@@ -173,7 +173,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         multiple
         accept={
           acceptedFormats.some(f => ['JPEG', 'JPG', 'PNG'].includes(f))
-            ? "image/*,.pdf"
+            ? "image/*" + (acceptedFormats.includes('PDF') ? ",.pdf" : "")
             : acceptedFormats.map(f => `.${f.toLowerCase()}`).join(',')
         }
         onChange={(e) => handleFileSelect(e.target.files)}
@@ -195,7 +195,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         ) : (
           <>
             <Upload size={18} />
-            رفع الملفات
+            رفع صورة الإيصال
           </>
         )}
       </button>
