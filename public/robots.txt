@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+
+# Allow public pages
+Allow: /about
+Allow: /contact
+Allow: /privacy
+
+# Disallow authenticated-only pages (no value for AdSense crawlers)
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /profile
+Disallow: /requests
+Disallow: /service/
+Disallow: /news
+Disallow: /assignments
+
+# Sitemap
+Sitemap: https://hp-services-academic.vercel.app/sitemap.xml

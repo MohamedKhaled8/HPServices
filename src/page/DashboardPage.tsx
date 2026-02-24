@@ -554,11 +554,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                   className="contact-item-link"
                   style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 16, textDecoration: 'none', color: 'inherit' }}
                 >
-                  <Phone size={20} color="#F59E0B" /> <span>01050889596 (واتساب)</span>
+                  <Phone size={20} color="#F59E0B" />
+                  <span style={{ direction: 'ltr', unicodeBidi: 'plaintext' }}>
+                    +20 10 5088 9596 (واتساب)
+                  </span>
                 </a>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 16 }}>
-                  <Mail size={20} color="#F59E0B" /> <span>support@hpservices.com</span>
-                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 16 }}>
                   <MapPin size={20} color="#F59E0B" /> <span style={{ lineHeight: '1.4' }}>المنوفية , مدينة السادات , سوق المنطقة السابعة التجاري , اول شارع كليه تربية عام</span>
                 </div>

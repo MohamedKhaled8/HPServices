@@ -14,6 +14,9 @@ import StudentAssignmentsPage from './page/StudentAssignmentsPage';
 import ApprovedRequestsPage from './page/ApprovedRequestsPage';
 import NewsPage from './page/NewsPage';
 import ResetPasswordPage from './page/ResetPasswordPage';
+import AboutPage from './page/AboutPage';
+import ContactPage from './page/ContactPage';
+import PrivacyPage from './page/PrivacyPage';
 import './styles/App.css';
 
 // --- Security Script to prevent Inspect Element & Content Theft ---
@@ -346,6 +349,9 @@ const App: React.FC = () => {
                         <Route path="/register" element={<RegisterWrapper />} />
                         <Route path="/reset-password" element={<ResetPasswordPage />} />
                         <Route path="/admin-login" element={<Navigate to="/login" replace />} />
+                        <Route path="/about" element={<AboutPage />} />
+                        <Route path="/contact" element={<ContactPage />} />
+                        <Route path="/privacy" element={<PrivacyPage />} />
 
                         {/* User Protected Routes */}
                         <Route path="/" element={<Navigate to="/dashboard" replace />} />

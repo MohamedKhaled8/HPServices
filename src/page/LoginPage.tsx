@@ -3,6 +3,7 @@ import { useStudent } from '../context';
 import { loginUser, getStudentData, checkIsAdmin, sendResetPasswordEmail } from '../services/firebaseService';
 import { StudentData } from '../types';
 import { AlertCircle, CheckCircle, Eye, EyeOff, ArrowLeft, Mail, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import '../styles/LoginPage.css';
 
 interface LoginPageProps {
@@ -12,6 +13,7 @@ interface LoginPageProps {
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, onAdminLogin }) => {
+  const navigate = useNavigate();
   const { setStudent } = useStudent();
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
@@ -240,6 +242,19 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
         <div className="auth-switch">
           ليس لديك حساب؟{' '}
           <button type="button" onClick={onGoToRegister}>اشترك معنا الآن</button>
+        </div>
+
+        {/* Small Footer Links */}
+        <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button onClick={() => navigate('/about')} style={{ background: 'none', border: 'none', color: '#94a3b8', fontFamily: 'Cairo,sans-serif', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'color 0.2s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#475569')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#94a3b8')}>عن المنصة</button>
+          <button onClick={() => navigate('/contact')} style={{ background: 'none', border: 'none', color: '#94a3b8', fontFamily: 'Cairo,sans-serif', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'color 0.2s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#475569')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#94a3b8')}>اتصل بنا</button>
+          <button onClick={() => navigate('/privacy')} style={{ background: 'none', border: 'none', color: '#94a3b8', fontFamily: 'Cairo,sans-serif', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'color 0.2s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#475569')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#94a3b8')}>سياسة الخصوصية</button>
         </div>
       </div>
 
