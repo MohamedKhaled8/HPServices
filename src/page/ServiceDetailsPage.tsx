@@ -45,6 +45,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   const [showCopyToast, setShowCopyToast] = useState(false);
   const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
   const [wantsMalazem, setWantsMalazem] = useState(false);
+  const [missingFieldNames, setMissingFieldNames] = useState<string[]>([]);
 
   useEffect(() => {
     const unsubscribe = subscribeToServiceSettings(setServiceSettings);
@@ -396,6 +397,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       ...prev,
       [fieldName]: value
     }));
+    if (missingFieldNames.includes(fieldName)) {
+      setMissingFieldNames(prev => prev.filter(name => name !== fieldName));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -403,9 +407,29 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     setIsSubmitting(true);
     setSubmitMessage(null);
 
-    const missingFields = service.fields
-      .filter(field => field.required && (!serviceData[field.name] || (typeof serviceData[field.name] === 'string' && serviceData[field.name].includes('اختر'))))
-      .map(field => field.label);
+    const missingFieldsObjects = service.fields
+      .filter(field => field.required && (!serviceData[field.name] || (typeof serviceData[field.name] === 'string' && (serviceData[field.name].trim() === '' || serviceData[field.name].includes('اختر')))));
+
+    const missingFields = missingFieldsObjects.map(field => field.label);
+    const newMissingNames = missingFieldsObjects.map(field => field.name);
+
+    if (service.paymentMethods.length > 0 && !selectedPaymentMethod) {
+      newMissingNames.push('paymentMethod');
+    }
+
+    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && !disabledFields.includes('receipt_upload') && receiptFiles.length === 0) {
+      newMissingNames.push('receipt_upload');
+    }
+
+    if (service.id === '5' && selectedAssignments.length === 0) {
+      newMissingNames.push('assignments');
+    }
+
+    if (service.id === '6' && !selectedCertificate) {
+      newMissingNames.push('certificate');
+    }
+
+    setMissingFieldNames(newMissingNames);
 
     // التحقق من الأسماء والمسارات لخدمة الكتب
     if (service.id === '3' && serviceData.number_of_copies) {
@@ -778,7 +802,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                 }
 
                 return (
-                  <div key={field.name} className="form-group">
+                  <div key={field.name} className={`form-group ${missingFieldNames.includes(field.name) ? 'error-group' : ''}`}>
                     <label htmlFor={field.name}>
                       {field.label}
                       {field.required && <span className="required">*</span>}
@@ -820,7 +844,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             }}
                             placeholder={field.name === 'email' ? 'example@gmail.com' : field.label}
                             required={field.required}
-                            className="editable-input"
+                            className={`editable-input ${missingFieldNames.includes(field.name) ? 'error-border' : ''}`}
                           />
                         )}
                       </div>
@@ -842,6 +866,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         }}
                         placeholder={field.label}
                         required={field.required}
+                        className={missingFieldNames.includes(field.name) ? 'error-border' : ''}
                       />
                     )}
 
@@ -896,6 +921,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         onWheel={(e) => e.currentTarget.blur()}
                         placeholder={field.label}
                         required={field.required}
+                        className={missingFieldNames.includes(field.name) ? 'error-border' : ''}
                       />
                     )}
 
@@ -933,7 +959,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                   handleServiceDataChange(field.name, e.target.value);
                                 }}
                                 required={field.required}
-                                className="editable-input"
+                                className={`editable-input ${missingFieldNames.includes(field.name) ? 'error-border' : ''}`}
                               >
                                 <option value="">اختر المسار...</option>
                                 {field.options?.slice(1).filter(option => {
@@ -965,6 +991,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                               value={serviceData[field.name] || ''}
                               onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
                               required={field.required}
+                              className={missingFieldNames.includes(field.name) ? 'error-border' : ''}
                             >
                               <option value="">اختر السنه</option>
                               {feesConfig ? (
@@ -986,7 +1013,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                   onChange={(e) => handleServiceDataChange('track_other', e.target.value)}
                                   placeholder="اذكر المسار"
                                   required={false}
-                                  className="other-input"
+                                  className={`other-input ${missingFieldNames.includes(field.name) ? 'error-border' : ''}`}
                                 />
                               )}
                             </>
@@ -996,6 +1023,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                               value={serviceData[field.name] || ''}
                               onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
                               required={field.required}
+                              className={missingFieldNames.includes(field.name) ? 'error-border' : ''}
                             >
                               <option value="">اختر سنة الدبلومة</option>
                               {Array.from({ length: 60 }, (_, i) => {
@@ -1014,6 +1042,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                               value={serviceData[field.name] || ''}
                               onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
                               required={field.required}
+                              className={missingFieldNames.includes(field.name) ? 'error-border' : ''}
                             >
                               <option value="">اختر نوع التحول الرقمي</option>
                               {digitalTransformationConfig ? (
@@ -1045,6 +1074,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                   }
                                 }}
                                 required={field.required}
+                                className={missingFieldNames.includes(field.name) ? 'error-border' : ''}
                               >
                                 {field.options?.[0]?.includes('اختر') ? (
                                   <option value={field.options[0]}>{field.options[0]}</option>
@@ -1071,7 +1101,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                   onChange={(e) => handleServiceDataChange(field.name + '_other', e.target.value)}
                                   placeholder={field.name === 'educational_specialization' ? 'اذكر التخصص' : field.label.replace('الكلية او المعهد', 'اذكر الكلية او المعهد').replace('القسم او الشعبة', 'اذكر القسم او الشعبة')}
                                   required={field.required}
-                                  className="other-input"
+                                  className={`other-input ${missingFieldNames.includes(field.name + '_other') ? 'error-border' : ''}`}
                                 />
                               )}
                             </>
@@ -1164,6 +1194,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         placeholder={field.label}
                         required={field.required}
                         rows={4}
+                        className={missingFieldNames.includes(field.name) ? 'error-border' : ''}
                       />
                     )}
                   </div>
@@ -1172,7 +1203,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
               {/* Display Track for Service 1 if student has one */}
               {service.id === '1' && student.track && (
-                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <div className={`form-group ${missingFieldNames.includes('track') ? 'error-group' : ''}`} style={{ gridColumn: '1 / -1' }}>
                   <label htmlFor="student-track">
                     المسار المحسوب
                     <span className="required">*</span>
@@ -1200,7 +1231,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         id="student-track"
                         value={serviceData['track'] || student.track || ''}
                         onChange={(e) => handleServiceDataChange('track', e.target.value)}
-                        className="editable-input"
+                        className={`editable-input ${missingFieldNames.includes('track') ? 'error-border' : ''}`}
                       >
                         <option value="">اختر المسار...</option>
                         {getAvailableTracks(student.track).map(track => (
@@ -1263,7 +1294,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             </div>
 
                             {/* حقل الاسم */}
-                            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                            <div className={`form-group ${missingFieldNames.includes(`name_${index}`) ? 'error-group' : ''}`} style={{ flex: 1, marginBottom: 0 }}>
                               <label htmlFor={`name_${index}`} style={{ fontSize: '14px' }}>
                                 الاسم {ordName} رباعي
                                 <span className="required">*</span>
@@ -1280,15 +1311,17 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     names_array: namesArray,
                                     names: namesArray.join('\n')
                                   }));
+                                  setMissingFieldNames(prev => prev.filter(name => name !== `name_${index}`));
                                 }}
                                 placeholder={`اكتب الاسم ${ordName} رباعي`}
                                 required
                                 style={{ width: '100%' }}
+                                className={missingFieldNames.includes(`name_${index}`) ? 'error-border' : ''}
                               />
                             </div>
 
                             {/* حقل المسار */}
-                            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                            <div className={`form-group ${missingFieldNames.includes(`track_${index}`) ? 'error-group' : ''}`} style={{ flex: 1, marginBottom: 0 }}>
                               <label htmlFor={`track_${index}`} style={{ fontSize: '14px' }}>
                                 اكتب المسار و التخصص
                                 <span className="required">*</span>
@@ -1305,10 +1338,12 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     tracks_array: tracksArray,
                                     tracks: tracksArray.join('\n')
                                   }));
+                                  setMissingFieldNames(prev => prev.filter(name => name !== `track_${index}`));
                                 }}
                                 placeholder="اكتب المسار و التخصص"
                                 required
                                 style={{ width: '100%' }}
+                                className={missingFieldNames.includes(`track_${index}`) ? 'error-border' : ''}
                               />
                             </div>
                           </div>
@@ -1324,7 +1359,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
           {service.id === '6' && certificatesConfig && certificatesConfig.certificates && (
             <section className="certificates-section-modern">
-              <div className="certificates-container">
+              <div className={`certificates-container ${missingFieldNames.includes('certificate') ? 'error-group' : ''}`}>
                 <div className="certificates-title-section">
                   <div className="title-icon">
                     <Award size={32} />
@@ -1342,7 +1377,10 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         <div
                           key={certificate.id}
                           className={`certificate-option ${selectedCertificate?.id === certificate.id ? 'active' : ''}`}
-                          onClick={() => setSelectedCertificate(certificate)}
+                          onClick={() => {
+                            setSelectedCertificate(certificate);
+                            setMissingFieldNames(prev => prev.filter(name => name !== 'certificate'));
+                          }}
                         >
                           <div className="certificate-option-content">
                             <div className="certificate-image-wrapper">
@@ -1443,7 +1481,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                           <h4>المعلومات المطلوبة</h4>
                           <div className="fields-container">
                             {selectedCertificate.fields.map((field) => (
-                              <div key={field.name} className="field-wrapper">
+                              <div key={field.name} className={`field-wrapper ${missingFieldNames.includes(field.name) ? 'error-group' : ''}`}>
                                 <label htmlFor={field.name} className="field-label-clean">
                                   {field.label}
                                   {field.required && <span className="field-required">*</span>}
@@ -1456,7 +1494,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
                                     placeholder={field.placeholder || field.label}
                                     required={field.required}
-                                    className="field-input-clean"
+                                    className={`field-input-clean ${missingFieldNames.includes(field.name) ? 'error-border' : ''}`}
                                   />
                                 )}
                                 {field.type === 'date' && (
@@ -1467,7 +1505,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
                                     placeholder={field.placeholder || 'mm/dd/yyyy'}
                                     required={field.required}
-                                    className="field-input-clean"
+                                    className={`field-input-clean ${missingFieldNames.includes(field.name) ? 'error-border' : ''}`}
                                   />
                                 )}
                                 {field.type === 'select' && field.options && (
@@ -1476,7 +1514,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     value={serviceData[field.name] || ''}
                                     onChange={(e) => handleServiceDataChange(field.name, e.target.value)}
                                     required={field.required}
-                                    className="field-select-clean"
+                                    className={`field-select-clean ${missingFieldNames.includes(field.name) ? 'error-border' : ''}`}
                                   >
                                     <option value="">اختر...</option>
                                     {field.options.map(option => (
@@ -1501,7 +1539,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               <h2>نوع التدريب</h2>
               <div className="exam-language-section">
                 {digitalTransformationConfig.examLanguage && digitalTransformationConfig.examLanguage.length > 0 ? (
-                  <div className="field-wrapper">
+                  <div className={`field-wrapper ${missingFieldNames.includes('exam_language') ? 'error-group' : ''}`}>
                     <label htmlFor="exam_language" className="field-label-clean">
                       اختر نوع التدريب <span className="field-required">*</span>
                     </label>
@@ -1510,7 +1548,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                       value={serviceData['exam_language'] || ''}
                       onChange={(e) => handleServiceDataChange('exam_language', e.target.value)}
                       required
-                      className="field-select-clean"
+                      className={`field-select-clean ${missingFieldNames.includes('exam_language') ? 'error-border' : ''}`}
                     >
                       <option value="">اختر نوع التدريب...</option>
                       {digitalTransformationConfig.examLanguage.map((language, index) => (
@@ -1645,7 +1683,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </div>
                 </div>
               )}
-              <div className="payment-methods">
+              <div className={`payment-methods ${missingFieldNames.includes('paymentMethod') ? 'error-border' : ''}`}>
                 {service.paymentMethods && service.paymentMethods.length > 0 && service.paymentMethods.map(method => {
                   let phoneNumber = '';
 
@@ -1742,7 +1780,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           )}
 
           {!disabledFields.includes('receipt_upload') && (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && (
-            <section className="form-section section-receipt">
+            <section className={`form-section section-receipt ${missingFieldNames.includes('receipt_upload') ? 'error-border' : ''}`}>
               <h2>{service.id === '10' ? 'رفع المستندات وصورة الإيصال' : 'رفع صورة الإيصال'}</h2>
 
               {service.id === '10' && (

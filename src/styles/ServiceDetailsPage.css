@@ -2604,3 +2604,28 @@
   transform: translateY(-2px);
   box-shadow: 0 6px 15px -1px rgba(59, 130, 246, 0.3);
 }
+
+/* Error States for Form Validation */
+.error-border {
+  border: 2px solid #ef4444 !important;
+  background-color: #fef2f2 !important;
+}
+
+.error-group input,
+.error-group select,
+.error-group textarea {
+  border: 2px solid #ef4444 !important;
+  background-color: #fef2f2 !important;
+}
+
+.error-group label {
+  color: #b91c1c !important;
+}
+
+.error-group .required,
+.error-group .field-required {
+  color: #ef4444 !important;
+  font-weight: 900;
+  transform: scale(1.1);
+  display: inline-block;
+}
