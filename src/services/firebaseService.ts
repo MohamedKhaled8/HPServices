@@ -62,12 +62,12 @@ export const registerUser = async (email: string, password: string, studentData:
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
-    // Save student data to Firestore (Stored as plain text as requested)
+    // Save student data to Firestore
     const studentDataWithId = {
       ...studentData,
       id: user.uid,
       email: email,
-      password: password, // Storing password as requested
+      // Security: Password is NOT stored here anymore (Managed by Firebase Auth)
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
