@@ -664,8 +664,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       if (serviceId === '7' && status === 'completed') {
         const request = serviceRequests.find(r => r.id === requestId);
         if (request) {
-          const studentData = students[request.studentId];
-          if (studentData) {
+          let studentData = students[request.studentId];
+          if (!studentData) {
+            try {
+              const fetchedData = await getStudentData(request.studentId);
+              if (fetchedData) studentData = fetchedData;
+            } catch (e) {
+              logger.error('Error fetching student data directly', e);
+            }
+          }
+          if (studentData || request.data) {
             setToastState({ message: 'جاري الحصول على كود التحول الرقمي...', type: 'loading', duration: 3000 });
 
             // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
@@ -739,8 +747,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       if (serviceId === '4' && status === 'completed') {
         const request = serviceRequests.find(r => r.id === requestId);
         if (request) {
-          const studentData = students[request.studentId];
-          if (studentData) {
+          let studentData = students[request.studentId];
+          if (!studentData) {
+            try {
+              const fetchedData = await getStudentData(request.studentId);
+              if (fetchedData) studentData = fetchedData;
+            } catch (e) {
+              logger.error('Error fetching student data directly', e);
+            }
+          }
+          if (studentData || request.data) {
             setToastState({ message: 'جاري الحصول على رقم الطلب...', type: 'loading', duration: 3000 });
 
             // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
@@ -1880,16 +1896,25 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                     <div className="request-user-name">
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                         <span>{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
-                                        {dtCodes.find(c => c.requestId === request.id) && (
-                                          <span style={{ fontSize: '13px', backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                            كود فوري: {dtCodes.find(c => c.requestId === request.id)?.fawryCode || dtCodes.find(c => c.requestId === request.id)?.serialNumber || 'لا يوجد'}
-                                          </span>
-                                        )}
-                                        {epCodes.find(c => c.requestId === request.id) && (
-                                          <span style={{ fontSize: '13px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                            رقم الطلب: {epCodes.find(c => c.requestId === request.id)?.orderNumber || 'لا يوجد'}
-                                          </span>
-                                        )}
+                                        {(() => {
+                                          const dtCode = dtCodes.find(c => c.requestId === request.id && (c.fawryCode || c.serialNumber)) || dtCodes.find(c => c.requestId === request.id);
+                                          const epCode = epCodes.find(c => c.requestId === request.id && c.orderNumber) || epCodes.find(c => c.requestId === request.id);
+
+                                          return (
+                                            <>
+                                              {dtCode && (
+                                                <span style={{ fontSize: '13px', backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                                  كود فوري: {dtCode.fawryCode || dtCode.serialNumber || 'لا يوجد'}
+                                                </span>
+                                              )}
+                                              {epCode && (
+                                                <span style={{ fontSize: '13px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                                  رقم الطلب: {epCode.orderNumber || 'لا يوجد'}
+                                                </span>
+                                              )}
+                                            </>
+                                          );
+                                        })()}
                                       </div>
                                     </div>
                                     <div className="request-meta">

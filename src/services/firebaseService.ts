@@ -1403,8 +1403,26 @@ export const updateGraduationProjectConfig = async (config: GraduationProjectCon
 export const saveDigitalTransformationCode = async (data: any): Promise<void> => {
   try {
     const collectionRef = collection(db, 'digitalTransformationCodes');
-    const docRef = doc(collectionRef); // Auto-generate ID
 
+    // Check if doc exists for this requestId
+    if (data.requestId) {
+      const q = query(collectionRef, where('requestId', '==', data.requestId));
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        // Update existing document
+        const existingDoc = snapshot.docs[0];
+        await setDoc(existingDoc.ref, {
+          ...data,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        logger.log('Digital transformation code updated successfully');
+        return;
+      }
+    }
+
+    // Create new document if none exists
+    const docRef = doc(collectionRef);
     await setDoc(docRef, {
       ...data,
       id: docRef.id,
@@ -1477,8 +1495,26 @@ export const subscribeToDigitalTransformationCodes = (
 export const saveElectronicPaymentCode = async (data: any): Promise<void> => {
   try {
     const collectionRef = collection(db, 'electronicPaymentCodes');
-    const docRef = doc(collectionRef); // Auto-generate ID
 
+    // Check if doc exists for this requestId
+    if (data.requestId) {
+      const q = query(collectionRef, where('requestId', '==', data.requestId));
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        // Update existing document
+        const existingDoc = snapshot.docs[0];
+        await setDoc(existingDoc.ref, {
+          ...data,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        logger.log('Electronic payment code updated successfully');
+        return;
+      }
+    }
+
+    // Create new document if none exists
+    const docRef = doc(collectionRef);
     await setDoc(docRef, {
       ...data,
       id: docRef.id,

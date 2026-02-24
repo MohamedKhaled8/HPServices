@@ -173,16 +173,25 @@ const ApprovedRequestsPage: React.FC<ApprovedRequestsPageProps> = ({ onBack }) =
                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#10B981', fontWeight: 'bold' }}>
                                                     {amount.toLocaleString()} ج.م
                                                 </span>
-                                                {dtCodes.find(c => c.requestId === req.id) && (
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                                        كود فوري: {dtCodes.find(c => c.requestId === req.id)?.fawryCode || dtCodes.find(c => c.requestId === req.id)?.serialNumber || 'لا يوجد'}
-                                                    </span>
-                                                )}
-                                                {epCodes.find(c => c.requestId === req.id) && (
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                                        رقم الطلب: {epCodes.find(c => c.requestId === req.id)?.orderNumber || 'لا يوجد'}
-                                                    </span>
-                                                )}
+                                                {(() => {
+                                                    const dtCode = dtCodes.find(c => c.requestId === req.id && (c.fawryCode || c.serialNumber)) || dtCodes.find(c => c.requestId === req.id);
+                                                    const epCode = epCodes.find(c => c.requestId === req.id && c.orderNumber) || epCodes.find(c => c.requestId === req.id);
+
+                                                    return (
+                                                        <>
+                                                            {dtCode && (
+                                                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                                                    كود فوري: {dtCode.fawryCode || dtCode.serialNumber || 'لا يوجد'}
+                                                                </span>
+                                                            )}
+                                                            {epCode && (
+                                                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                                                    رقم الطلب: {epCode.orderNumber || 'لا يوجد'}
+                                                                </span>
+                                                            )}
+                                                        </>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
                                     </div>
