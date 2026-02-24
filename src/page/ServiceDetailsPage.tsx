@@ -1814,27 +1814,31 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           <div className="loading-modal-wrapper">
             <div className={`loading-modal ${submitMessage?.type === 'success' ? 'success-state' : ''}`}>
               {submitMessage?.type === 'success' ? (
-                <>
+                <div key="success-view" style={{ width: '100%' }}>
                   <div className="success-animation-container">
                     <CheckCircle className="success-icon-animated" size={80} />
                   </div>
-                  <h3 className="loading-title">تم بنجاح!</h3>
+                  <h3 className="loading-title">
+                    <span>تم بنجاح!</span>
+                  </h3>
                   <p className="loading-subtitle">
-                    تم إرسال طلبك بنجاح، جاري تحويلك...
+                    <span>تم إرسال طلبك بنجاح، جاري تحويلك...</span>
                   </p>
-                </>
+                </div>
               ) : (
-                <>
+                <div key="loading-view" style={{ width: '100%' }}>
                   <div className="loading-spinner-container">
                     <Loader2 className="spinning-loader-large" size={60} />
                   </div>
                   <h3 className="loading-title">
-                    {uploadProgress.progress > 0
-                      ? (receiptFiles.length > 0 ? 'جاري رفع الإيصال' : 'جاري معالجة الطلب')
-                      : 'جاري التحضير'}
+                    <span>
+                      {uploadProgress.progress > 0
+                        ? (receiptFiles.length > 0 ? 'جاري رفع الإيصال' : 'جاري معالجة الطلب')
+                        : 'جاري التحضير'}
+                    </span>
                   </h3>
                   <p className="loading-subtitle">
-                    نحن نقوم بتأمين طلبك ومعالجة البيانات، يرجى عدم إغلاق الصفحة.
+                    <span>نحن نقوم بتأمين طلبك ومعالجة البيانات، يرجى عدم إغلاق الصفحة.</span>
                   </p>
                   <div className="progress-bar-wrapper">
                     <div className="progress-bar-track">
@@ -1845,11 +1849,13 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                     </div>
                     <div className="progress-stats">
                       <span className="progress-percentage-text">
-                        {uploadProgress.progress > 0 ? `${uploadProgress.progress}%` : 'جاري الاتصال...'}
+                        <span>
+                          {uploadProgress.progress > 0 ? `${uploadProgress.progress}%` : 'جاري الاتصال...'}
+                        </span>
                       </span>
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
