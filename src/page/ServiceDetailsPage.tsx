@@ -256,7 +256,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   useEffect(() => {
     if (!service || !student) return;
 
-    if (service.id === '1' || service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') {
+    if (service.id === '1' || service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') {
       const initialData: Record<string, any> = {};
       const addressString = student.address
         ? `${student.address.governorate || ''}, ${student.address.city || ''}, ${student.address.street || ''}, ${student.address.building || ''}, ${student.address.siteNumber || ''}${student.address.landmark ? `, ${student.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
@@ -287,7 +287,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
               break;
           }
         } else if (field.type === 'select') {
-          if (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '8' || service.id === '9' || service.id === '10') {
+          if (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') {
             // Set default values for service 4, 5, 8, 9, and 10 fields
             switch (field.name) {
               case 'diploma_type':
@@ -460,7 +460,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     }
 
     // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات ومشروع التخرج واستخراج المستندات، يجب رفع صورة الإيصال
-    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') && receiptFiles.length === 0) {
+    if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && receiptFiles.length === 0) {
       setSubmitMessage({
         type: 'error',
         text: 'يرجى رفع صورة الإيصال أولاً'
@@ -560,12 +560,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       if (service.id === '10') {
         requestData.totalPrice = 700;
       }
+      if (service.id === '11') {
+        requestData.totalPrice = 300;
+      }
 
       const request: ServiceRequest = {
         studentId: student.id || '',
         serviceId: service.id,
         data: requestData,
-        documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') ? receiptFiles : [],
+        documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') ? receiptFiles : [],
         paymentMethod: selectedPaymentMethod,
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -1583,6 +1586,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   </div>
                 </div>
               )}
+              {service.id === '11' && (
+                <div className="payment-amount">
+                  <div className="selected-price">
+                    <strong>
+                      المبلغ المستحق للدفع: 300 جنيه
+                    </strong>
+                  </div>
+                </div>
+              )}
               {service.id === '6' && selectedCertificate && (
                 <div className="payment-amount">
                   <div className="selected-price">
@@ -1729,7 +1741,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </section>
           )}
 
-          {!disabledFields.includes('receipt_upload') && (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') && (
+          {!disabledFields.includes('receipt_upload') && (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && (
             <section className="form-section section-receipt">
               <h2>{service.id === '10' ? 'رفع المستندات وصورة الإيصال' : 'رفع صورة الإيصال'}</h2>
 

@@ -272,6 +272,22 @@ export const SERVICES: Service[] = [
       'شهادة التحول الرقمي',
       'صوره تحويل المبلغ'
     ]
+  },
+  {
+    id: '11',
+    nameEn: 'Receive and Ship Digital Transformation',
+    nameAr: 'استلام و شحن التحول الرقمي',
+    descriptionEn: 'Receive and ship your digital transformation certificate',
+    descriptionAr: 'استلام وشحن شهادة التحول الرقمي الخاصة بك',
+    icon: 'shipping.json',
+    color: '#8B5CF6',
+    fields: [
+      { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
+      { name: 'address', label: 'العنوان بالتفصيل', type: 'editable', required: true },
+      { name: 'whatsapp_number', label: 'رقم للتواصل (تليفون او واتساب)', type: 'editable', required: true },
+      { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true }
+    ],
+    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
   }
 ];
 
