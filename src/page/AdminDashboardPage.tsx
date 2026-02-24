@@ -1873,8 +1873,23 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                         {currentRequests.map((request, index) => {
                           const studentData = students[request.studentId];
+                          const rNationalID = request.data.national_id || studentData?.nationalID;
+                          const rEmail = request.data.email || studentData?.email;
                           const isExpanded = expandedRequests.has(request.id || '');
                           const isLastItem = index === currentRequests.length - 1;
+
+                          // إيجاد عدد مرات التقديم لنفس المستخدم في هذه الخدمة
+                          const userRequestsCount = filteredRequests.filter(
+                            r => {
+                              const rStudentData = students[r.studentId];
+                              const testNationalID = r.data.national_id || rStudentData?.nationalID;
+                              const testEmail = r.data.email || rStudentData?.email;
+                              return r.studentId === request.studentId ||
+                                (testEmail && rEmail && testEmail.toLowerCase() === rEmail.toLowerCase()) ||
+                                (testNationalID && rNationalID && testNationalID === rNationalID);
+                            }
+                          ).length;
+                          const isDuplicate = userRequestsCount > 1;
 
                           const toggleExpand = () => {
                             const newExpanded = new Set(expandedRequests);
@@ -1888,7 +1903,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                           return (
                             <div key={request.id} className="request-row-wrapper">
-                              <div className={`request-row ${isExpanded ? 'expanded' : ''}`}>
+                              <div className={`request-row ${isExpanded ? 'expanded' : ''}`} style={isDuplicate ? { borderRight: '4px solid #ef4444' } : {}}>
                                 {/* Main Row Content */}
                                 <div className="request-row-main">
                                   {/* Right Side: User Info */}
@@ -1896,6 +1911,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                     <div className="request-user-name">
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                         <span>{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
+                                        {isDuplicate && (
+                                          <span style={{ fontSize: '12px', backgroundColor: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)' }}>
+                                            تقديم مكرر ({userRequestsCount})
+                                          </span>
+                                        )}
                                         {(() => {
                                           const dtCode = dtCodes.find(c => c.requestId === request.id && (c.fawryCode || c.serialNumber)) || dtCodes.find(c => c.requestId === request.id);
                                           const epCode = epCodes.find(c => c.requestId === request.id && c.orderNumber) || epCodes.find(c => c.requestId === request.id);
