@@ -4,111 +4,101 @@ import { validateStudentData } from '../utils/validation';
 import { GOVERNORATES, DIPLOMA_YEARS, COURSES, DIPLOMA_TYPES } from '../constants/services';
 import { useStudent } from '../context';
 import { registerUser } from '../services/firebaseService';
-import { AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, ChevronLeft, ChevronRight, Check, User, BookOpen, MapPin, Lock } from 'lucide-react';
+import '../styles/LoginPage.css';
 import '../styles/RegisterPage.css';
 
-const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: () => void }> = ({ onRegistrationSuccess, onGoToLogin }) => {
-  const { setStudent } = useStudent();
-  const [formData, setFormData] = useState<Partial<StudentData>>({
-    address: {
-      governorate: '',
-      city: '',
-      street: '',
-      building: '',
-      siteNumber: '',
-      landmark: ''
-    }
-  });
+const STEPS = [
+  { label: 'بيانات شخصية', icon: <User size={15} /> },
+  { label: 'الدبلوم والشعبة', icon: <BookOpen size={15} /> },
+  { label: 'العنوان والحساب', icon: <Lock size={15} /> },
+];
 
+/* ─── Password strength helper ─── */
+function getStrength(pw: string): { level: number; label: string; cls: string } {
+  if (!pw) return { level: 0, label: '', cls: '' };
+  if (pw.length < 6) return { level: 1, label: 'ضعيفة', cls: 'weak' };
+  if (pw.length < 10 || !/[A-Z]/.test(pw) || !/[0-9]/.test(pw))
+    return { level: 2, label: 'متوسطة', cls: 'medium' };
+  return { level: 3, label: 'قوية', cls: 'strong' };
+}
+
+const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: () => void }> = ({
+  onRegistrationSuccess,
+  onGoToLogin,
+}) => {
+  const { setStudent } = useStudent();
+  const [step, setStep] = useState(0); // 0, 1, 2
+  const [formData, setFormData] = useState<Partial<StudentData>>({
+    address: { governorate: '', city: '', street: '', building: '', siteNumber: '', landmark: '' },
+  });
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isCourseOther, setIsCourseOther] = useState(false);
 
-  const getFieldError = (fieldName: string): string | undefined => {
-    return errors.find(e => e.field === fieldName)?.message;
-  };
+  const getFieldError = (fieldName: string) =>
+    errors.find((e) => e.field === fieldName)?.message;
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    // Clear error for this field when user starts typing
-    setErrors(prev => prev.filter(e => e.field !== field));
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setErrors((prev) => prev.filter((e) => e.field !== field));
   };
 
   const handleAddressChange = (field: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      address: {
-        ...prev.address!,
-        [field]: value
+    setFormData((prev) => ({ ...prev, address: { ...prev.address!, [field]: value } }));
+    setErrors((prev) => prev.filter((e) => !e.field.startsWith('address.')));
+  };
+
+  /* Step validation before advancing */
+  const validateStep = (): boolean => {
+    const stepFields: Record<number, string[]> = {
+      0: ['fullNameArabic', 'vehicleNameEnglish', 'whatsappNumber', 'nationalID'],
+      1: ['diplomaYear', 'diplomaType', 'course'],
+      2: ['address.governorate', 'address.city', 'address.street', 'address.building', 'email', 'password'],
+    };
+    const allErrors: ValidationError[] = [];
+    const fields = stepFields[step];
+
+    fields.forEach((f) => {
+      if (f.startsWith('address.')) {
+        const key = f.split('.')[1];
+        const val = (formData.address as any)?.[key];
+        if (!val || val.trim() === '') allErrors.push({ field: f, message: 'هذا الحقل مطلوب' });
+      } else {
+        const val = (formData as any)[f];
+        if (!val || (typeof val === 'string' && val.trim() === ''))
+          allErrors.push({ field: f, message: 'هذا الحقل مطلوب' });
       }
-    }));
-    setErrors(prev => prev.filter(e => !e.field.startsWith('address.')));
+    });
+
+    if (allErrors.length > 0) { setErrors(allErrors); return false; }
+    return true;
+  };
+
+  const nextStep = () => {
+    if (validateStep()) setStep((s) => Math.min(s + 1, 2));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('🔵 Registration form submitted');
-    console.log('Form data:', formData);
+    if (!validateStep()) return;
 
     setIsSubmitting(true);
     setSubmitError('');
 
-    const validationErrors = validateStudentData(formData as StudentData);
-    console.log('Validation errors:', validationErrors);
-
-    if (validationErrors.length > 0) {
-      setErrors(validationErrors);
+    const allErrors = validateStudentData(formData as StudentData);
+    if (allErrors.length > 0) {
+      setErrors(allErrors);
+      setSubmitError('يرجى مراجعة الحقول المطلوبة');
       setIsSubmitting(false);
-
-      // عرض رسالة خطأ واضحة للمستخدم مع تفاصيل الحقول
-      console.log('❌ Validation failed - Errors:', validationErrors);
-
-      // ترجمة أسماء الحقول للعربية
-      const fieldNames: Record<string, string> = {
-        'fullNameArabic': 'الاسم الكامل بالعربية',
-        'vehicleNameEnglish': 'الاسم بالإنجليزية',
-        'whatsappNumber': 'رقم الواتساب',
-        'nationalID': 'الرقم القومي',
-        'diplomaYear': 'سنة الدبلوم',
-        'diplomaType': 'نوع الدبلوم',
-        'course': 'الشعبة الدراسية',
-        'address.governorate': 'المحافظة',
-        'address.city': 'المدينة',
-        'address.street': 'الشارع',
-        'address.building': 'رقم المبنى',
-        'address.siteNumber': 'رقم الموقع',
-        'email': 'البريد الإلكتروني',
-        'password': 'كلمة المرور'
-      };
-
-      const errorList = validationErrors.map(e => {
-        const fieldName = fieldNames[e.field] || e.field;
-        return `• ${fieldName}: ${e.message}`;
-      }).join('\n');
-
-      setSubmitError(`يرجى تصحيح الأخطاء التالية:\n${errorList}`);
-
-      // Scroll to top to show errors
-      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
     try {
       const email = formData.email || '';
       const password = formData.password || '';
-
-      if (!email || !password) {
-        setSubmitError('البريد الإلكتروني وكلمة المرور مطلوبان');
-        setIsSubmitting(false);
-        console.log('❌ Email or password missing');
-        return;
-      }
-
       const studentData: StudentData = {
         fullNameArabic: formData.fullNameArabic || '',
         vehicleNameEnglish: formData.vehicleNameEnglish || '',
@@ -116,388 +106,381 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
         diplomaYear: formData.diplomaYear || '',
         diplomaType: formData.diplomaType || '',
         nationalID: formData.nationalID || '',
-        address: formData.address || {
-          governorate: '',
-          city: '',
-          street: '',
-          building: '',
-          siteNumber: '',
-          landmark: ''
-        },
+        address: formData.address || { governorate: '', city: '', street: '', building: '', siteNumber: '' },
         course: formData.course || '',
-        email: email,
-        password: password
+        email,
+        password,
       };
-
-      console.log('🔄 Calling registerUser...');
-      // Register with Firebase
       const user = await registerUser(email, password, studentData);
-      console.log('✅ User registered successfully:', user.uid);
-
-      // Get the saved student data with the ID from Firebase
-      const savedStudentData: StudentData = {
-        ...studentData,
-        id: user.uid,
-        createdAt: new Date().toISOString()
-      };
-
-      setStudent(savedStudentData);
-      console.log('✅ Registration complete, calling onRegistrationSuccess');
+      setStudent({ ...studentData, id: user.uid, createdAt: new Date().toISOString() });
       onRegistrationSuccess();
     } catch (error: any) {
-      console.error('❌ Registration error:', error);
       setSubmitError(error.message || 'حدث خطأ أثناء التسجيل. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  return (
-    <div className="register-page">
-      <div className="register-container">
-        <div className="register-header">
-          <div className="logo">
-            <div className="logo-icon">🎓</div>
+  const strength = getStrength(formData.password || '');
+
+  /* ─── Step 1: Personal Data ─── */
+  const renderStep0 = () => (
+    <div className="auth-step-content">
+      <p className="auth-section-title"><User size={17} /> البيانات الشخصية</p>
+
+      <div className="auth-row">
+        <div className="auth-field">
+          <label htmlFor="fullNameArabic">الاسم بالعربية <span className="req">*</span></label>
+          <input
+            id="fullNameArabic" type="text" dir="rtl"
+            placeholder="الاسم رباعي بالعربية"
+            value={formData.fullNameArabic || ''}
+            onChange={(e) => handleInputChange('fullNameArabic', e.target.value)}
+            className={getFieldError('fullNameArabic') ? 'has-error' : ''}
+          />
+          {getFieldError('fullNameArabic') && <div className="field-error"><AlertCircle size={12} />{getFieldError('fullNameArabic')}</div>}
+        </div>
+        <div className="auth-field">
+          <label htmlFor="vehicleNameEnglish">الاسم بالإنجليزية <span className="req">*</span></label>
+          <input
+            id="vehicleNameEnglish" type="text" dir="ltr" style={{ textAlign: 'right' }}
+            placeholder="Full name in English"
+            value={formData.vehicleNameEnglish || ''}
+            onChange={(e) => handleInputChange('vehicleNameEnglish', e.target.value)}
+            className={getFieldError('vehicleNameEnglish') ? 'has-error' : ''}
+          />
+          {getFieldError('vehicleNameEnglish') && <div className="field-error"><AlertCircle size={12} />{getFieldError('vehicleNameEnglish')}</div>}
+        </div>
+      </div>
+
+      <div className="auth-row">
+        <div className="auth-field has-counter">
+          <label htmlFor="whatsappNumber">رقم الواتساب <span className="req">*</span></label>
+          <div className="auth-input-wrap">
+            <input
+              id="whatsappNumber" type="tel" inputMode="numeric"
+              placeholder="01xxxxxxxxx" maxLength={11}
+              value={formData.whatsappNumber || ''}
+              onChange={(e) => handleInputChange('whatsappNumber', e.target.value.replace(/\D/g, ''))}
+              className={getFieldError('whatsappNumber') ? 'has-error' : ''}
+            />
+            <span className={`auth-char-count ${formData.whatsappNumber?.length === 11 ? 'done' : ''}`}>
+              {formData.whatsappNumber?.length || 0}/11
+            </span>
           </div>
-          <h1>منصة HP للخدمات التعليمية</h1>
-          <p>أدخل بياناتك للاشتراك في خدماتنا التعليمية</p>
+          {getFieldError('whatsappNumber') && <div className="field-error"><AlertCircle size={12} />{getFieldError('whatsappNumber')}</div>}
+        </div>
+        <div className="auth-field has-counter">
+          <label htmlFor="nationalID">الرقم القومي <span className="req">*</span></label>
+          <div className="auth-input-wrap">
+            <input
+              id="nationalID" type="tel" inputMode="numeric"
+              placeholder="أدخل 14 رقم" maxLength={14}
+              value={formData.nationalID || ''}
+              onChange={(e) => handleInputChange('nationalID', e.target.value.replace(/\D/g, ''))}
+              className={getFieldError('nationalID') ? 'has-error' : ''}
+            />
+            <span className={`auth-char-count ${formData.nationalID?.length === 14 ? 'done' : ''}`}>
+              {formData.nationalID?.length || 0}/14
+            </span>
+          </div>
+          {getFieldError('nationalID') && <div className="field-error"><AlertCircle size={12} />{getFieldError('nationalID')}</div>}
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ─── Step 2: Diploma & Course ─── */
+  const renderStep1 = () => (
+    <div className="auth-step-content">
+      <p className="auth-section-title"><BookOpen size={17} /> بيانات الدبلوم والشعبة</p>
+
+      <div className="auth-row">
+        <div className="auth-field">
+          <label htmlFor="diplomaYear">سنة الدبلوم <span className="req">*</span></label>
+          <select
+            id="diplomaYear"
+            value={formData.diplomaYear || ''}
+            onChange={(e) => handleInputChange('diplomaYear', e.target.value)}
+            className={getFieldError('diplomaYear') ? 'has-error' : ''}
+          >
+            <option value="">اختر السنة</option>
+            {DIPLOMA_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          {getFieldError('diplomaYear') && <div className="field-error"><AlertCircle size={12} />{getFieldError('diplomaYear')}</div>}
+        </div>
+        <div className="auth-field">
+          <label htmlFor="diplomaType">نوع الدبلوم <span className="req">*</span></label>
+          <select
+            id="diplomaType"
+            value={formData.diplomaType || ''}
+            onChange={(e) => handleInputChange('diplomaType', e.target.value)}
+            className={getFieldError('diplomaType') ? 'has-error' : ''}
+          >
+            <option value="">اختر النوع</option>
+            {DIPLOMA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          {getFieldError('diplomaType') && <div className="field-error"><AlertCircle size={12} />{getFieldError('diplomaType')}</div>}
+        </div>
+      </div>
+
+      <div className="auth-field">
+        <label htmlFor="course">الشعبة الدراسية <span className="req">*</span></label>
+        <select
+          id="course"
+          value={isCourseOther ? 'other' : (formData.course || '')}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === 'other') { setIsCourseOther(true); handleInputChange('course', ''); }
+            else { setIsCourseOther(false); handleInputChange('course', val); }
+          }}
+          className={getFieldError('course') ? 'has-error' : ''}
+        >
+          <option value="">اختر الشعبة الدراسية</option>
+          {COURSES.map((c) => <option key={c} value={c}>{c}</option>)}
+          <option value="other">أخرى</option>
+        </select>
+        {isCourseOther && (
+          <input
+            type="text"
+            placeholder="اكتب اسم الشعبة"
+            value={formData.course || ''}
+            onChange={(e) => handleInputChange('course', e.target.value)}
+            style={{ marginTop: '10px' }}
+          />
+        )}
+        {getFieldError('course') && <div className="field-error"><AlertCircle size={12} />{getFieldError('course')}</div>}
+      </div>
+    </div>
+  );
+
+  /* ─── Step 3: Address + Account ─── */
+  const renderStep2 = () => (
+    <div className="auth-step-content">
+      <p className="auth-section-title"><MapPin size={17} /> العنوان</p>
+
+      <div className="auth-row">
+        <div className="auth-field">
+          <label htmlFor="governorate">المحافظة <span className="req">*</span></label>
+          <select
+            id="governorate"
+            value={formData.address?.governorate || ''}
+            onChange={(e) => handleAddressChange('governorate', e.target.value)}
+            className={getFieldError('address.governorate') ? 'has-error' : ''}
+          >
+            <option value="">اختر المحافظة</option>
+            {GOVERNORATES.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+          {getFieldError('address.governorate') && <div className="field-error"><AlertCircle size={12} />{getFieldError('address.governorate')}</div>}
+        </div>
+        <div className="auth-field">
+          <label htmlFor="city">المدينة <span className="req">*</span></label>
+          <input
+            id="city" type="text" placeholder="اسم المدينة"
+            value={formData.address?.city || ''}
+            onChange={(e) => handleAddressChange('city', e.target.value)}
+            className={getFieldError('address.city') ? 'has-error' : ''}
+          />
+          {getFieldError('address.city') && <div className="field-error"><AlertCircle size={12} />{getFieldError('address.city')}</div>}
+        </div>
+      </div>
+
+      <div className="auth-row">
+        <div className="auth-field">
+          <label htmlFor="street">الشارع <span className="req">*</span></label>
+          <input
+            id="street" type="text" placeholder="اسم الشارع"
+            value={formData.address?.street || ''}
+            onChange={(e) => handleAddressChange('street', e.target.value)}
+            className={getFieldError('address.street') ? 'has-error' : ''}
+          />
+          {getFieldError('address.street') && <div className="field-error"><AlertCircle size={12} />{getFieldError('address.street')}</div>}
+        </div>
+        <div className="auth-field">
+          <label htmlFor="building">رقم المبنى <span className="req">*</span></label>
+          <input
+            id="building" type="text" placeholder="رقم المبنى"
+            value={formData.address?.building || ''}
+            onChange={(e) => handleAddressChange('building', e.target.value)}
+            className={getFieldError('address.building') ? 'has-error' : ''}
+          />
+          {getFieldError('address.building') && <div className="field-error"><AlertCircle size={12} />{getFieldError('address.building')}</div>}
+        </div>
+      </div>
+
+      <div className="auth-field">
+        <label htmlFor="landmark">معلم قريب (اختياري)</label>
+        <input
+          id="landmark" type="text" placeholder="مسجد، مدرسة، مستشفى..."
+          value={formData.address?.landmark || ''}
+          onChange={(e) => handleAddressChange('landmark', e.target.value)}
+        />
+      </div>
+
+      <p className="auth-section-title" style={{ marginTop: '16px' }}><Lock size={17} /> بيانات الحساب</p>
+
+      <div className="auth-row">
+        <div className="auth-field">
+          <label htmlFor="reg-email">البريد الإلكتروني <span className="req">*</span></label>
+          <input
+            id="reg-email" type="email" placeholder="example@email.com"
+            autoComplete="off" readOnly
+            onFocus={(e) => (e.currentTarget.readOnly = false)}
+            value={formData.email || ''}
+            onChange={(e) => handleInputChange('email', e.target.value)}
+            className={getFieldError('email') ? 'has-error' : ''}
+          />
+          {getFieldError('email') && <div className="field-error"><AlertCircle size={12} />{getFieldError('email')}</div>}
+        </div>
+        <div className="auth-field">
+          <label htmlFor="reg-password">كلمة المرور <span className="req">*</span></label>
+          <div className="auth-input-wrap">
+            <input
+              id="reg-password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="أدخل كلمة المرور"
+              autoComplete="new-password" readOnly
+              onFocus={(e) => (e.currentTarget.readOnly = false)}
+              value={formData.password || ''}
+              onChange={(e) => handleInputChange('password', e.target.value)}
+              className={getFieldError('password') ? 'has-error' : ''}
+            />
+            <button type="button" className="auth-pass-toggle" onClick={() => setShowPassword((p) => !p)}>
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          {formData.password && (
+            <>
+              <div className="auth-pass-strength">
+                {[1, 2, 3].map((l) => (
+                  <div key={l} className={`auth-strength-bar ${strength.level >= l ? strength.cls : ''}`} />
+                ))}
+              </div>
+              <div className={`auth-strength-label ${strength.cls}`}>{strength.label}</div>
+            </>
+          )}
+          {getFieldError('password') && <div className="field-error"><AlertCircle size={12} />{getFieldError('password')}</div>}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="auth-page">
+      {/* ─── LEFT PANEL ─── */}
+      <div className="auth-panel-left">
+        <div className="auth-particles">
+          {[...Array(8)].map((_, i) => <span key={i} />)}
         </div>
 
+        <div className="auth-panel-brand">
+          <div className="auth-brand-icon">🎓</div>
+          <h1 className="auth-brand-title">منصة HP للخدمات التعليمية</h1>
+          <p className="auth-brand-subtitle">
+            انضم إلى آلاف الطلاب وأنجز خدماتك الأكاديمية بسهولة وسرعة
+          </p>
+        </div>
+
+        <div className="auth-features">
+          <div className="auth-feature-item">
+            <span className="auth-feature-icon">📝</span>
+            <div className="auth-feature-text">
+              <h4>تسجيل سريع</h4>
+              <p>إنشاء حسابك في دقيقتين فقط</p>
+            </div>
+          </div>
+          <div className="auth-feature-item">
+            <span className="auth-feature-icon">🎯</span>
+            <div className="auth-feature-text">
+              <h4>خدمات متنوعة</h4>
+              <p>استخراج الوثائق، الرسوم، التكليفات...</p>
+            </div>
+          </div>
+          <div className="auth-feature-item">
+            <span className="auth-feature-icon">💬</span>
+            <div className="auth-feature-text">
+              <h4>دعم مستمر</h4>
+              <p>فريق متاح للمساعدة دائماً</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="auth-panel-quote">
+          "العلم نور يضيء طريق المستقبل"
+        </div>
+      </div>
+
+      {/* ─── RIGHT FORM PANEL ─── */}
+      <div className="auth-panel-right">
+        {/* Tab toggle */}
+        <div className="auth-tabs">
+          <button className="auth-tab" onClick={onGoToLogin}>تسجيل الدخول</button>
+          <button className="auth-tab active">إنشاء حساب</button>
+        </div>
+
+        <div className="auth-form-header">
+          <h2>إنشاء حساب جديد ✨</h2>
+          <p>أكمل الخطوات الثلاث للتسجيل</p>
+        </div>
+
+        {/* Stepper */}
+        <div className="auth-stepper">
+          {STEPS.map((s, i) => (
+            <div
+              key={i}
+              className={`auth-step ${i < step ? 'done' : ''} ${i === step ? 'active' : ''}`}
+            >
+              <div className="auth-step-dot">
+                {i < step ? <Check size={16} /> : i + 1}
+              </div>
+              <span className="auth-step-label">{s.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Error */}
         {submitError && (
-          <div className="error-alert">
-            <AlertCircle size={20} />
+          <div className="auth-error-alert">
+            <AlertCircle size={18} />
             <span>{submitError}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="register-form" autoComplete="off">
-          {/* hidden dummy fields to prevent browser autofill */}
-          <input type="text" name="fake-username" autoComplete="username" style={{ position: 'absolute', left: '-9999px', top: '0', opacity: 0 }} />
-          <input type="password" name="fake-password" autoComplete="new-password" style={{ position: 'absolute', left: '-9999px', top: '0', opacity: 0 }} />
-          <div className="form-section">
-            <h2>البيانات الشخصية</h2>
+        {/* Step content */}
+        <form onSubmit={handleSubmit} style={{ width: '100%' }} autoComplete="off">
+          <input type="text" name="fake-name" autoComplete="name" style={{ display: 'none' }} />
+          <input type="password" name="fake-pass" autoComplete="new-password" style={{ display: 'none' }} />
 
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="fullNameArabic">الاسم الكامل (عربي) *</label>
-                <input
-                  id="fullNameArabic"
-                  type="text"
-                  dir="rtl"
-                  placeholder="ادخل اسمك رباعي باللغة العربية"
-                  value={formData.fullNameArabic || ''}
-                  onChange={(e) => handleInputChange('fullNameArabic', e.target.value)}
-                  className={getFieldError('fullNameArabic') ? 'error' : ''}
-                />
-                {getFieldError('fullNameArabic') && (
-                  <span className="error-message">{getFieldError('fullNameArabic')}</span>
+          {step === 0 && renderStep0()}
+          {step === 1 && renderStep1()}
+          {step === 2 && renderStep2()}
+
+          <div className="auth-step-nav">
+            {step > 0 && (
+              <button type="button" className="auth-back-btn" onClick={() => setStep((s) => s - 1)}>
+                <ChevronRight size={18} /> السابق
+              </button>
+            )}
+            {step < 2 ? (
+              <button type="button" className="auth-next-btn" onClick={nextStep}>
+                التالي <ChevronLeft size={18} />
+              </button>
+            ) : (
+              <button type="submit" className="auth-next-btn" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <><div className="spinner" style={{ width: 18, height: 18, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> جاري التسجيل...</>
+                ) : (
+                  <><Check size={18} /> إنشاء الحساب</>
                 )}
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="vehicleNameEnglish">الاسم بالإنجليزية *</label>
-                <input
-                  id="vehicleNameEnglish"
-                  type="text"
-                  dir="ltr"
-                  style={{ textAlign: 'right' }}
-                  placeholder="الاسم الرباعي بالإنجليزية"
-                  value={formData.vehicleNameEnglish || ''}
-                  onChange={(e) => handleInputChange('vehicleNameEnglish', e.target.value)}
-                  className={getFieldError('vehicleNameEnglish') ? 'error' : ''}
-                />
-                {getFieldError('vehicleNameEnglish') && (
-                  <span className="error-message">{getFieldError('vehicleNameEnglish')}</span>
-                )}
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="whatsappNumber">رقم الواتس * (11 رقم)</label>
-                <div className="input-container">
-                  <input
-                    id="whatsappNumber"
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="01xxxxxxxxx"
-                    maxLength={11}
-                    value={formData.whatsappNumber || ''}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '');
-                      handleInputChange('whatsappNumber', value);
-                    }}
-                    className={getFieldError('whatsappNumber') ? 'error' : ''}
-                  />
-                  <small className={`char-count ${formData.whatsappNumber?.length === 11 ? 'success' : ''}`}>
-                    {formData.whatsappNumber?.length || 0} / 11
-                  </small>
-                </div>
-                {getFieldError('whatsappNumber') && (
-                  <span className="error-message">{getFieldError('whatsappNumber')}</span>
-                )}
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="nationalID">الرقم القومي * (14 رقم)</label>
-                <div className="input-container">
-                  <input
-                    id="nationalID"
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="أدخل 14 رقم"
-                    maxLength={14}
-                    value={formData.nationalID || ''}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '');
-                      handleInputChange('nationalID', value);
-                    }}
-                    className={getFieldError('nationalID') ? 'error' : ''}
-                  />
-                  <small className={`char-count ${formData.nationalID?.length === 14 ? 'success' : ''}`}>
-                    {formData.nationalID?.length || 0} / 14
-                  </small>
-                </div>
-                {getFieldError('nationalID') && (
-                  <span className="error-message">{getFieldError('nationalID')}</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="form-section">
-            <h2>بيانات الدبلوم</h2>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="diplomaYear">سنة الدبلوم *</label>
-                <select
-                  id="diplomaYear"
-                  value={formData.diplomaYear || ''}
-                  onChange={(e) => handleInputChange('diplomaYear', e.target.value)}
-                  className={getFieldError('diplomaYear') ? 'error' : ''}
-                >
-                  <option value="">اختر السنة</option>
-                  {DIPLOMA_YEARS.map(year => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-                {getFieldError('diplomaYear') && (
-                  <span className="error-message">{getFieldError('diplomaYear')}</span>
-                )}
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="diplomaType">نوع الدبلوم *</label>
-                <select
-                  id="diplomaType"
-                  value={formData.diplomaType || ''}
-                  onChange={(e) => handleInputChange('diplomaType', e.target.value)}
-                  className={getFieldError('diplomaType') ? 'error' : ''}
-                >
-                  <option value="">اختر نوع الدبلوم</option>
-                  {DIPLOMA_TYPES.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
-                {getFieldError('diplomaType') && (
-                  <span className="error-message">{getFieldError('diplomaType')}</span>
-                )}
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="course">الشعبة الدراسية *</label>
-              <select
-                id="course"
-                value={isCourseOther ? 'other' : (formData.course || '')}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === 'other') {
-                    setIsCourseOther(true);
-                    handleInputChange('course', '');
-                  } else {
-                    setIsCourseOther(false);
-                    handleInputChange('course', val);
-                  }
-                }}
-                className={getFieldError('course') ? 'error' : ''}
-              >
-                <option value="">اختر الشعبة الدراسية</option>
-                {COURSES.map(course => (
-                  <option key={course} value={course}>{course}</option>
-                ))}
-                <option value="other">أخرى</option>
-              </select>
-
-              {isCourseOther && (
-                <input
-                  type="text"
-                  placeholder="اكتب اسم الشعبة هنا"
-                  value={formData.course || ''}
-                  onChange={(e) => handleInputChange('course', e.target.value)}
-                  className={`mt-2 ${getFieldError('course') ? 'error' : ''}`}
-                  style={{ marginTop: '8px' }}
-                />
-              )}
-
-              {getFieldError('course') && (
-                <span className="error-message">{getFieldError('course')}</span>
-              )}
-            </div>
-          </div>
-
-          <div className="form-section">
-            <h2>العنوان</h2>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="governorate">المحافظة *</label>
-                <select
-                  id="governorate"
-                  value={formData.address?.governorate || ''}
-                  onChange={(e) => handleAddressChange('governorate', e.target.value)}
-                  className={getFieldError('address.governorate') ? 'error' : ''}
-                >
-                  <option value="">اختر المحافظة</option>
-                  {GOVERNORATES.map(gov => (
-                    <option key={gov} value={gov}>{gov}</option>
-                  ))}
-                </select>
-                {getFieldError('address.governorate') && (
-                  <span className="error-message">{getFieldError('address.governorate')}</span>
-                )}
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="city">المدينة *</label>
-                <input
-                  id="city"
-                  type="text"
-                  placeholder="اسم المدينة أو السوق"
-                  value={formData.address?.city || ''}
-                  onChange={(e) => handleAddressChange('city', e.target.value)}
-                  className={getFieldError('address.city') ? 'error' : ''}
-                />
-                {getFieldError('address.city') && (
-                  <span className="error-message">{getFieldError('address.city')}</span>
-                )}
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="street">الشارع *</label>
-                <input
-                  id="street"
-                  type="text"
-                  placeholder="اسم الشارع"
-                  value={formData.address?.street || ''}
-                  onChange={(e) => handleAddressChange('street', e.target.value)}
-                  className={getFieldError('address.street') ? 'error' : ''}
-                />
-                {getFieldError('address.street') && (
-                  <span className="error-message">{getFieldError('address.street')}</span>
-                )}
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="building">رقم المبنى/المنزل *</label>
-                <input
-                  id="building"
-                  type="text"
-                  placeholder="رقم المبنى"
-                  value={formData.address?.building || ''}
-                  onChange={(e) => handleAddressChange('building', e.target.value)}
-                  className={getFieldError('address.building') ? 'error' : ''}
-                />
-                {getFieldError('address.building') && (
-                  <span className="error-message">{getFieldError('address.building')}</span>
-                )}
-              </div>
-            </div>
-
-            <div className="form-row">
-
-              <div className="form-group">
-                <label htmlFor="landmark">معلم قريب (اختياري)</label>
-                <input
-                  id="landmark"
-                  type="text"
-                  placeholder="مسجد، مدرسة، مستشفى..."
-                  value={formData.address?.landmark || ''}
-                  onChange={(e) => handleAddressChange('landmark', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="form-section">
-            <h2>بيانات الحساب</h2>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="email">البريد الإلكتروني *</label>
-                <input
-                  id="email"
-                  name="register-email"
-                  type="email"
-                  placeholder="example@example.com"
-                  autoComplete="off"
-                  readOnly={true}
-                  onFocus={(e) => (e.currentTarget.readOnly = false)}
-                  value={formData.email || ''}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
-                  className={getFieldError('email') ? 'error' : ''}
-                />
-                {getFieldError('email') && (
-                  <span className="error-message">{getFieldError('email')}</span>
-                )}
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="password">كلمة المرور *</label>
-                <div className="password-wrapper">
-                  <input
-                    id="password"
-                    name="register-password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="أدخل كلمة المرور"
-                    autoComplete="new-password"
-                    readOnly={true}
-                    onFocus={(e) => (e.currentTarget.readOnly = false)}
-                    value={formData.password || ''}
-                    onChange={(e) => handleInputChange('password', e.target.value)}
-                    className={getFieldError('password') ? 'error' : ''}
-                  />
-                  <button
-                    type="button"
-                    className="password-toggle"
-                    aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-                    onClick={() => setShowPassword(prev => !prev)}
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-                {getFieldError('password') && (
-                  <span className="error-message">{getFieldError('password')}</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="submit-button"
-          >
-            {isSubmitting ? 'جاري التسجيل...' : 'التسجيل'}
-          </button>
-
-          <div className="login-link">
-            <p>لديك حساب بالفعل؟ <button type="button" onClick={onGoToLogin} className="link-button">سجل الدخول</button></p>
+              </button>
+            )}
           </div>
         </form>
+
+        <div className="auth-switch">
+          لديك حساب بالفعل؟{' '}
+          <button type="button" onClick={onGoToLogin}>سجل الدخول</button>
+        </div>
       </div>
     </div>
   );
