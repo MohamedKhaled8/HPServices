@@ -185,28 +185,24 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         // لا تظهر البوب أب إذا لم يكن هناك timestamp حقيقي
         if (!currentNewsTimestamp || currentNewsTimestamp === 0) return;
 
-        // مفتاح الجلسة: إذا كان المستخدم شاهد هذا الخبر في هذه الجلسة، لا تُظهره مرة أخرى
-        const sessionKey = `news_seen_${currentNewsTimestamp}`;
-        if (sessionStorage.getItem(sessionKey)) return;
-
         // تحقق من localStorage: إذا كان المستخدم شاهد هذا الخبر من قبل، لا تُظهره
         const lastSeenTimestamp = localStorage.getItem('lastSeenNewsDate');
         if (lastSeenTimestamp && Number(lastSeenTimestamp) >= currentNewsTimestamp) return;
 
-        // الخبر جديد ولم يُشاهَد → ضع علامة في sessionStorage وأظهره
-        sessionStorage.setItem(sessionKey, '1');
+        // الخبر جديد ولم يُشاهَد → احفظه في localStorage وأظهره لمرة واحدة فقط
+        localStorage.setItem('lastSeenNewsDate', String(currentNewsTimestamp));
         setTimeout(() => setNewsPopupOpen(true), 2000);
       }
     });
 
     const unsubscribeQuick = subscribeToQuickNotification((data) => {
       if (data && data.content && data.id) {
-        // تحقق من sessionStorage: هل رأى المستخدم هذه الرسالة في هذه الجلسة؟
-        const sessionKey = `quick_seen_${data.id}`;
-        if (sessionStorage.getItem(sessionKey)) return;
+        // تحقق من localStorage: هل رأى المستخدم هذه الرسالة مسبقاً؟
+        const localKey = `quick_seen_${data.id}`;
+        if (localStorage.getItem(localKey)) return;
 
-        // الرسالة جديدة → ضع علامة وأظهرها مرة واحدة فقط
-        sessionStorage.setItem(sessionKey, '1');
+        // الرسالة جديدة → ضع علامة في localStorage وأظهرها مرة واحدة فقط للأبد
+        localStorage.setItem(localKey, '1');
         setQuickNotification(data);
         setShowQuickNotify(true);
         // إخفاء تلقائي بعد 6 ثوانٍ
@@ -222,14 +218,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   const handleCloseNewsPopup = () => {
     setNewsPopupOpen(false);
-    if (latestNewsData) {
-      const currentNewsTimestamp = latestNewsData.updatedAt?.seconds ||
-        (latestNewsData.updatedAt instanceof Date ? latestNewsData.updatedAt.getTime() / 1000 :
-          (typeof latestNewsData.updatedAt === 'string' ? new Date(latestNewsData.updatedAt).getTime() / 1000 : 0));
-      if (currentNewsTimestamp) {
-        localStorage.setItem('lastSeenNewsDate', String(currentNewsTimestamp));
-      }
-    }
   };
 
 

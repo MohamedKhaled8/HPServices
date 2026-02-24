@@ -85,6 +85,7 @@ import CustomToast from '../components/CustomToast';
 import '../styles/AdminDashboardPage.css';
 import '../styles/AdminExpandableRows.css';
 import '../styles/AdminNewsEditor.css';
+import { motion, AnimatePresence } from 'framer-motion';
 
 
 interface AdminDashboardPageProps {
@@ -3357,176 +3358,213 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               <h2>إدارة الخدمات (تفعيل/تعطيل)</h2>
             </div>
             <div className="services-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', padding: '20px 0' }}>
-              {[...SERVICES]
-                .sort((a, b) => {
-                  const orderA = adminPrefs.serviceOrder?.indexOf(a.id) ?? -1;
-                  const orderB = adminPrefs.serviceOrder?.indexOf(b.id) ?? -1;
-                  const rankA = orderA === -1 ? 999 : orderA;
-                  const rankB = orderB === -1 ? 999 : orderB;
-                  return rankA - rankB;
-                })
-                .map((service, index, arr) => {
-                  const isActive = isServiceActive(service.id);
-                  const disabledFields = getDisabledFields(service.id);
+              <AnimatePresence>
+                {[...SERVICES]
+                  .sort((a, b) => {
+                    const orderA = adminPrefs.serviceOrder?.indexOf(a.id) ?? -1;
+                    const orderB = adminPrefs.serviceOrder?.indexOf(b.id) ?? -1;
+                    const rankA = orderA === -1 ? 999 : orderA;
+                    const rankB = orderB === -1 ? 999 : orderB;
+                    return rankA - rankB;
+                  })
+                  .map((service, index, arr) => {
+                    const isActive = isServiceActive(service.id);
+                    const disabledFields = getDisabledFields(service.id);
 
-                  const handleToggleActive = async () => {
-                    const newSettings = {
-                      ...serviceSettings,
-                      [service.id]: { active: !isActive, disabledFields }
+                    const handleToggleActive = async () => {
+                      const newSettings = {
+                        ...serviceSettings,
+                        [service.id]: { active: !isActive, disabledFields }
+                      };
+                      setServiceSettings(newSettings as any);
+                      try {
+                        await updateServiceSettings(newSettings as any);
+                      } catch (e) {
+                        alert('فشل تحديث الحالة');
+                      }
                     };
-                    setServiceSettings(newSettings as any);
-                    try {
-                      await updateServiceSettings(newSettings as any);
-                    } catch (e) {
-                      alert('فشل تحديث الحالة');
-                    }
-                  };
 
-                  const handleToggleField = async (fieldName: string) => {
-                    const isFieldDisabled = disabledFields.includes(fieldName);
-                    const newDisabledFields = isFieldDisabled
-                      ? disabledFields.filter(f => f !== fieldName)
-                      : [...disabledFields, fieldName];
-                    const newSettings = {
-                      ...serviceSettings,
-                      [service.id]: { active: isActive, disabledFields: newDisabledFields }
+                    const handleToggleField = async (fieldName: string) => {
+                      const isFieldDisabled = disabledFields.includes(fieldName);
+                      const newDisabledFields = isFieldDisabled
+                        ? disabledFields.filter(f => f !== fieldName)
+                        : [...disabledFields, fieldName];
+                      const newSettings = {
+                        ...serviceSettings,
+                        [service.id]: { active: isActive, disabledFields: newDisabledFields }
+                      };
+                      setServiceSettings(newSettings as any);
+                      try {
+                        await updateServiceSettings(newSettings as any);
+                      } catch (e) {
+                        alert('فشل تحديث الإعدادات');
+                      }
                     };
-                    setServiceSettings(newSettings as any);
-                    try {
-                      await updateServiceSettings(newSettings as any);
-                    } catch (e) {
-                      alert('فشل تحديث الإعدادات');
-                    }
-                  };
 
-                  const handleDragStart = (e: React.DragEvent) => {
-                    setDraggedServiceId(service.id);
-                    e.dataTransfer.effectAllowed = 'move';
-                    if (e.currentTarget instanceof HTMLElement) {
-                      e.currentTarget.style.opacity = '0.5';
-                    }
-                  };
+                    const handleDragStart = (e: React.DragEvent) => {
+                      setDraggedServiceId(service.id);
+                      e.dataTransfer.effectAllowed = 'move';
 
-                  const handleDragEnd = (e: React.DragEvent) => {
-                    setDraggedServiceId(null);
-                    if (e.currentTarget instanceof HTMLElement) {
-                      e.currentTarget.style.opacity = '1';
-                    }
-                  };
+                      if (e.currentTarget instanceof HTMLElement) {
+                        const target = e.currentTarget;
+                        const rect = target.getBoundingClientRect();
 
-                  const handleDragOver = (e: React.DragEvent) => {
-                    e.preventDefault();
-                    if (draggedServiceId !== service.id) {
-                      e.dataTransfer.dropEffect = 'move';
-                    }
-                  };
+                        // Create a clone to act as a solid, customized drag image
+                        const clone = target.cloneNode(true) as HTMLElement;
+                        clone.style.width = `${rect.width}px`;
+                        clone.style.height = `${rect.height}px`;
+                        clone.style.position = 'absolute';
+                        clone.style.top = '-9999px';
+                        clone.style.left = '-9999px';
+                        clone.style.backgroundColor = 'white';
+                        clone.style.borderRadius = '16px';
+                        clone.style.border = '2px solid #3b82f6';
+                        clone.style.boxShadow = '0 25px 50px -12px rgba(59, 130, 246, 0.4)';
+                        clone.style.opacity = '1';
+                        clone.style.zIndex = '99999';
+                        clone.style.transform = 'rotate(3deg) scale(1.02)';
 
-                  const handleDrop = async (e: React.DragEvent) => {
-                    e.preventDefault();
-                    if (!draggedServiceId || draggedServiceId === service.id) return;
+                        document.body.appendChild(clone);
 
-                    const currentOrder = adminPrefs.serviceOrder?.length > 0 ? [...adminPrefs.serviceOrder] : SERVICES.map(s => s.id);
-                    const draggedIdx = currentOrder.indexOf(draggedServiceId);
-                    const targetIdx = currentOrder.indexOf(service.id);
+                        // Set the custom drag image right on the mouse cursor
+                        e.dataTransfer.setDragImage(clone, rect.width / 2, 40);
 
-                    if (draggedIdx >= 0 && targetIdx >= 0) {
-                      const newOrder = [...currentOrder];
-                      const [item] = newOrder.splice(draggedIdx, 1);
-                      newOrder.splice(targetIdx, 0, item);
-                      await updateAdminPreferences({ ...adminPrefs, serviceOrder: newOrder });
-                    }
-                  };
+                        // Cleanup clone and fade the original box out to look like it was "picked up"
+                        setTimeout(() => {
+                          if (document.body.contains(clone)) document.body.removeChild(clone);
+                          target.style.opacity = '0.4';
+                          target.style.transform = 'scale(0.98)';
+                        }, 50);
+                      }
+                    };
 
-                  return (
-                    <div
-                      key={service.id}
-                      className="service-card-premium"
-                      style={{ '--card-color': service.color, cursor: 'grab' } as React.CSSProperties}
-                      draggable
-                      onDragStart={handleDragStart}
-                      onDragEnd={handleDragEnd}
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                    >
-                      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ color: '#94a3b8', cursor: 'grab' }}>⋮⋮</span>
-                          <h3 style={{ margin: 0 }}>{service.nameAr}</h3>
+                    const handleDragEnd = (e: React.DragEvent) => {
+                      setDraggedServiceId(null);
+                      if (e.currentTarget instanceof HTMLElement) {
+                        e.currentTarget.style.opacity = '1';
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }
+                    };
+
+                    const handleDragOver = (e: React.DragEvent) => {
+                      e.preventDefault();
+                      if (draggedServiceId !== service.id) {
+                        e.dataTransfer.dropEffect = 'move';
+                      }
+                    };
+
+                    const handleDrop = async (e: React.DragEvent) => {
+                      e.preventDefault();
+                      if (!draggedServiceId || draggedServiceId === service.id) return;
+
+                      const currentOrder = adminPrefs.serviceOrder?.length > 0 ? [...adminPrefs.serviceOrder] : SERVICES.map(s => s.id);
+                      const draggedIdx = currentOrder.indexOf(draggedServiceId);
+                      const targetIdx = currentOrder.indexOf(service.id);
+
+                      if (draggedIdx >= 0 && targetIdx >= 0) {
+                        const newOrder = [...currentOrder];
+                        const [item] = newOrder.splice(draggedIdx, 1);
+                        newOrder.splice(targetIdx, 0, item);
+                        await updateAdminPreferences({ ...adminPrefs, serviceOrder: newOrder });
+                      }
+                    };
+
+                    return (
+                      <motion.div
+                        layout
+                        initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8, y: -10 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                        key={service.id}
+                        className="service-card-premium"
+                        style={{ '--card-color': service.color, cursor: 'grab' } as React.CSSProperties}
+                        draggable
+                        onDragStart={handleDragStart as any}
+                        onDragEnd={handleDragEnd as any}
+                        onDragOver={handleDragOver as any}
+                        onDrop={handleDrop as any}
+                      >
+                        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: '#94a3b8', cursor: 'grab' }}>⋮⋮</span>
+                            <h3 style={{ margin: 0 }}>{service.nameAr}</h3>
+                          </div>
+                          <div className={`status-badge ${isActive ? 'status-completed' : 'status-rejected'}`}>
+                            {isActive ? 'نشطة' : 'متوقفة'}
+                          </div>
                         </div>
-                        <div className={`status-badge ${isActive ? 'status-completed' : 'status-rejected'}`}>
-                          {isActive ? 'نشطة' : 'متوقفة'}
+
+                        <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
+                          {service.descriptionAr}
+                        </p>
+
+                        <div className="card-actions">
+                          <button
+                            onClick={handleToggleActive}
+                            className={`action-btn ${isActive ? 'reject-btn' : 'accept-btn'}`}
+                            style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
+                          >
+                            {isActive ? (
+                              <>
+                                <XCircle size={18} />
+                                تعطيل الخدمة
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle size={18} />
+                                تفعيل الخدمة
+                              </>
+                            )}
+                          </button>
                         </div>
-                      </div>
 
-                      <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                        {service.descriptionAr}
-                      </p>
-
-                      <div className="card-actions">
-                        <button
-                          onClick={handleToggleActive}
-                          className={`action-btn ${isActive ? 'reject-btn' : 'accept-btn'}`}
-                          style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
-                        >
-                          {isActive ? (
-                            <>
-                              <XCircle size={18} />
-                              تعطيل الخدمة
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle size={18} />
-                              تفعيل الخدمة
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      <div style={{ marginTop: '15px', padding: '12px', background: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#475569' }}>التحكم في حقول الخدمة:</h4>
-                        <div style={{ display: 'grid', gap: '8px' }}>
-                          {service.fields.map(field => (
-                            <label key={field.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                              <input
-                                type="checkbox"
-                                checked={!disabledFields.includes(field.name)}
-                                onChange={() => handleToggleField(field.name)}
-                                style={{ accentColor: '#3b82f6' }}
-                              />
-                              {field.label}
-                            </label>
-                          ))}
-                          {service.paymentMethods && service.paymentMethods.length > 0 && (
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                              <input
-                                type="checkbox"
-                                checked={!disabledFields.includes('payment_section')}
-                                onChange={() => handleToggleField('payment_section')}
-                                style={{ accentColor: '#3b82f6' }}
-                              />
-                              طرق الدفع والأسعار
-                            </label>
-                          )}
-                          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && (
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                              <input
-                                type="checkbox"
-                                checked={!disabledFields.includes('receipt_upload')}
-                                onChange={() => handleToggleField('receipt_upload')}
-                                style={{ accentColor: '#3b82f6' }}
-                              />
-                              رفع المستندات والإيصال
-                            </label>
-                          )}
+                        <div style={{ marginTop: '15px', padding: '12px', background: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#475569' }}>التحكم في حقول الخدمة:</h4>
+                          <div style={{ display: 'grid', gap: '8px' }}>
+                            {service.fields.map(field => (
+                              <label key={field.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!disabledFields.includes(field.name)}
+                                  onChange={() => handleToggleField(field.name)}
+                                  style={{ accentColor: '#3b82f6' }}
+                                />
+                                {field.label}
+                              </label>
+                            ))}
+                            {service.paymentMethods && service.paymentMethods.length > 0 && (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!disabledFields.includes('payment_section')}
+                                  onChange={() => handleToggleField('payment_section')}
+                                  style={{ accentColor: '#3b82f6' }}
+                                />
+                                طرق الدفع والأسعار
+                              </label>
+                            )}
+                            {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!disabledFields.includes('receipt_upload')}
+                                  onChange={() => handleToggleField('receipt_upload')}
+                                  style={{ accentColor: '#3b82f6' }}
+                                />
+                                رفع المستندات والإيصال
+                              </label>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      <div style={{ padding: '15px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b', fontSize: '12px', marginTop: '10px' }}>
-                        قم بسحب وإفلات البطاقة لتغيير الترتيب
-                      </div>
-                    </div>
-                  );
-                })}
+                        <div style={{ padding: '15px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b', fontSize: '12px', marginTop: '10px' }}>
+                          قم بسحب وإفلات البطاقة لتغيير الترتيب
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+              </AnimatePresence>
             </div>
           </div>
         )

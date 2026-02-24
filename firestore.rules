@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // دالة للتحقق من أن المستخدم مسجل الدخول
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // دالة للتحقق مما إذا كان المستخدم يمتلك صلاحية مدير (Admin)
+    function isAdmin() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // 1. حماية بيانات الطلاب (السرية التامة)
+    match /students/{userId} {
+      // الطالب يقرأ ويعدل بياناته فقط! ممنوع نهائياً الإطلاع على طلاب آخرين
+      // المدير يستطيع رؤية وتعديل بيانات جميع الطلاب
+      allow read, write: if (isAuthenticated() && request.auth.uid == userId) || isAdmin();
+    }
+
+    // 2. حماية قائمة المديرين (Admins)
+    match /admins/{adminId} {
+      // يمكن لأي مستخدم التأكد من صلاحياته، لكن التعديل يتم يدوياً فقط من لوحة تحكم Firebase
+      allow read: if isAuthenticated();
+      allow write: if false; 
+    }
+
+    // 3. حماية طلبات تقديم الخدمات وتاريخها
+    match /serviceRequests/{requestId} {
+      // الطالب يرى طلباته فقط، ولا يستطيع قراءة طلبات الغير
+      allow read, update: if (isAuthenticated() && resource.data.studentId == request.auth.uid) || isAdmin();
+      allow create: if (isAuthenticated() && request.resource.data.studentId == request.auth.uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 4. حماية التكليفات والرفع
+    match /assignments/{document=**} {
+      // الطلاب يقرأون التكليفات فقط للرد عليها
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 5. حماية الأكواد السرية (الدفع والتحول الرقمي)
+    match /digitalTransformationCodes/{codeId} {
+      // لا يراها ولا يديرها إلا الأدمن فقط
+      allow read, write: if isAdmin();
+    }
+    match /electronicPaymentCodes/{codeId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 6. الإعدادات العامة والأخبار والمقالات (تُقرأ بواسطة المتصفح، ولكن تُعدل بالأدمن)
+    match /news/{newsId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /configs/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /serviceSettings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 7. غلق أي قواعد بيانات عشوائية أخرى غير مذكورة للحماية الحتمية
+    match /{document=**} {
+      allow read: if isAuthenticated() && resource.data.studentId == request.auth.uid;
+      allow write: if isAdmin();
+    }
+  }
+}
