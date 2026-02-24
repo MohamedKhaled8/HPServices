@@ -895,7 +895,7 @@ export const subscribeToServiceRequests = (
   callback: (requests: ServiceRequest[]) => void
 ): (() => void) => {
   // Subscribe to all service collections and merge results
-  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
   const unsubscribes: (() => void)[] = [];
   const allRequests: ServiceRequest[] = [];
 
@@ -975,7 +975,7 @@ export const subscribeToAllServiceRequests = (
   callback: (requests: ServiceRequest[]) => void
 ): (() => void) => {
   // Subscribe to all service collections and merge results
-  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
   const unsubscribes: (() => void)[] = [];
   const allRequests: ServiceRequest[] = [];
 

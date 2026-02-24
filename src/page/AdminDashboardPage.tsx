@@ -321,7 +321,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               '7': 11885,
               '8': 13580,
               '9': 15210,
-              '10': 16900
+              '9': 15210,
+              '10': 16900,
+              '11': 18500
             },
             paymentMethods: {
               instaPay: '01017180923',
@@ -1325,7 +1327,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       '7': 'التقديم علي التحول الرقمي',
       '8': 'المراجعة النهائية',
       '9': 'مشروع التخرج',
-      '10': 'استخراج مستندات'
+      '10': 'استخراج مستندات',
+      '11': 'استلام و شحن التحول الرقمي'
     };
     return serviceNames[serviceId] || `خدمة ${serviceId}`;
   };
@@ -3505,7 +3508,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               طرق الدفع والأسعار
                             </label>
                           )}
-                          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10') && (
+                          {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && (
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                               <input
                                 type="checkbox"
@@ -4327,7 +4330,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
         const sortedServicesByRew = Object.values(serviceStats).sort((a, b) => b.revenue - a.revenue);
         const sortedServicesByCount = Object.values(serviceStats).sort((a, b) => b.count - a.count);
-        const maxServiceCount = Math.max(...Object.values(serviceStats).map(s => s.count), 10); // avoid div by zero
+        const maxServiceCount = Math.max(...Object.values(serviceStats).map(s => s.count), 11); // avoid div by zero
 
         return (
           <div className="admin-content stats-dashboard" style={{ animation: 'fadeIn 0.5s ease-out' }}>
