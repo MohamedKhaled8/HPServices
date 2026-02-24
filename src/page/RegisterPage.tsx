@@ -42,8 +42,13 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
     errors.find((e) => e.field === fieldName)?.message;
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    setErrors((prev) => prev.filter((e) => e.field !== field));
+    if (field === 'nationalID') {
+      setFormData((prev) => ({ ...prev, [field]: value, password: value }));
+      setErrors((prev) => prev.filter((e) => e.field !== field && e.field !== 'password'));
+    } else {
+      setFormData((prev) => ({ ...prev, [field]: value }));
+      setErrors((prev) => prev.filter((e) => e.field !== field));
+    }
   };
 
   const handleAddressChange = (field: string, value: string) => {
@@ -333,7 +338,12 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           {getFieldError('email') && <div className="field-error"><AlertCircle size={12} />{getFieldError('email')}</div>}
         </div>
         <div className="auth-field">
-          <label htmlFor="reg-password">كلمة المرور <span className="req">*</span></label>
+          <label htmlFor="reg-password" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>كلمة المرور <span className="req">*</span></span>
+            <span style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: 600, background: '#eff6ff', padding: '2px 8px', borderRadius: '12px' }}>
+              تنبيه: الرقم القومي هو كلمة المرور
+            </span>
+          </label>
           <div className="auth-input-wrap">
             <input
               id="reg-password"

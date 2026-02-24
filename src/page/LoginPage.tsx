@@ -206,6 +206,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
             <div className="auth-forgot-row">
               <label htmlFor="login-password">
                 كلمة المرور <span className="req">*</span>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal', marginRight: '8px' }}>(الرقم القومي)</span>
               </label>
               <button
                 type="button"

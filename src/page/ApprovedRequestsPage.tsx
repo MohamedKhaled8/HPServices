@@ -5,13 +5,23 @@ import { SERVICES } from '../constants/services';
 import { CheckCircle, ArrowLeft, Package, Clock, Calendar } from 'lucide-react';
 import '../styles/DashboardPage.css';
 
+import { subscribeToDigitalTransformationCodes, subscribeToElectronicPaymentCodes } from '../services/firebaseService';
+
 interface ApprovedRequestsPageProps {
     onBack: () => void;
 }
 
 const ApprovedRequestsPage: React.FC<ApprovedRequestsPageProps> = ({ onBack }) => {
-    const { serviceRequests } = useStudent();
+    const { student, serviceRequests } = useStudent();
     const approvedRequests = serviceRequests.filter((r: ServiceRequest) => r.status === 'completed');
+    const [dtCodes, setDtCodes] = React.useState<any[]>([]);
+    const [epCodes, setEpCodes] = React.useState<any[]>([]);
+
+    React.useEffect(() => {
+        const unsubDt = subscribeToDigitalTransformationCodes((codes) => setDtCodes(codes));
+        const unsubEp = subscribeToElectronicPaymentCodes((codes) => setEpCodes(codes));
+        return () => { unsubDt(); unsubEp(); };
+    }, []);
 
     // Calculate total spent
     const totalSpent = approvedRequests.reduce((sum, req) => {
@@ -163,6 +173,16 @@ const ApprovedRequestsPage: React.FC<ApprovedRequestsPageProps> = ({ onBack }) =
                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#10B981', fontWeight: 'bold' }}>
                                                     {amount.toLocaleString()} ج.م
                                                 </span>
+                                                {dtCodes.find(c => c.requestId === req.id) && (
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                                        كود فوري: {dtCodes.find(c => c.requestId === req.id)?.fawryCode || dtCodes.find(c => c.requestId === req.id)?.serialNumber || 'لا يوجد'}
+                                                    </span>
+                                                )}
+                                                {epCodes.find(c => c.requestId === req.id) && (
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                                        رقم الطلب: {epCodes.find(c => c.requestId === req.id)?.orderNumber || 'لا يوجد'}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

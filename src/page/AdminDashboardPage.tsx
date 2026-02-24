@@ -1878,7 +1878,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   {/* Right Side: User Info */}
                                   <div className="request-row-info">
                                     <div className="request-user-name">
-                                      {request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span>{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
+                                        {dtCodes.find(c => c.requestId === request.id) && (
+                                          <span style={{ fontSize: '13px', backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                            كود فوري: {dtCodes.find(c => c.requestId === request.id)?.fawryCode || dtCodes.find(c => c.requestId === request.id)?.serialNumber || 'لا يوجد'}
+                                          </span>
+                                        )}
+                                        {epCodes.find(c => c.requestId === request.id) && (
+                                          <span style={{ fontSize: '13px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                                            رقم الطلب: {epCodes.find(c => c.requestId === request.id)?.orderNumber || 'لا يوجد'}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                     <div className="request-meta">
                                       <span className="request-email">{request.data.email || studentData?.email || 'غير متاح'}</span>
