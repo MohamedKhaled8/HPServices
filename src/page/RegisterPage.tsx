@@ -1,6 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StudentData, ValidationError } from '../types';
-import { validateStudentData, validateArabicText, validateEnglishText } from '../utils/validation';
+import {
+  validateStudentData,
+  validateArabicText,
+  validateEnglishText,
+  validateWhatsAppNumber,
+  validateNationalID,
+  validateEmail,
+  validatePassword,
+} from '../utils/validation';
 import { GOVERNORATES, DIPLOMA_YEARS, COURSES, DIPLOMA_TYPES } from '../constants/services';
 import { useStudent } from '../context';
 import { registerUser } from '../services/firebaseService';
@@ -38,10 +46,109 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
   const [showPassword, setShowPassword] = useState(true);
   const [isCourseOther, setIsCourseOther] = useState(false);
 
-  const getFieldError = (fieldName: string) =>
-    errors.find((e) => e.field === fieldName)?.message;
+  // Tracks if user has tried to submit the final step
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+
+  const [stepAttempted, setStepAttempted] = useState([false, false, false]);
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+  const finalSubmitIntentRef = useRef(false);
+
+  // Clear any errors on mount to prevent premature validation display
+  useEffect(() => {
+    setErrors([]);
+    setSubmitAttempted(false);
+    setStepAttempted([false, false, false]);
+    setTouchedFields({});
+  }, []);
+
+  // Clear stepAttempted for future steps when advancing to prevent showing errors prematurely
+  useEffect(() => {
+    setStepAttempted(prev => {
+      const next = [...prev];
+      // Reset stepAttempted for steps ahead of current step
+      for (let i = step + 1; i < next.length; i++) {
+        next[i] = false;
+      }
+      return next;
+    });
+
+    // Clear any global submit banner when navigating steps
+    setSubmitError('');
+
+    // Always reset final-submit state when navigating between steps
+    setSubmitAttempted(false);
+  }, [step]);
+
+  const getFieldError = (fieldName: string) => {
+    // Determine the step this field belongs to
+    let fieldStep = 0;
+    if (['fullNameArabic', 'vehicleNameEnglish', 'whatsappNumber', 'nationalID'].includes(fieldName)) {
+      fieldStep = 0;
+    } else if (['diplomaYear', 'diplomaType', 'course'].includes(fieldName)) {
+      fieldStep = 1;
+    } else if (fieldName.startsWith('address.') || ['email', 'password'].includes(fieldName)) {
+      fieldStep = 2;
+    }
+
+    // Show rules:
+    // - Final step: show only after final submit OR field blur
+    // - Previous steps: show after trying to advance OR field blur
+    const wasTouched = !!touchedFields[fieldName];
+    const shouldShow =
+      fieldStep === 2 ? (submitAttempted || wasTouched) : (stepAttempted[fieldStep] || wasTouched);
+    if (!shouldShow) return undefined;
+
+    // Prefer any explicit validation error already calculated (submit / next-step)
+    const existing = errors.find((e) => e.field === fieldName);
+    if (existing) return existing.message;
+
+    // Otherwise compute an inline error (required + format) based on current value.
+    const getValue = (): string => {
+      if (fieldName.startsWith('address.')) {
+        const key = fieldName.split('.')[1];
+        return ((formData.address as any)?.[key] ?? '') as string;
+      }
+      return (((formData as any)[fieldName] ?? '') as string);
+    };
+
+    const raw = getValue();
+    const val = typeof raw === 'string' ? raw.trim() : '';
+
+    if (!val) return 'هذا الحقل مطلوب';
+
+    if (fieldName === 'fullNameArabic') {
+      const r = validateArabicText(val, 4);
+      return r.valid ? undefined : (r.error || 'يجب إدخال الاسم رباعي بالعربية');
+    }
+    if (fieldName === 'vehicleNameEnglish') {
+      const r = validateEnglishText(val, 4);
+      return r.valid ? undefined : (r.error || 'يجب إدخال الاسم رباعي بالإنجليزية');
+    }
+    if (fieldName === 'whatsappNumber') {
+      const r = validateWhatsAppNumber(val);
+      return r.valid ? undefined : (r.error || 'يرجى إدخال رقم واتساب صحيح');
+    }
+    if (fieldName === 'nationalID') {
+      const r = validateNationalID(val);
+      return r.valid ? undefined : (r.error || 'يرجى إدخال رقم قومي صحيح');
+    }
+    if (fieldName === 'email') {
+      const r = validateEmail(val);
+      return r.valid ? undefined : (r.error || 'صيغة البريد الإلكتروني غير صحيحة');
+    }
+    if (fieldName === 'password') {
+      const r = validatePassword(val);
+      return r.valid ? undefined : (r.error || 'كلمة المرور غير صحيحة');
+    }
+    return undefined;
+  };
+
+  const markTouched = (fieldName: string) => {
+    setTouchedFields(prev => (prev[fieldName] ? prev : { ...prev, [fieldName]: true }));
+  };
 
   const handleInputChange = (field: string, value: string) => {
+    setSubmitError('');
     if (field === 'nationalID') {
       setFormData((prev) => ({ ...prev, [field]: value, password: value }));
       setErrors((prev) => prev.filter((e) => e.field !== field && e.field !== 'password'));
@@ -52,17 +159,23 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
   };
 
   const handleAddressChange = (field: string, value: string) => {
+    setSubmitError('');
     setFormData((prev) => ({ ...prev, address: { ...prev.address!, [field]: value } }));
     setErrors((prev) => prev.filter((e) => !e.field.startsWith('address.')));
   };
 
-  /* Step validation before advancing */
+  /* Step validation before advancing (only for steps 0 و 1) */
   const validateStep = (targetStep?: number): boolean => {
     const s = targetStep !== undefined ? targetStep : step;
+    // لا نتحقق من حقول خطوة العنوان/الحساب هنا إطلاقاً،
+    // حتى لا تظهر رسائل "هذا الحقل مطلوب" قبل الضغط على "إنشاء الحساب".
+    if (s === 2) {
+      return true;
+    }
+
     const stepFields: Record<number, string[]> = {
       0: ['fullNameArabic', 'vehicleNameEnglish', 'whatsappNumber', 'nationalID'],
       1: ['diplomaYear', 'diplomaType', 'course'],
-      2: ['address.governorate', 'address.city', 'address.street', 'address.building', 'email', 'password'],
     };
     const allErrors: ValidationError[] = [];
     const fields = stepFields[s];
@@ -100,20 +213,55 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
       }
     }
 
-    if (allErrors.length > 0) { setErrors(allErrors); return false; }
+    setErrors(allErrors);
+    if (allErrors.length > 0) return false;
     return true;
   };
 
   const nextStep = () => {
-    if (validateStep()) setStep((s) => Math.min(s + 1, 2));
+    // Moving between steps means we haven't tried final submit for this stage yet
+    setSubmitAttempted(false);
+    setSubmitError('');
+
+    // Mark current step as attempted so errors can show if validation fails
+    setStepAttempted(prev => {
+      const next = [...prev];
+      next[step] = true;
+      return next;
+    });
+
+    if (validateStep()) {
+      setErrors([]); // Clear errors when moving to the next step
+      setStep((s) => Math.min(s + 1, 2));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateStep()) return;
 
-    setIsSubmitting(true);
-    setSubmitError('');
+    const isExplicitFinalSubmit = finalSubmitIntentRef.current === true;
+    // Reset intent immediately to avoid "sticky" behavior.
+    finalSubmitIntentRef.current = false;
+
+    // أي submit غير مقصود (Enter / submit تلقائي) لا يُظهر أخطاء — فقط يتصرف كـ "التالي" إن كنا قبل الخطوة الأخيرة.
+    if (!isExplicitFinalSubmit) {
+      if (step < 2) nextStep();
+      return;
+    }
+
+    // لو المستخدم حاول "إنشاء الحساب" وهو ليس في الخطوة الأخيرة، نعامله كـ "التالي".
+    if (step < 2) {
+      nextStep();
+      return;
+    }
+
+    // Mark that final submission was attempted so step 3 errors can show
+    setSubmitAttempted(true);
+
+    // Mark all steps as attempted on final submission
+    setStepAttempted([true, true, true]);
+
+    if (!validateStep()) return;
 
     const allErrors = validateStudentData(formData as StudentData);
     if (allErrors.length > 0) {
@@ -176,6 +324,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             placeholder="الاسم رباعي بالعربية"
             value={formData.fullNameArabic || ''}
             onChange={(e) => handleInputChange('fullNameArabic', e.target.value)}
+            onBlur={() => markTouched('fullNameArabic')}
             className={getFieldError('fullNameArabic') ? 'has-error' : ''}
           />
           {getFieldError('fullNameArabic') && <div className="field-error"><AlertCircle size={12} />{getFieldError('fullNameArabic')}</div>}
@@ -187,6 +336,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             placeholder="Full name in English"
             value={formData.vehicleNameEnglish || ''}
             onChange={(e) => handleInputChange('vehicleNameEnglish', e.target.value)}
+            onBlur={() => markTouched('vehicleNameEnglish')}
             className={getFieldError('vehicleNameEnglish') ? 'has-error' : ''}
           />
           {getFieldError('vehicleNameEnglish') && <div className="field-error"><AlertCircle size={12} />{getFieldError('vehicleNameEnglish')}</div>}
@@ -202,6 +352,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
               placeholder="01xxxxxxxxx" maxLength={11}
               value={formData.whatsappNumber || ''}
               onChange={(e) => handleInputChange('whatsappNumber', e.target.value.replace(/\D/g, ''))}
+              onBlur={() => markTouched('whatsappNumber')}
               className={getFieldError('whatsappNumber') ? 'has-error' : ''}
             />
             <span className={`auth-char-count ${formData.whatsappNumber?.length === 11 ? 'done' : ''}`}>
@@ -218,6 +369,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
               placeholder="أدخل 14 رقم" maxLength={14}
               value={formData.nationalID || ''}
               onChange={(e) => handleInputChange('nationalID', e.target.value.replace(/\D/g, ''))}
+              onBlur={() => markTouched('nationalID')}
               className={getFieldError('nationalID') ? 'has-error' : ''}
             />
             <span className={`auth-char-count ${formData.nationalID?.length === 14 ? 'done' : ''}`}>
@@ -242,6 +394,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             id="diplomaYear"
             value={formData.diplomaYear || ''}
             onChange={(e) => handleInputChange('diplomaYear', e.target.value)}
+            onBlur={() => markTouched('diplomaYear')}
             className={getFieldError('diplomaYear') ? 'has-error' : ''}
           >
             <option value="">اختر السنة</option>
@@ -255,6 +408,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             id="diplomaType"
             value={formData.diplomaType || ''}
             onChange={(e) => handleInputChange('diplomaType', e.target.value)}
+            onBlur={() => markTouched('diplomaType')}
             className={getFieldError('diplomaType') ? 'has-error' : ''}
           >
             <option value="">اختر النوع</option>
@@ -274,6 +428,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             if (val === 'other') { setIsCourseOther(true); handleInputChange('course', ''); }
             else { setIsCourseOther(false); handleInputChange('course', val); }
           }}
+          onBlur={() => markTouched('course')}
           className={getFieldError('course') ? 'has-error' : ''}
         >
           <option value="">اختر الشعبة الدراسية</option>
@@ -286,6 +441,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             placeholder="اكتب اسم الشعبة"
             value={formData.course || ''}
             onChange={(e) => handleInputChange('course', e.target.value)}
+            onBlur={() => markTouched('course')}
             style={{ marginTop: '10px' }}
           />
         )}
@@ -306,6 +462,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             id="governorate"
             value={formData.address?.governorate || ''}
             onChange={(e) => handleAddressChange('governorate', e.target.value)}
+            onBlur={() => markTouched('address.governorate')}
             className={getFieldError('address.governorate') ? 'has-error' : ''}
           >
             <option value="">اختر المحافظة</option>
@@ -319,6 +476,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             id="city" type="text" placeholder="اسم المدينة"
             value={formData.address?.city || ''}
             onChange={(e) => handleAddressChange('city', e.target.value)}
+            onBlur={() => markTouched('address.city')}
             className={getFieldError('address.city') ? 'has-error' : ''}
           />
           {getFieldError('address.city') && <div className="field-error"><AlertCircle size={12} />{getFieldError('address.city')}</div>}
@@ -332,6 +490,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             id="street" type="text" placeholder="اسم الشارع"
             value={formData.address?.street || ''}
             onChange={(e) => handleAddressChange('street', e.target.value)}
+            onBlur={() => markTouched('address.street')}
             className={getFieldError('address.street') ? 'has-error' : ''}
           />
           {getFieldError('address.street') && <div className="field-error"><AlertCircle size={12} />{getFieldError('address.street')}</div>}
@@ -342,6 +501,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             id="building" type="text" placeholder="رقم المبنى"
             value={formData.address?.building || ''}
             onChange={(e) => handleAddressChange('building', e.target.value)}
+            onBlur={() => markTouched('address.building')}
             className={getFieldError('address.building') ? 'has-error' : ''}
           />
           {getFieldError('address.building') && <div className="field-error"><AlertCircle size={12} />{getFieldError('address.building')}</div>}
@@ -368,6 +528,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
             onFocus={(e) => (e.currentTarget.readOnly = false)}
             value={formData.email || ''}
             onChange={(e) => handleInputChange('email', e.target.value)}
+            onBlur={() => markTouched('email')}
             className={getFieldError('email') ? 'has-error' : ''}
           />
           {getFieldError('email') && <div className="field-error"><AlertCircle size={12} />{getFieldError('email')}</div>}
@@ -388,6 +549,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
               onFocus={(e) => (e.currentTarget.readOnly = false)}
               value={formData.password || ''}
               onChange={(e) => handleInputChange('password', e.target.value)}
+              onBlur={() => markTouched('password')}
               className={getFieldError('password') ? 'has-error' : ''}
             />
             <button type="button" className="auth-pass-toggle" onClick={() => setShowPassword((p) => !p)}>
@@ -492,7 +654,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
         )}
 
         {/* Step content */}
-        <form onSubmit={handleSubmit} style={{ width: '100%' }} autoComplete="off">
+        <form onSubmit={handleSubmit} style={{ width: '100%' }} autoComplete="off" noValidate>
           <input type="text" name="fake-name" autoComplete="name" style={{ display: 'none' }} />
           <input type="password" name="fake-pass" autoComplete="new-password" style={{ display: 'none' }} />
 
@@ -502,7 +664,13 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
 
           <div className="auth-step-nav">
             {step > 0 && (
-              <button type="button" className="auth-back-btn" onClick={() => setStep((s) => s - 1)}>
+              <button type="button" className="auth-back-btn" onClick={() => {
+                // Clear errors and reset final submit attempt when going back
+                setErrors([]);
+                setSubmitAttempted(false);
+                setSubmitError('');
+                setStep((s) => s - 1);
+              }}>
                 <ChevronRight size={18} /> السابق
               </button>
             )}
@@ -511,7 +679,20 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
                 التالي <ChevronLeft size={18} />
               </button>
             ) : (
-              <button type="submit" className="auth-next-btn" disabled={isSubmitting}>
+              <button
+                type="submit"
+                data-submit="final"
+                className="auth-next-btn"
+                disabled={isSubmitting}
+                onPointerDown={() => {
+                  finalSubmitIntentRef.current = true;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    finalSubmitIntentRef.current = true;
+                  }
+                }}
+              >
                 {isSubmitting ? (
                   <><div className="spinner" style={{ width: 18, height: 18, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> جاري التسجيل...</>
                 ) : (

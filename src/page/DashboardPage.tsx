@@ -482,6 +482,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       <main className="services-section" id="services">
         <div className="section-header">
           <h2 className="section-title">اختر خدماتك من هنا</h2>
+          <p className="section-subtitle">
+            هنا هتلاقي كل الخدمات اللي بنقدّمها للطلاب وطلاب الداخل. اختَر الخدمة اللي محتاجها وكمّل بياناتك بسهولة.
+          </p>
           <div className="title-decoration"></div>
         </div>
 

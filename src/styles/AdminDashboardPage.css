@@ -3739,18 +3739,18 @@
     margin: 0 !important;
   }
 
-  /* Editable field containers: put the action button under the field */
-  .editable-field-container,
-  .editable-field-display {
+  /* Editable field containers: put the action button under the field (ADMIN ONLY) */
+  .admin-content .editable-field-container,
+  .admin-content .editable-field-display {
     display: flex !important;
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 8px !important;
   }
 
-  .editable-field-container .edit-field-button,
-  .editable-field-container .edit-field-button.cancel-edit,
-  .editable-field-container .edit-button {
+  .admin-content .editable-field-container .edit-field-button,
+  .admin-content .editable-field-container .edit-field-button.cancel-edit,
+  .admin-content .editable-field-container .edit-button {
     width: 100% !important;
     padding: 10px 12px !important;
     margin-top: 0 !important;
@@ -3771,20 +3771,20 @@
     padding: 10px 12px !important;
   }
 
-  /* Form actions that normally sit inline: stack and full width */
-  .form-actions,
-  .form-actions>button,
-  .add-price-section,
-  .add-price-section .config-input,
-  .add-price-section button {
+  /* Form actions that normally sit inline: stack and full width (ADMIN ONLY) */
+  .admin-content .form-actions,
+  .admin-content .form-actions>button,
+  .admin-content .add-price-section,
+  .admin-content .add-price-section .config-input,
+  .admin-content .add-price-section button {
     display: flex !important;
     flex-direction: column !important;
     width: 100% !important;
     gap: 8px !important;
   }
 
-  .form-actions>button,
-  .add-price-section button {
+  .admin-content .form-actions>button,
+  .admin-content .add-price-section button {
     width: 100% !important;
     padding: 12px 14px !important;
   }

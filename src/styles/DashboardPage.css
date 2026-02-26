@@ -894,6 +894,22 @@ body {
   margin: 0 auto;
 }
 
+/* Subtitle is only needed on mobile/tablet (cards are compact there) */
+.section-subtitle {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .services-section .section-header .section-subtitle {
+    display: block;
+    margin: 6px 0 0 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #475569;
+    font-weight: 600;
+  }
+}
+
 .services-section::before,
 .services-section::after {
   display: none !important;

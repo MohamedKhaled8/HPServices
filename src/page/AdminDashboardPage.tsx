@@ -79,7 +79,8 @@ import {
   DollarSign,
   PieChart,
   Activity,
-  Settings
+  Settings,
+  Star
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
@@ -213,7 +214,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       diploma_type: 'نوع الدبلومة',
       names: 'الأسماء',
       transfer_phone_number: 'الرقم المحول منه',
-      wantsMalazem: 'تم طلب إضافة ملازم؟ (+200 ج.م)'
+      wantsMalazem: 'تم طلب إضافة ملازم؟ (+200 ج.م)',
+      selectedExamLanguage: 'لغة الامتحان المختارة',
+      full_name_english: 'الاسم بالإنجليزية',
+      totalPrice: 'السعر الإجمالي',
+      transformation_type: 'نوع التحول الرقمي',
+      exam_language: 'لغة الامتحان',
+      exam_type: 'نوع الامتحان',
+      total_price: 'الإجمالي'
     };
     return keys[key] || key;
   };
@@ -245,6 +253,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
+
+  // Simple visual toggle flags per-row / per-item (no backend effect)
+  const [toggledFlags, setToggledFlags] = useState<Record<string, boolean>>({});
+
+  const toggleFlag = (key: string) => {
+    setToggledFlags(prev => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   const isServiceActive = (serviceId: string) => {
     const setting = serviceSettings[serviceId];
@@ -1900,506 +1918,262 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       );
                     }
 
-                    const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
-                    const startIndex = (currentPage - 1) * itemsPerPage;
-                    const currentRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
+                    const currentRequests = filteredRequests;
+
+                    // Collect all unique data keys from all requests for dynamic columns
+                    const allDataKeys = new Set<string>();
+                    currentRequests.forEach(req => {
+                      Object.entries(req.data || {}).forEach(([key, value]) => {
+                        const stringValue = String(value || '').trim();
+                        if (
+                          key !== 'selectedCertificate' &&
+                          key !== 'receiptUrl' &&
+                          key !== 'names_array' &&
+                          key !== 'tracks_array' &&
+                          key !== 'full_name_arabic' &&
+                          key !== 'full_name' &&
+                          key !== 'national_id' &&
+                          key !== 'whatsapp_number' &&
+                          key !== 'email' &&
+                          typeof value !== 'object' &&
+                          stringValue &&
+                          stringValue !== 'undefined' &&
+                          stringValue !== 'null'
+                        ) {
+                          allDataKeys.add(key);
+                        }
+                      });
+                    });
 
                     return (
                       <>
                         <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px' }}>
-                          عرض {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredRequests.length)} من أصل {filteredRequests.length} طلب
+                          إجمالي طلبات الخدمة: {filteredRequests.length} طلب
                         </div>
 
-                        {currentRequests.map((request, index) => {
-                          const studentData = students[request.studentId];
-                          const rNationalID = request.data.national_id || studentData?.nationalID;
-                          const rEmail = request.data.email || studentData?.email;
-                          const isExpanded = expandedRequests.has(request.id || '');
-                          const isLastItem = index === currentRequests.length - 1;
+                        <div className="excel-table-wrapper" style={{
+                          maxHeight: 'none',
+                          overflowY: 'visible',
+                          overflowX: 'auto',
+                          borderRadius: '12px',
+                          border: '1px solid #e2e8f0',
+                          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
+                          position: 'relative',
+                          background: 'white'
+                        }}>
+                          <table className="excel-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '15px', minWidth: '1100px' }}>
+                            <thead>
+                              <tr style={{ position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', color: 'white' }}>
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>#</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الاسم</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الرقم القومي</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الواتساب</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الإيميل</th>
+                                {Array.from(allDataKeys).map(key => (
+                                  <th key={key} style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>{translateKey(key)}</th>
+                                ))}
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الحالة</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>التاريخ</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الإيصال</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>إجراءات</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentRequests.map((request, index) => {
+                                const studentData = students[request.studentId];
+                                const rNationalID = request.data.national_id || studentData?.nationalID;
+                                const rEmail = request.data.email || studentData?.email;
 
-                          // إيجاد عدد مرات التقديم لنفس المستخدم في هذه الخدمة
-                          const userRequestsCount = filteredRequests.filter(
-                            r => {
-                              const rStudentData = students[r.studentId];
-                              const testNationalID = r.data.national_id || rStudentData?.nationalID;
-                              const testEmail = r.data.email || rStudentData?.email;
-                              return r.studentId === request.studentId ||
-                                (testEmail && rEmail && testEmail.toLowerCase() === rEmail.toLowerCase()) ||
-                                (testNationalID && rNationalID && testNationalID === rNationalID);
-                            }
-                          ).length;
-                          const isDuplicate = userRequestsCount > 1;
+                                // إيجاد عدد مرات التقديم لنفس المستخدم في هذه الخدمة
+                                const userRequestsCount = filteredRequests.filter(
+                                  r => {
+                                    const rStudentData = students[r.studentId];
+                                    const testNationalID = r.data.national_id || rStudentData?.nationalID;
+                                    const testEmail = r.data.email || rStudentData?.email;
+                                    return r.studentId === request.studentId ||
+                                      (testEmail && rEmail && testEmail.toLowerCase() === rEmail.toLowerCase()) ||
+                                      (testNationalID && rNationalID && testNationalID === rNationalID);
+                                  }
+                                ).length;
+                                const isDuplicate = userRequestsCount > 1;
 
-                          const toggleExpand = () => {
-                            const newExpanded = new Set(expandedRequests);
-                            if (isExpanded) {
-                              newExpanded.delete(request.id || '');
-                            } else {
-                              newExpanded.add(request.id || '');
-                            }
-                            setExpandedRequests(newExpanded);
-                          };
+                                const rowKey = `req-${request.id || index}`;
+                                const isFlagged = !!toggledFlags[rowKey];
 
-                          return (
-                            <div key={request.id} className="request-row-wrapper">
-                              <div className={`request-row ${isExpanded ? 'expanded' : ''}`} style={isDuplicate ? { borderRight: '4px solid #ef4444' } : {}}>
-                                {/* Main Row Content */}
-                                <div className="request-row-main">
-                                  {/* Right Side: User Info */}
-                                  <div className="request-row-info">
-                                    <div className="request-user-name">
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                        <span>{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
+                                const rowBg = isDuplicate
+                                  ? '#fff1f2'
+                                  : index % 2 === 0
+                                    ? '#ffffff'
+                                    : '#f8fafc';
+
+                                return (
+                                  <tr key={request.id} style={{ background: rowBg, borderRight: isDuplicate ? '5px solid #ef4444' : 'none', transition: 'all 0.2s ease' }}
+                                    onMouseOver={(e) => e.currentTarget.style.background = '#f0f9ff'}
+                                    onMouseOut={(e) => e.currentTarget.style.background = rowBg}
+                                  >
+                                    {/* # */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '700', color: '#64748b', fontSize: '13px' }}>
+                                      {index + 1}
+                                    </td>
+                                    {/* الاسم */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontWeight: '600', color: '#1e293b', whiteSpace: 'normal', minWidth: '180px', wordBreak: 'break-word', lineHeight: '1.4', textAlign: 'right' }}>
+                                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: '14px' }}>{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
                                         {isDuplicate && (
-                                          <span style={{ fontSize: '12px', backgroundColor: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)' }}>
-                                            تقديم مكرر ({userRequestsCount})
+                                          <span style={{ fontSize: '11px', backgroundColor: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)', alignSelf: 'flex-start' }}>
+                                            مكرر ({userRequestsCount})
                                           </span>
                                         )}
-                                        {(() => {
-                                          const dtCode = dtCodes.find(c => c.requestId === request.id && (c.fawryCode || c.serialNumber)) || dtCodes.find(c => c.requestId === request.id);
-                                          const epCode = epCodes.find(c => c.requestId === request.id && c.orderNumber) || epCodes.find(c => c.requestId === request.id);
-
-                                          return (
-                                            <>
-                                              {dtCode && (
-                                                <span style={{ fontSize: '13px', backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                                  كود فوري: {dtCode.fawryCode || dtCode.serialNumber || 'لا يوجد'}
-                                                </span>
-                                              )}
-                                              {epCode && (
-                                                <span style={{ fontSize: '13px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                                  رقم الطلب: {epCode.orderNumber || 'لا يوجد'}
-                                                </span>
-                                              )}
-                                            </>
-                                          );
-                                        })()}
                                       </div>
-                                    </div>
-                                    <div className="request-meta">
-                                      <span className="request-email">{request.data.email || studentData?.email || 'غير متاح'}</span>
-                                      <span className="request-date">
-                                        {request.createdAt
-                                          ? new Date(request.createdAt).toLocaleDateString('ar-EG', {
-                                            year: 'numeric',
-                                            month: 'short',
-                                            day: 'numeric'
-                                          })
-                                          : 'غير متاح'}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  {/* Center: Status Badge */}
-                                  <div className="request-row-status">
-                                    {getStatusBadge(request.status)}
-                                  </div>
-
-                                  {/* Left Side: Actions */}
-                                  <div className="request-row-actions">
-                                    <button
-                                      onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
-                                      className={`action-btn accept-btn ${request.status === 'completed' ? 'active' : ''}`}
-                                      disabled={request.status === 'completed'}
-                                      title="قبول الطلب"
-                                    >
-                                      <CheckCircle size={18} />
-                                      <span>قبول</span>
-                                    </button>
-                                    <button
-                                      onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
-                                      className={`action-btn reject-btn ${request.status === 'rejected' ? 'active' : ''}`}
-                                      disabled={request.status === 'rejected'}
-                                      title="رفض الطلب"
-                                    >
-                                      <XCircle size={18} />
-                                      <span>رفض</span>
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteRequest(request.id || '', request.serviceId)}
-                                      className="action-btn delete-btn"
-                                      title="حذف الطلب نهائياً"
-                                    >
-                                      <X size={18} />
-                                      <span>حذف</span>
-                                    </button>
-                                    <button
-                                      onClick={toggleExpand}
-                                      className={`expand-btn ${isExpanded ? 'expanded' : ''}`}
-                                      title={isExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}
-                                    >
-                                      <svg
-                                        width="20"
-                                        height="20"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                      >
-                                        <polyline points="6 9 12 15 18 9"></polyline>
-                                      </svg>
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Expanded Details */}
-                                {isExpanded && (
-                                  <div className="request-row-details">
-                                    <div className="details-grid">
-                                      {/* User Details */}
-                                      <div className="details-section">
-                                        <h4 className="details-section-title">معلومات المستخدم</h4>
-                                        <div className="details-items">
-                                          <div className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
-                                            <span className="detail-label">الاسم الكامل:</span>
-                                            {editingRequestId === request.id ? (
-                                              <input
-                                                type="text"
-                                                value={tempRequestData.full_name_arabic || tempRequestData.full_name || studentData?.fullNameArabic || ''}
-                                                onChange={(e) => setTempRequestData({ ...tempRequestData, full_name_arabic: e.target.value })}
-                                                style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
-                                              />
-                                            ) : (
-                                              <span className="detail-value">{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
-                                            )}
-                                          </div>
-                                          <div className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
-                                            <span className="detail-label">الرقم القومي:</span>
-                                            {editingRequestId === request.id ? (
-                                              <input
-                                                type="text"
-                                                value={tempRequestData.national_id || studentData?.nationalID || ''}
-                                                onChange={(e) => setTempRequestData({ ...tempRequestData, national_id: e.target.value })}
-                                                style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
-                                              />
-                                            ) : (
-                                              <span className="detail-value">{request.data.national_id || studentData?.nationalID || 'غير متاح'}</span>
-                                            )}
-                                          </div>
-                                          <div className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
-                                            <span className="detail-label">رقم الواتساب:</span>
-                                            {editingRequestId === request.id ? (
-                                              <input
-                                                type="text"
-                                                value={tempRequestData.whatsapp_number || studentData?.whatsappNumber || ''}
-                                                onChange={(e) => setTempRequestData({ ...tempRequestData, whatsapp_number: e.target.value })}
-                                                style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
-                                              />
-                                            ) : (
-                                              <span className="detail-value">{request.data.whatsapp_number || studentData?.whatsappNumber || 'غير متاح'}</span>
-                                            )}
-                                          </div>
-
-                                          {/* الذكاء المحسن: عرض البيانات الأكاديمية والمسارات إذا وجدت في البروفايل */}
-                                          {studentData?.faculty && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">الكلية:</span>
-                                              <span className="detail-value">{studentData.faculty}</span>
-                                            </div>
-                                          )}
-                                          {studentData?.college_other && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">الكلية (أخرى):</span>
-                                              <span className="detail-value">{studentData.college_other}</span>
-                                            </div>
-                                          )}
-                                          {studentData?.department && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">القسم:</span>
-                                              <span className="detail-value">{studentData.department}</span>
-                                            </div>
-                                          )}
-                                          {studentData?.department_other && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">القسم (أخرى):</span>
-                                              <span className="detail-value">{studentData.department_other}</span>
-                                            </div>
-                                          )}
-                                          {studentData?.educational_specialization && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">التخصص:</span>
-                                              <span className="detail-value">{studentData.educational_specialization}</span>
-                                            </div>
-                                          )}
-                                          {studentData?.educational_specialization_other && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">التخصص (أخرى):</span>
-                                              <span className="detail-value">{studentData.educational_specialization_other}</span>
-                                            </div>
-                                          )}
-                                          {studentData?.track_category && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">فئة المسار:</span>
-                                              <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{normalizeTrackName(studentData.track_category)}</span>
-                                            </div>
-                                          )}
-                                          {studentData?.track_name && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">اسم المسار:</span>
-                                              <span className="detail-value" style={{ color: '#0f172a', fontWeight: 'bold' }}>{normalizeTrackName(studentData.track_name)}</span>
-                                            </div>
-                                          )}
-                                          <div className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
-                                            <span className="detail-label">البريد الإلكتروني:</span>
-                                            {editingRequestId === request.id ? (
-                                              <input
-                                                type="text"
-                                                value={tempRequestData.email || studentData?.email || ''}
-                                                onChange={(e) => setTempRequestData({ ...tempRequestData, email: e.target.value })}
-                                                style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
-                                              />
-                                            ) : (
-                                              <span className="detail-value" style={{ fontSize: '12px' }}>{request.data.email || studentData?.email}</span>
-                                            )}
-                                          </div>
-                                        </div>
+                                    </td>
+                                    {/* الرقم القومي */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '14px', color: '#475569', whiteSpace: 'nowrap' }}>
+                                      {request.data.national_id || studentData?.nationalID || '-'}
+                                    </td>
+                                    {/* الواتساب */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '14px', color: '#334155', whiteSpace: 'nowrap' }}>
+                                      {request.data.whatsapp_number || request.data.phone_whatsapp || studentData?.whatsappNumber || '-'}
+                                    </td>
+                                    {/* الإيميل */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#64748b', minWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: '1.3' }}>
+                                      {request.data.email || studentData?.email || '-'}
+                                    </td>
+                                    {/* Dynamic data columns */}
+                                    {Array.from(allDataKeys).map(key => {
+                                      const value = request.data?.[key];
+                                      const stringValue = String(value || '').trim();
+                                      let displayValue = stringValue || '-';
+                                      if (key === 'wantsMalazem') displayValue = value ? 'نعم' : 'لا';
+                                      else if (key.includes('track')) displayValue = normalizeTrackName(stringValue) || '-';
+                                      return (
+                                        <td key={key} style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#475569', minWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.4' }}>
+                                          {displayValue}
+                                        </td>
+                                      );
+                                    })}
+                                    {/* الحالة */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                                      <div style={{ transform: 'scale(1.1)' }}>
+                                        {getStatusBadge(request.status)}
                                       </div>
-
-                                      {/* Request Details */}
-                                      <div className="details-section">
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                                          <h4 className="details-section-title" style={{ margin: 0, padding: 0, border: 'none' }}>تفاصيل الطلب</h4>
-                                          {editingRequestId === request.id ? (
-                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                              <button
-                                                onClick={() => setEditingRequestId(null)}
-                                                style={{ padding: '6px 12px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                              >
-                                                <X size={14} /> إلغاء
-                                              </button>
-                                              <button
-                                                onClick={async () => {
-                                                  try {
-                                                    await updateServiceRequestData(request.id!, request.serviceId, tempRequestData);
-                                                    setEditingRequestId(null);
-                                                    setToastState({ message: 'تم تعديل بيانات الطلب بنجاح', type: 'success' });
-                                                  } catch (error: any) {
-                                                    setToastState({ message: error.message || 'حدث خطأ أثناء تعديل الطلب', type: 'error' });
-                                                  }
-                                                }}
-                                                style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                              >
-                                                <Save size={14} /> حفظ التعديلات
-                                              </button>
-                                            </div>
-                                          ) : (
-                                            <button
-                                              onClick={() => {
-                                                setEditingRequestId(request.id || null);
-                                                setTempRequestData(request.data || {});
-                                              }}
-                                              style={{ padding: '6px 12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                            >
-                                              <Edit2 size={14} /> تعديل البيانات
-                                            </button>
-                                          )}
+                                    </td>
+                                    {/* التاريخ */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', fontWeight: '500' }}>
+                                      {request.createdAt
+                                        ? new Date(request.createdAt).toLocaleDateString('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric' })
+                                        : '-'}
+                                    </td>
+                                    {/* الإيصال */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                                      {request.data?.receiptUrl ? (
+                                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                          <button
+                                            onClick={() => window.open(request.data.receiptUrl, '_blank')}
+                                            style={{ padding: '6px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                            onMouseOver={(e) => e.currentTarget.style.background = '#dbeafe'}
+                                            onMouseOut={(e) => e.currentTarget.style.background = '#eff6ff'}
+                                            title="عرض الإيصال"
+                                          >
+                                            <Eye size={18} strokeWidth={2.5} />
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const link = document.createElement('a');
+                                              link.href = request.data.receiptUrl;
+                                              link.download = `receipt_${request.data.full_name || 'request'}.jpg`;
+                                              document.body.appendChild(link);
+                                              link.click();
+                                              document.body.removeChild(link);
+                                            }}
+                                            style={{ padding: '6px', background: '#f0fdf4', color: '#15803d', border: '1px solid #86efac', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                            onMouseOver={(e) => e.currentTarget.style.background = '#dcfce7'}
+                                            onMouseOut={(e) => e.currentTarget.style.background = '#f0fdf4'}
+                                            title="تحميل الإيصال"
+                                          >
+                                            <Download size={18} />
+                                          </button>
                                         </div>
-                                        <div className="details-items">
-                                          <div className="detail-item-row">
-                                            <span className="detail-label">تاريخ الطلب:</span>
-                                            <span className="detail-value">
-                                              {request.createdAt
-                                                ? new Date(request.createdAt).toLocaleString('ar-EG')
-                                                : 'غير متاح'}
-                                            </span>
-                                          </div>
-                                          {request.paymentMethod && (
-                                            <div className="detail-item-row">
-                                              <span className="detail-label">طريقة الدفع:</span>
-                                              <span className="detail-value">{request.paymentMethod}</span>
-                                            </div>
-                                          )}
-                                          {request.serviceId === '6' && request.data?.selectedCertificate && (
-                                            <>
-                                              <div className="detail-item-row">
-                                                <span className="detail-label">الشهادة المختارة:</span>
-                                                <span className="detail-value">{request.data.selectedCertificate.name}</span>
-                                              </div>
-                                              {request.data.selectedCertificate.imageUrl && (
-                                                <div className="detail-item-row full-width">
-                                                  <img
-                                                    src={request.data.selectedCertificate.imageUrl}
-                                                    alt={request.data.selectedCertificate.name}
-                                                    className="certificate-preview-img"
-                                                  />
-                                                </div>
-                                              )}
-                                            </>
-                                          )}
-                                          {/* Special Handling for Service 3 (Book Shipping) - Display Names and Tracks Table */}
-                                          {request.serviceId === '3' && request.data.names_array && Array.isArray(request.data.names_array) && (
-                                            <div className="detail-item-row full-width" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '10px', marginTop: '10px', background: '#f8fafc', padding: '10px', borderRadius: '8px' }}>
-                                              <span className="detail-label" style={{ marginBottom: '5px' }}>تفاصيل النسخ ({request.data.names_array.length}):</span>
-                                              <div style={{ width: '100%', overflowX: 'auto' }}>
-                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                                                  <thead>
-                                                    <tr style={{ background: '#e2e8f0' }}>
-                                                      <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>#</th>
-                                                      <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>الاسم رباعي</th>
-                                                      <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>المسار والتخصص</th>
-                                                    </tr>
-                                                  </thead>
-                                                  <tbody>
-                                                    {request.data.names_array.map((name: string, idx: number) => (
-                                                      <tr key={idx} style={{ background: idx % 2 === 0 ? 'white' : '#f1f5f9' }}>
-                                                        <td style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'center', width: '40px' }}>{idx + 1}</td>
-                                                        <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{name}</td>
-                                                        <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{normalizeTrackName(request.data.tracks_array?.[idx])}</td>
-                                                      </tr>
-                                                    ))}
-                                                  </tbody>
-                                                </table>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {/* Display all other request data - Only show if value exists */}
-                                          {Object.entries(request.data || {}).map(([key, value]) => {
-                                            const stringValue = String(value || '').trim();
-
-                                            // Skip if key is special or if value is empty/null/undefined
-                                            // Also skip the array fields we handled above or raw joined strings if we showed the table
-                                            if (
-                                              key === 'selectedCertificate' ||
-                                              key === 'receiptUrl' ||
-                                              key === 'names_array' ||
-                                              key === 'tracks_array' ||
-                                              (request.serviceId === '3' && (key === 'names' || key === 'tracks')) ||
-                                              typeof value === 'object' ||
-                                              (!stringValue && editingRequestId !== request.id) ||
-                                              stringValue === 'undefined' ||
-                                              stringValue === 'null'
-                                            ) return null;
-
-                                            return (
-                                              <div key={key} className="detail-item-row" style={{ alignItems: editingRequestId === request.id ? 'center' : 'flex-start' }}>
-                                                <span className="detail-label">{translateKey(key)}:</span>
-                                                {editingRequestId === request.id ? (
-                                                  <input
-                                                    type="text"
-                                                    value={tempRequestData[key] || ''}
-                                                    onChange={(e) => setTempRequestData({ ...tempRequestData, [key]: e.target.value })}
-                                                    style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', marginRight: '10px' }}
-                                                  />
-                                                ) : (
-                                                  <span className="detail-value" style={{ whiteSpace: 'pre-wrap' }}>
-                                                    {key === 'wantsMalazem' ? (value ? 'نعم' : 'لا') : (key.includes('track') ? normalizeTrackName(stringValue) : stringValue)}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
+                                      ) : (
+                                        <span style={{ color: '#cbd5e1', fontSize: '12px' }}>لا يوجد</span>
+                                      )}
+                                    </td>
+                                    {/* إجراءات */}
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                                        {/* Visual toggle icon (no backend effect) */}
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleFlag(rowKey)}
+                                          title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
+                                          style={{
+                                            padding: '8px',
+                                            background: isFlagged ? '#fef3c7' : '#fffbeb',
+                                            color: isFlagged ? '#92400e' : '#b45309',
+                                            border: `1px solid ${isFlagged ? '#facc15' : '#fde68a'}`,
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            boxShadow: isFlagged ? '0 0 0 1px rgba(250, 204, 21, 0.6)' : 'none'
+                                          }}
+                                        >
+                                          <Star size={18} fill={isFlagged ? 'currentColor' : 'none'} />
+                                        </button>
+                                        {/* View Documents Icon */}
+                                        {(request.documents && request.documents.length > 0) && (
+                                          <button
+                                            onClick={() => {
+                                              request.documents.forEach((doc: any) => {
+                                                if (doc.url) window.open(doc.url, '_blank');
+                                              });
+                                            }}
+                                            title="عرض جميع الصور والملفات"
+                                            style={{ padding: '6px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                          >
+                                            <Eye size={18} strokeWidth={2.5} />
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
+                                          disabled={request.status === 'completed'}
+                                          title="قبول"
+                                          style={{ padding: '8px', background: request.status === 'completed' ? '#86efac' : '#f0fdf4', color: '#166534', border: '1px solid #86efac', borderRadius: '8px', cursor: request.status === 'completed' ? 'default' : 'pointer', fontWeight: 'bold', opacity: request.status === 'completed' ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                        >
+                                          <CheckCircle size={20} strokeWidth={2.5} />
+                                        </button>
+                                        <button
+                                          onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
+                                          disabled={request.status === 'rejected'}
+                                          title="رفض"
+                                          style={{ padding: '8px', background: request.status === 'rejected' ? '#fca5a5' : '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: '8px', cursor: request.status === 'rejected' ? 'default' : 'pointer', fontWeight: 'bold', opacity: request.status === 'rejected' ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                        >
+                                          <XCircle size={20} strokeWidth={2.5} />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteRequest(request.id || '', request.serviceId)}
+                                          title="حذف"
+                                          style={{ padding: '8px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                        >
+                                          <X size={20} strokeWidth={2.5} />
+                                        </button>
+                                        {(request.data?.receiptUrl || (request.documents && request.documents.length > 0)) && (
+                                          <button
+                                            onClick={() => handleDownloadAll(request)}
+                                            title="تحميل جميع الملفات (Zip)"
+                                            style={{ padding: '8px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                          >
+                                            <Download size={20} strokeWidth={2.5} />
+                                          </button>
+                                        )}
                                       </div>
-
-                                      {/* Attachments Section (Receipts, etc.) */}
-                                      <div className="details-section">
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
-                                          <h4 className="details-section-title" style={{ borderBottom: 'none', paddingBottom: 0, margin: 0 }}>المرفقات وإيصال الدفع</h4>
-                                          {(request.data?.receiptUrl || (request.documents && request.documents.length > 0)) && (
-                                            <button
-                                              onClick={() => handleDownloadAll(request)}
-                                              className="download-all-btn"
-                                              style={{
-                                                padding: '8px 16px',
-                                                fontSize: '13px',
-                                                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '10px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '8px',
-                                                cursor: 'pointer',
-                                                fontWeight: '600',
-                                                boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.2)',
-                                                transition: 'all 0.2s ease'
-                                              }}
-                                              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                                              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                                            >
-                                              <Download size={16} />
-                                              تحميل جميع الصور
-                                            </button>
-                                          )}
-                                        </div>
-                                        <div className="documents-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px' }}>
-                                          {/* Main Receipt from data.receiptUrl */}
-                                          {request.data?.receiptUrl && (
-                                            <div className="document-item" style={{ cursor: 'pointer' }} onClick={() => window.open(request.data.receiptUrl, '_blank')}>
-                                              <div className="document-preview" style={{ height: '150px', overflow: 'hidden', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                                <img src={request.data.receiptUrl} alt="إيصال الدفع" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                              </div>
-                                              <span className="document-name" style={{ display: 'block', textAlign: 'center', marginTop: '5px', fontSize: '12px', fontWeight: '600' }}>إيصال الدفع</span>
-                                            </div>
-                                          )}
-
-                                          {/* Other documents from request.documents array if exist */}
-                                          {request.documents && request.documents.map((doc, idx) => (
-                                            <div key={idx} className="document-item" style={{ cursor: 'pointer' }} onClick={() => window.open(doc.url, '_blank')}>
-                                              <div className="document-preview" style={{ height: '150px', overflow: 'hidden', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
-                                                {doc.type === 'PDF' ? <FileText size={48} color="#64748b" /> : <img src={doc.url} alt={doc.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                                              </div>
-                                              <span className="document-name" style={{ display: 'block', textAlign: 'center', marginTop: '5px', fontSize: '12px', fontWeight: '600' }}>{doc.name || 'مرفق إضافي'}</span>
-                                            </div>
-                                          ))}
-
-                                          {/* If no documents at all */}
-                                          {!request.data?.receiptUrl && (!request.documents || request.documents.length === 0) && (
-                                            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px', color: '#94a3b8', background: '#f8fafc', borderRadius: '12px', border: '2px dashed #e2e8f0' }}>
-                                              لا توجد مرفقات أو إيصالات لهذا الطلب
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Dotted Separator */}
-                              {!isLastItem && <div className="request-row-separator"></div>}
-                            </div>
-                          );
-                        })}
-
-                        {totalPages > 1 && (
-                          <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', marginTop: '24px', padding: '16px 0' }}>
-                            <button
-                              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                              disabled={currentPage === 1}
-                              style={{
-                                padding: '8px 16px',
-                                borderRadius: '8px',
-                                border: '1px solid #e2e8f0',
-                                background: currentPage === 1 ? '#f1f5f9' : 'white',
-                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                                color: '#1e293b'
-                              }}
-                            >
-                              السابق
-                            </button>
-                            <span style={{ fontWeight: 'bold', color: '#1e293b' }}>
-                              {currentPage} / {totalPages}
-                            </span>
-                            <button
-                              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                              disabled={currentPage === totalPages}
-                              style={{
-                                padding: '8px 16px',
-                                borderRadius: '8px',
-                                border: '1px solid #e2e8f0',
-                                background: currentPage === totalPages ? '#f1f5f9' : 'white',
-                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                                color: '#1e293b'
-                              }}
-                            >
-                              التالي
-                            </button>
-                          </div>
-                        )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
                       </>
                     );
                   })()}
@@ -3273,6 +3047,28 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                           {/* Left Side: Actions */}
                           <div className="request-row-actions">
+                            {(() => {
+                              const flagKey = `student-${student.id}`;
+                              const isFlagged = !!toggledFlags[flagKey];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFlag(flagKey)}
+                                  className="action-btn"
+                                  title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز هذا المشترك مؤقتاً'}
+                                  style={{
+                                    background: isFlagged ? '#fef3c7' : '#fffbeb',
+                                    color: isFlagged ? '#92400e' : '#b45309',
+                                    borderColor: isFlagged ? '#fbbf24' : '#fde68a',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <Star size={18} fill={isFlagged ? 'currentColor' : 'none'} />
+                                </button>
+                              );
+                            })()}
                             <button
                               onClick={() => handleEditStudent(student)}
                               className="action-btn accept-btn"
@@ -4250,13 +4046,39 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.fawryCode}</td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
-                          <button
-                            onClick={() => handleDeleteDTCode(code.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
-                            title="حذف"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
+                            {(() => {
+                              const flagKey = `dt-${code.id || index}`;
+                              const isFlagged = !!toggledFlags[flagKey];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFlag(flagKey)}
+                                  title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
+                                  style={{
+                                    padding: '6px',
+                                    background: isFlagged ? '#eef2ff' : '#f5f3ff',
+                                    color: isFlagged ? '#3730a3' : '#4c1d95',
+                                    border: `1px solid ${isFlagged ? '#a5b4fc' : '#c4b5fd'}`,
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <Star size={16} fill={isFlagged ? 'currentColor' : 'none'} />
+                                </button>
+                              );
+                            })()}
+                            <button
+                              onClick={() => handleDeleteDTCode(code.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
+                              title="حذف"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -4391,13 +4213,39 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.orderNumber}</td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
-                          <button
-                            onClick={() => handleDeleteEPCode(code.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
-                            title="حذف"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
+                            {(() => {
+                              const flagKey = `ep-${code.id || index}`;
+                              const isFlagged = !!toggledFlags[flagKey];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFlag(flagKey)}
+                                  title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
+                                  style={{
+                                    padding: '6px',
+                                    background: isFlagged ? '#ecfdf5' : '#f0fdf4',
+                                    color: isFlagged ? '#047857' : '#15803d',
+                                    border: `1px solid ${isFlagged ? '#6ee7b7' : '#bbf7d0'}`,
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <Star size={16} fill={isFlagged ? 'currentColor' : 'none'} />
+                                </button>
+                              );
+                            })()}
+                            <button
+                              onClick={() => handleDeleteEPCode(code.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
+                              title="حذف"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
