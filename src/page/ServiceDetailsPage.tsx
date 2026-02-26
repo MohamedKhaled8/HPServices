@@ -362,6 +362,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         initialData['diploma_type'] = student.diplomaType || 'اختر نوع الدبلومة';
       }
 
+      // Special initialization for Service 9 (Graduation Project)
+      if (service.id === '9') {
+        initialData['student_names'] = '';
+      }
+
       setServiceData(initialData);
 
       // تعيين جميع الحقول القابلة للتعديل كغير قابلة للتعديل في البداية
@@ -815,6 +820,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             <h2>{service.id === '1' ? 'بيانات التسجيل' : 'بيانات الخدمة'}</h2>
             <div className="service-fields">
               {service.fields.filter(field => !disabledFields.includes(field.name)).map(field => {
+                // Ignore student_names for Service 3 as it's handled by custom logic below
+                if (service.id === '3' && field.name === 'student_names') return null;
+
                 // تجاهل حقول Other إذا لم يتم اختيار Other أو أخرى
                 if (field.name.endsWith('_other')) {
                   const parentFieldName = field.name.replace('_other', '');
@@ -1133,81 +1141,113 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                       </>
                     )}
 
-                    {field.type === 'dynamic_list' && (
-                      <div className="dynamic-list-container">
-                        <div className="existing-list">
-                          {(serviceData[field.name]?.split('\n').filter((s: string) => s.trim() !== '') || []).map((item: string, index: number) => (
-                            <div key={index} className="dynamic-list-item">
-                              <input
-                                type="text"
-                                value={item}
-                                onChange={(e) => {
-                                  const newVal = e.target.value;
-                                  const currentList = serviceData[field.name] ? serviceData[field.name].split('\n') : [];
-                                  if (currentList[index] !== undefined) {
-                                    currentList[index] = newVal;
-                                    handleServiceDataChange(field.name, currentList.join('\n'));
-                                  }
-                                }}
-                                className="dynamic-item-input"
-                              />
-                              <button
-                                type="button"
-                                className="delete-item-btn"
-                                onClick={() => {
-                                  let currentList = serviceData[field.name] ? serviceData[field.name].split('\n') : [];
-                                  currentList.splice(index, 1);
-                                  handleServiceDataChange(field.name, currentList.join('\n'));
-                                }}
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
+                    {field.type === 'dynamic_list' && (() => {
+                      const rawVal = serviceData[field.name];
+                      const namesList: string[] = typeof rawVal === 'string'
+                        ? rawVal.split('\n').filter((s: string) => s.trim() !== '')
+                        : Array.isArray(rawVal) ? rawVal.filter((s: string) => s.trim() !== '') : [];
 
-                        <div className="add-new-item-row">
-                          <input
-                            type="text"
-                            placeholder="أضف اسم طالب..."
-                            id={`new-item-${field.name}`}
-                            className="new-item-input"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const input = e.currentTarget;
-                                const val = input.value.trim();
-                                if (val) {
-                                  let currentList = serviceData[field.name] ? serviceData[field.name].split('\n') : [];
-                                  // Filter out empty strings if any existed before pushing
-                                  currentList = currentList.filter((s: string) => s.trim() !== '');
-                                  currentList.push(val);
-                                  handleServiceDataChange(field.name, currentList.join('\n'));
+                      return (
+                        <div className="dynamic-list-container">
+                          <div className="existing-list">
+                            {namesList.map((item: string, displayIndex: number) => (
+                              <div key={displayIndex} className="dynamic-list-item">
+                                <input
+                                  type="text"
+                                  value={item}
+                                  onChange={(e) => {
+                                    const newVal = e.target.value;
+                                    setServiceData(prev => {
+                                      const prevRaw = prev[field.name];
+                                      const prevList: string[] = typeof prevRaw === 'string'
+                                        ? prevRaw.split('\n').filter((s: string) => s.trim() !== '')
+                                        : Array.isArray(prevRaw) ? prevRaw.filter((s: string) => s.trim() !== '') : [];
+                                      const updated = [...prevList];
+                                      if (updated[displayIndex] !== undefined) {
+                                        updated[displayIndex] = newVal;
+                                      }
+                                      return { ...prev, [field.name]: updated.join('\n') };
+                                    });
+                                  }}
+                                  className="dynamic-item-input"
+                                />
+                                <button
+                                  type="button"
+                                  className="delete-item-btn"
+                                  onClick={() => {
+                                    setServiceData(prev => {
+                                      const prevRaw = prev[field.name];
+                                      const prevList: string[] = typeof prevRaw === 'string'
+                                        ? prevRaw.split('\n').filter((s: string) => s.trim() !== '')
+                                        : Array.isArray(prevRaw) ? prevRaw.filter((s: string) => s.trim() !== '') : [];
+                                      const updated = [...prevList];
+                                      updated.splice(displayIndex, 1);
+                                      return { ...prev, [field.name]: updated.join('\n') };
+                                    });
+                                  }}
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="add-new-item-row">
+                            <input
+                              type="text"
+                              placeholder="أضف اسم طالب..."
+                              id={`new-item-${field.name}`}
+                              className="new-item-input"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const input = e.currentTarget;
+                                  const val = input.value.trim();
+                                  if (val) {
+                                    setServiceData(prev => {
+                                      const prevRaw = prev[field.name];
+                                      let prevList: string[] = typeof prevRaw === 'string'
+                                        ? prevRaw.split('\n').filter((s: string) => s.trim() !== '')
+                                        : Array.isArray(prevRaw) ? prevRaw.filter((s: string) => s.trim() !== '') : [];
+                                      prevList.push(val);
+                                      return { ...prev, [field.name]: prevList.join('\n') };
+                                    });
+                                    if (missingFieldNames.includes(field.name)) {
+                                      setMissingFieldNames(prev => prev.filter(name => name !== field.name));
+                                    }
+                                    input.value = '';
+                                  }
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="add-item-btn"
+                              onClick={() => {
+                                const input = document.getElementById(`new-item-${field.name}`) as HTMLInputElement;
+                                if (input && input.value.trim()) {
+                                  const val = input.value.trim();
+                                  setServiceData(prev => {
+                                    const prevRaw = prev[field.name];
+                                    let prevList: string[] = typeof prevRaw === 'string'
+                                      ? prevRaw.split('\n').filter((s: string) => s.trim() !== '')
+                                      : Array.isArray(prevRaw) ? prevRaw.filter((s: string) => s.trim() !== '') : [];
+                                    prevList.push(val);
+                                    return { ...prev, [field.name]: prevList.join('\n') };
+                                  });
+                                  if (missingFieldNames.includes(field.name)) {
+                                    setMissingFieldNames(prev => prev.filter(name => name !== field.name));
+                                  }
                                   input.value = '';
                                 }
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="add-item-btn"
-                            onClick={() => {
-                              const input = document.getElementById(`new-item-${field.name}`) as HTMLInputElement;
-                              if (input && input.value.trim()) {
-                                const val = input.value.trim();
-                                let currentList = serviceData[field.name] ? serviceData[field.name].split('\n') : [];
-                                currentList = currentList.filter((s: string) => s.trim() !== '');
-                                currentList.push(val);
-                                handleServiceDataChange(field.name, currentList.join('\n'));
-                                input.value = '';
-                              }
-                            }}
-                          >
-                            <Plus size={20} />
-                          </button>
+                              }}
+                            >
+                              <Plus size={20} />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {field.type === 'textarea' && (
                       <textarea

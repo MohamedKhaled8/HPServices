@@ -134,6 +134,7 @@ export const SERVICES: Service[] = [
     icon: 'shipping.json',
     color: '#10B981',
     fields: [
+      { name: 'student_names', label: 'أسماء اصحاب النسخ المطبوعة', type: 'dynamic_list', required: true },
       { name: 'number_of_copies', label: 'عدد النسخ المطلوبة (من 1 إلى 10)', type: 'number', required: true },
       { name: 'phone_whatsapp', label: 'رقم هاتف للتواصل والشحن (واتساب وفون)', type: 'text', required: true },
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: DIPLOMA_TYPES },

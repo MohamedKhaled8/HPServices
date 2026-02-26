@@ -80,7 +80,9 @@ import {
   PieChart,
   Activity,
   Settings,
-  Star
+  Star,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
@@ -100,6 +102,7 @@ interface AdminDashboardPageProps {
 const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBack, onAssignmentsClick }) => {
   const { student } = useStudent();
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
+  const [dataReady, setDataReady] = useState(false);
   const [students, setStudents] = useState<Record<string, StudentData>>({});
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services'>('requests');
@@ -138,6 +141,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [isEditingStudent, setIsEditingStudent] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [tempRequestData, setTempRequestData] = useState<any>({});
+  const [isEditingRequestModalOpen, setIsEditingRequestModalOpen] = useState(false);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
@@ -181,7 +186,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       fullNameArabic: 'الاسم بالعربية',
       fullNameEnglish: 'الاسم بالإنجليزية',
       nationalID: 'رقم الهوية',
-      track: 'التخصص',
+      track: 'المسار',
       whatsappNumber: 'رقم الواتساب',
       email: 'البريد الإلكتروني',
       address: 'العنوان',
@@ -221,7 +226,23 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       transformation_type: 'نوع التحول الرقمي',
       exam_language: 'لغة الامتحان',
       exam_type: 'نوع الامتحان',
-      total_price: 'الإجمالي'
+      total_price: 'الإجمالي',
+      project_title: 'عنوان المشروع',
+      group_link: 'رابط المجموعة',
+      grouplink: 'رابط المجموعة',
+      student_names: 'أسماء الطلاب المشتركين',
+      names_array: 'أسماء أصحاب النسخ',
+      leader_whatsapp: 'رقم حساب الواتساب الخاص بك',
+      full_name: 'الاسم رباعي',
+      full_name_arabic: 'الاسم رباعي باللغة العربية',
+      diploma_year: 'سنة الدبلومة',
+      track_other: 'مسار أخر',
+      faculty_other: 'كلية أخرى',
+      whatsapp_number: 'رقم الواتساب',
+      educational_specialization: 'التخصص التعليمي',
+      national_id: 'الرقم القومي',
+      tracks: 'المسارات',
+      tracks_array: 'المسارات'
     };
     return keys[key] || key;
   };
@@ -254,8 +275,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
 
-  // Simple visual toggle flags per-row / per-item (no backend effect)
-  const [toggledFlags, setToggledFlags] = useState<Record<string, boolean>>({});
+  // Simple visual toggle flags per-row / per-item (persists in localStorage)
+  const [toggledFlags, setToggledFlags] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('admin_toggled_flags');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('admin_toggled_flags', JSON.stringify(toggledFlags));
+  }, [toggledFlags]);
 
   const toggleFlag = (key: string) => {
     setToggledFlags(prev => ({
@@ -301,23 +333,39 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     // Subscribe to all service requests
     const unsubscribe = subscribeToAllServiceRequests((requests) => {
       setServiceRequests(requests);
+      setDataReady(true);
 
-      // Fetch student data for each request
+      // Fetch student data for each request - batch parallel fetch, skip already loaded
       const fetchStudents = async () => {
-        const studentsMap: Record<string, StudentData> = {};
-        for (const request of requests) {
-          if (!studentsMap[request.studentId]) {
-            try {
-              const studentData = await getStudentData(request.studentId);
-              if (studentData) {
-                studentsMap[request.studentId] = studentData;
+        const uniqueStudentIds = [...new Set(requests.map(r => r.studentId))];
+        // Only fetch students we don't already have
+        setStudents(prev => {
+          const missingIds = uniqueStudentIds.filter(id => !prev[id]);
+          if (missingIds.length === 0) return prev; // nothing to fetch
+
+          // Kick off parallel fetch for missing students
+          Promise.all(
+            missingIds.map(async (studentId) => {
+              try {
+                const studentData = await getStudentData(studentId);
+                return { studentId, studentData };
+              } catch (error) {
+                logger.error(`Error fetching student ${studentId}:`, error);
+                return { studentId, studentData: null };
               }
-            } catch (error) {
-              logger.error(`Error fetching student ${request.studentId}:`, error);
-            }
-          }
-        }
-        setStudents(studentsMap);
+            })
+          ).then(results => {
+            setStudents(current => {
+              const updated = { ...current };
+              results.forEach(({ studentId, studentData }) => {
+                if (studentData) updated[studentId] = studentData;
+              });
+              return updated;
+            });
+          });
+
+          return prev; // Return existing state while fetching
+        });
       };
       fetchStudents();
     });
@@ -631,7 +679,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     return () => {
       unsubscribe();
-      if (unsubscribeDtCodes) unsubscribeDtCodes();
       if (unsubscribeDtCodes) unsubscribeDtCodes();
       if (unsubscribeEpCodes) unsubscribeEpCodes();
     };
@@ -1426,7 +1473,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       case 'rejected':
         return <span className="status-badge status-rejected"><XCircle size={14} /> مرفوض</span>;
       default:
-        return <span className="status-badge status-pending"><Clock size={14} /> قيد الانتظار</span>;
+        return <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #fcd34d', borderRadius: '12px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', fontSize: '12px', width: 'fit-content', margin: '0 auto' }}><Clock size={14} /> قيد الانتظار</span>;
     }
   };
 
@@ -1560,6 +1607,24 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     navigator.clipboard.writeText(columnData);
     setToastState({ message: `تم نسخ عمود "${columnName}" بنجاح!`, type: 'success', duration: 2000 });
   };
+
+  /**
+   * نسخ عمود محدد من جدول طلبات الخدمات
+   * @param columnName اسم العمود للعرض في التنبيه
+   * @param filteredRequests قائمة الطلبات الحالية
+   * @param getValue Function returns the string value for this column
+   */
+  const copyRequestsColumn = (columnName: string, filteredRequests: any[], getValue: (req: any) => string) => {
+    try {
+      const columnData = filteredRequests.map(req => getValue(req)).join('\n');
+      navigator.clipboard.writeText(columnData);
+      setToastState({ message: `تم نسخ عمود "${columnName}" بنجاح!`, type: 'success', duration: 2000 });
+    } catch (err) {
+      logger.error('Error copying column:', err);
+      showAlert('خطأ', 'فشل نسخ العمود', 'error');
+    }
+  };
+
 
   const handleDeleteDTCode = async (id: string) => {
     if (!id) return;
@@ -1825,7 +1890,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       {activeTab === 'requests' && (
         <div className="admin-content">
           <div className="requests-section">
-            <h2>جميع الطلبات ({serviceRequests.length})</h2>
+            <h2>جميع الطلبات {dataReady ? serviceRequests.length : 'جاري التحميل...'}</h2>
 
             {/* Services Files Grid */}
             <div className="services-files-grid">
@@ -1910,6 +1975,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       .filter(r => r.serviceId === selectedServiceId)
                       .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
 
+                    if (!dataReady) {
+                      return (
+                        <div className="no-requests-message" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                          <div className="loader-spinner" style={{ margin: '0 auto 16px', width: 36, height: 36, border: '3px solid #e2e8f0', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                          <p style={{ color: '#64748b' }}>جاري تحميل البيانات...</p>
+                        </div>
+                      );
+                    }
+
                     if (filteredRequests.length === 0) {
                       return (
                         <div className="no-requests-message">
@@ -1918,23 +1992,25 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       );
                     }
 
-                    const currentRequests = filteredRequests;
+                    // Standard keys to exclude from dynamic columns
+                    const STANDARD_KEYS = [
+                      'full_name_arabic', 'full_name', 'student_names', 'names', 'student_names_array',
+                      'national_id', 'nationalID',
+                      'whatsapp_number', 'phone_whatsapp', 'leader_whatsapp', 'phone', 'whatsappNumber',
+                      'email',
+                      'address', 'address_details', 'deliveryAddress',
+                      'diploma_type', 'diplomaType', 'diploma_year', 'diplomaYear',
+                      'track', 'track_category', 'track_name', 'track_other', 'educational_specialization', 'faculty', 'department',
+                      'receiptUrl', 'receipt_upload', 'selectedCertificate', 'selectedExamLanguage', 'names_array', 'tracks_array',
+                      'notes', 'status', 'createdAt', 'updatedAt', 'id', 'studentId', 'serviceId'
+                    ];
 
-                    // Collect all unique data keys from all requests for dynamic columns
                     const allDataKeys = new Set<string>();
-                    currentRequests.forEach(req => {
+                    filteredRequests.forEach(req => {
                       Object.entries(req.data || {}).forEach(([key, value]) => {
                         const stringValue = String(value || '').trim();
                         if (
-                          key !== 'selectedCertificate' &&
-                          key !== 'receiptUrl' &&
-                          key !== 'names_array' &&
-                          key !== 'tracks_array' &&
-                          key !== 'full_name_arabic' &&
-                          key !== 'full_name' &&
-                          key !== 'national_id' &&
-                          key !== 'whatsapp_number' &&
-                          key !== 'email' &&
+                          !STANDARD_KEYS.includes(key) &&
                           typeof value !== 'object' &&
                           stringValue &&
                           stringValue !== 'undefined' &&
@@ -1944,6 +2020,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         }
                       });
                     });
+
+                    const hasAddress = filteredRequests.some(r => r.data?.address || r.data?.address_details || r.data?.deliveryAddress);
+                    const hasDiploma = filteredRequests.some(r => r.data?.diploma_type || r.data?.diplomaType || r.data?.diploma_year || r.data?.diplomaYear);
+                    const hasTrack = filteredRequests.some(r => r.data?.track || r.data?.track_category || r.data?.track_name || r.data?.track_other || r.data?.educational_specialization || r.data?.faculty || r.data?.department);
+                    const hasSelectedCertificate = filteredRequests.some(r => r.data?.selectedCertificate);
+                    const hasStudentNames = filteredRequests.some(r => (r.data?.student_names || r.data?.names) && (typeof (r.data.student_names || r.data.names) === 'string' || Array.isArray(r.data.student_names || r.data.names)));
+                    const hasNamesArray = filteredRequests.some(r => (r.data?.names_array || r.data?.student_names_array) && (typeof (r.data.names_array || r.data.student_names_array) === 'string' || Array.isArray(r.data.names_array || r.data.student_names_array)));
 
                     return (
                       <>
@@ -1961,25 +2044,137 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           position: 'relative',
                           background: 'white'
                         }}>
-                          <table className="excel-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '15px', minWidth: '1100px' }}>
+                          <table className="excel-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '15px', minWidth: '1200px' }}>
                             <thead>
-                              <tr style={{ position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', color: 'white' }}>
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>#</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الاسم</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الرقم القومي</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الواتساب</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الإيميل</th>
+                              <tr style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', color: '#1e293b', borderBottom: '2px solid #e2e8f0' }}>
+                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', color: '#64748b' }}>#</th>
+
+                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                    الاسم
+                                    <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                      <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('الاسم', filteredRequests, r => r.data.full_name_arabic || r.data.full_name || students[r.studentId]?.fullNameArabic || '-')} />
+                                    </span>
+                                  </div>
+                                </th>
+
+                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                    الرقم القومي
+                                    <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                      <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('الرقم القومي', filteredRequests, r => r.data.national_id || students[r.studentId]?.nationalID || '-')} />
+                                    </span>
+                                  </div>
+                                </th>
+
+                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                    الواتساب
+                                    <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                      <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('الواتساب', filteredRequests, r => r.data.whatsapp_number || r.data.phone_whatsapp || students[r.studentId]?.whatsappNumber || '-')} />
+                                    </span>
+                                  </div>
+                                </th>
+
+                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                    الإيميل
+                                    <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                      <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('الإيميل', filteredRequests, r => r.data.email || students[r.studentId]?.email || '-')} />
+                                    </span>
+                                  </div>
+                                </th>
+
+                                {hasAddress && (
+                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                      العنوان
+                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('العنوان', filteredRequests, r => r.data.address || r.data.address_details || r.data.deliveryAddress || '-')} />
+                                      </span>
+                                    </div>
+                                  </th>
+                                )}
+
+                                {hasDiploma && (
+                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                      نوع الدبلومه
+                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('نوع الدبلومه', filteredRequests, r => `${r.data.diploma_type || r.data.diplomaType || ''} ${(r.data.diploma_year || r.data.diplomaYear) ? `(${r.data.diploma_year || r.data.diplomaYear})` : ''}`.trim() || '')} />
+                                      </span>
+                                    </div>
+                                  </th>
+                                )}
+
+                                {hasTrack && (
+                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                      المسار
+                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('المسار', filteredRequests, r => normalizeTrackName(r.data.track || r.data.track_category || r.data.track_name || r.data.educational_specialization || r.data.faculty || r.data.department || ''))} />
+                                      </span>
+                                    </div>
+                                  </th>
+                                )}
+
+                                {hasSelectedCertificate && (
+                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                      اسم الشهاده المختاره
+                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('اسم الشهاده المختاره', filteredRequests, r => typeof r.data?.selectedCertificate === 'object' ? r.data?.selectedCertificate?.name : (r.data?.selectedCertificate || ''))} />
+                                      </span>
+                                    </div>
+                                  </th>
+                                )}
+
+                                {hasStudentNames && (
+                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                      أسماء الطلاب المشتركين
+                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('أسماء الطلاب المشتركين', filteredRequests, r => {
+                                          const v = r.data?.student_names || r.data?.names;
+                                          return Array.isArray(v) ? v.join(', ') : (typeof v === 'string' ? v.replace(/\n/g, ', ') : '');
+                                        })} />
+                                      </span>
+                                    </div>
+                                  </th>
+                                )}
+
+                                {hasNamesArray && (
+                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                      اسماء اصحاب النسخ
+                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('اسماء اصحاب النسخ', filteredRequests, r => {
+                                          const v = r.data?.names_array || r.data?.student_names_array;
+                                          return Array.isArray(v) ? v.join(', ') : (typeof v === 'string' ? v.replace(/\n/g, ', ') : '');
+                                        })} />
+                                      </span>
+                                    </div>
+                                  </th>
+                                )}
+
                                 {Array.from(allDataKeys).map(key => (
-                                  <th key={key} style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'right', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>{translateKey(key)}</th>
+                                  <th key={key} style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                      {translateKey(key)}
+                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn(translateKey(key), filteredRequests, r => String(r.data?.[key] || '-'))} />
+                                      </span>
+                                    </div>
+                                  </th>
                                 ))}
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الحالة</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>التاريخ</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>الإيصال</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #475569', textAlign: 'center', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>إجراءات</th>
+
+                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>الحالة</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>التاريخ</th>
+                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>إجراءات</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {currentRequests.map((request, index) => {
+                              {filteredRequests.map((request, index) => {
                                 const studentData = students[request.studentId];
                                 const rNationalID = request.data.national_id || studentData?.nationalID;
                                 const rEmail = request.data.email || studentData?.email;
@@ -2011,159 +2206,215 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                     onMouseOver={(e) => e.currentTarget.style.background = '#f0f9ff'}
                                     onMouseOut={(e) => e.currentTarget.style.background = rowBg}
                                   >
-                                    {/* # */}
                                     <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '700', color: '#64748b', fontSize: '13px' }}>
                                       {index + 1}
                                     </td>
-                                    {/* الاسم */}
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontWeight: '600', color: '#1e293b', whiteSpace: 'normal', minWidth: '180px', wordBreak: 'break-word', lineHeight: '1.4', textAlign: 'right' }}>
+
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontWeight: '600', color: '#1e293b', whiteSpace: 'normal', minWidth: '180px', textAlign: 'right' }}>
                                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexDirection: 'column' }}>
                                         <span style={{ fontSize: '14px' }}>{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
                                         {isDuplicate && (
-                                          <span style={{ fontSize: '11px', backgroundColor: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)', alignSelf: 'flex-start' }}>
+                                          <span style={{ fontSize: '10px', backgroundColor: '#ef4444', color: 'white', padding: '1px 6px', borderRadius: '10px', fontWeight: 'bold' }}>
                                             مكرر ({userRequestsCount})
                                           </span>
                                         )}
                                       </div>
                                     </td>
-                                    {/* الرقم القومي */}
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '14px', color: '#475569', whiteSpace: 'nowrap' }}>
-                                      {request.data.national_id || studentData?.nationalID || '-'}
+
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>
+                                      {request.data.national_id || studentData?.nationalID || ''}
                                     </td>
-                                    {/* الواتساب */}
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '14px', color: '#334155', whiteSpace: 'nowrap' }}>
-                                      {request.data.whatsapp_number || request.data.phone_whatsapp || studentData?.whatsappNumber || '-'}
+
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '13px', color: '#334155', whiteSpace: 'nowrap' }}>
+                                      {request.data.whatsapp_number || request.data.phone_whatsapp || studentData?.whatsappNumber || ''}
                                     </td>
-                                    {/* الإيميل */}
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#64748b', minWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: '1.3' }}>
-                                      {request.data.email || studentData?.email || '-'}
+
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#64748b', minWidth: '150px' }}>
+                                      {request.data.email || studentData?.email || ''}
                                     </td>
-                                    {/* Dynamic data columns */}
+
+                                    {hasAddress && (
+                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', minWidth: '180px' }}>
+                                        {request.data.address || request.data.address_details || request.data.deliveryAddress || ''}
+                                      </td>
+                                    )}
+
+                                    {hasDiploma && (
+                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>
+                                        {request.data.diploma_type || request.data.diplomaType || ''}
+                                        {(request.data.diploma_year || request.data.diplomaYear) && ` (${request.data.diploma_year || request.data.diplomaYear})`}
+                                      </td>
+                                    )}
+                                    {hasTrack && (
+                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
+                                        {normalizeTrackName(request.data.track || request.data.track_category || request.data.track_name || request.data.educational_specialization || request.data.faculty || request.data.department || '')}
+                                      </td>
+                                    )}
+
+                                    {hasSelectedCertificate && (
+                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#475569', fontWeight: '600', minWidth: '150px' }}>
+                                        {typeof request.data.selectedCertificate === 'object' ? request.data.selectedCertificate.name : request.data.selectedCertificate || ''}
+                                      </td>
+                                    )}
+
+                                    {hasStudentNames && (
+                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', minWidth: '220px', maxWidth: '300px' }}>
+                                        {(() => {
+                                          const rawNames = request.data.student_names || request.data.names;
+                                          const names = typeof rawNames === 'string' ? rawNames.split(/\r?\n/).filter(Boolean) : Array.isArray(rawNames) ? rawNames : [];
+                                          return names.length > 0 ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '130px', overflowY: 'auto', paddingRight: '6px' }}>
+                                              {names.map((name: string, i: number) => (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#3b82f6', color: 'white', width: '22px', height: '22px', borderRadius: '50%', fontSize: '12px', fontWeight: 'bold', flexShrink: 0 }}>{i + 1}</span>
+                                                  <span style={{ fontWeight: '600', color: '#1e293b' }}>{name || 'بدون اسم'}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : '';
+                                        })()}
+                                      </td>
+                                    )}
+
+                                    {hasNamesArray && (
+                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', minWidth: '220px', maxWidth: '300px' }}>
+                                        {(() => {
+                                          const rawNames = request.data.names_array || request.data.student_names_array;
+                                          const names = typeof rawNames === 'string' ? rawNames.split(/\r?\n/).filter(Boolean) : Array.isArray(rawNames) ? rawNames : [];
+                                          return names.length > 0 ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '130px', overflowY: 'auto', paddingRight: '6px' }}>
+                                              {names.map((name: string, i: number) => (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f0fdf4', padding: '6px 8px', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+                                                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#10b981', color: 'white', width: '22px', height: '22px', borderRadius: '50%', fontSize: '12px', fontWeight: 'bold', flexShrink: 0 }}>{i + 1}</span>
+                                                  <span style={{ fontWeight: '600', color: '#166534' }}>{name || 'بدون اسم'}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : '';
+                                        })()}
+                                      </td>
+                                    )}
+
                                     {Array.from(allDataKeys).map(key => {
                                       const value = request.data?.[key];
                                       const stringValue = String(value || '').trim();
-                                      let displayValue = stringValue || '-';
+                                      let displayValue: React.ReactNode = stringValue || '';
                                       if (key === 'wantsMalazem') displayValue = value ? 'نعم' : 'لا';
-                                      else if (key.includes('track')) displayValue = normalizeTrackName(stringValue) || '-';
+                                      else if (stringValue.startsWith('http')) {
+                                        displayValue = <a href={stringValue} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline', wordBreak: 'break-all', display: 'inline-block' }}>{stringValue}</a>;
+                                      }
                                       return (
-                                        <td key={key} style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#475569', minWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.4' }}>
-                                          {displayValue}
+                                        <td key={key} style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', minWidth: '150px', maxWidth: '250px' }}>
+                                          <div style={{ maxHeight: '100px', overflowY: 'auto', paddingRight: '4px', whiteSpace: 'normal', wordWrap: 'break-word' }}>
+                                            {displayValue}
+                                          </div>
                                         </td>
                                       );
                                     })}
-                                    {/* الحالة */}
+
                                     <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                                      <div style={{ transform: 'scale(1.1)' }}>
-                                        {getStatusBadge(request.status)}
-                                      </div>
+                                      {getStatusBadge(request.status)}
                                     </td>
-                                    {/* التاريخ */}
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', fontWeight: '500' }}>
-                                      {request.createdAt
-                                        ? new Date(request.createdAt).toLocaleDateString('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric' })
-                                        : '-'}
+
+
+
+                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                                      {request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : ''}
                                     </td>
-                                    {/* الإيصال */}
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                                      {request.data?.receiptUrl ? (
-                                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                          <button
-                                            onClick={() => window.open(request.data.receiptUrl, '_blank')}
-                                            style={{ padding: '6px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                            onMouseOver={(e) => e.currentTarget.style.background = '#dbeafe'}
-                                            onMouseOut={(e) => e.currentTarget.style.background = '#eff6ff'}
-                                            title="عرض الإيصال"
-                                          >
-                                            <Eye size={18} strokeWidth={2.5} />
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              const link = document.createElement('a');
-                                              link.href = request.data.receiptUrl;
-                                              link.download = `receipt_${request.data.full_name || 'request'}.jpg`;
-                                              document.body.appendChild(link);
-                                              link.click();
-                                              document.body.removeChild(link);
-                                            }}
-                                            style={{ padding: '6px', background: '#f0fdf4', color: '#15803d', border: '1px solid #86efac', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                            onMouseOver={(e) => e.currentTarget.style.background = '#dcfce7'}
-                                            onMouseOut={(e) => e.currentTarget.style.background = '#f0fdf4'}
-                                            title="تحميل الإيصال"
-                                          >
-                                            <Download size={18} />
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <span style={{ color: '#cbd5e1', fontSize: '12px' }}>لا يوجد</span>
-                                      )}
-                                    </td>
-                                    {/* إجراءات */}
+
                                     <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
-                                        {/* Visual toggle icon (no backend effect) */}
                                         <button
                                           type="button"
                                           onClick={() => toggleFlag(rowKey)}
-                                          title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
+                                          title={isFlagged ? 'إلغاء التحديد' : 'تحديد الصف'}
                                           style={{
+                                            background: 'none',
+                                            border: 'none',
                                             padding: '8px',
-                                            background: isFlagged ? '#fef3c7' : '#fffbeb',
-                                            color: isFlagged ? '#92400e' : '#b45309',
-                                            border: `1px solid ${isFlagged ? '#facc15' : '#fde68a'}`,
-                                            borderRadius: '8px',
                                             cursor: 'pointer',
+                                            color: isFlagged ? '#2563eb' : '#94a3b8',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            justifyContent: 'center',
-                                            boxShadow: isFlagged ? '0 0 0 1px rgba(250, 204, 21, 0.6)' : 'none'
+                                            justifyContent: 'center'
                                           }}
                                         >
-                                          <Star size={18} fill={isFlagged ? 'currentColor' : 'none'} />
+                                          {isFlagged ? <CheckSquare size={20} strokeWidth={2.5} /> : <Square size={20} strokeWidth={1.5} />}
                                         </button>
-                                        {/* View Documents Icon */}
-                                        {(request.documents && request.documents.length > 0) && (
+
+                                        {((request.documents && request.documents.length > 0) || request.data?.receiptUrl) && (
                                           <button
                                             onClick={() => {
-                                              request.documents.forEach((doc: any) => {
-                                                if (doc.url) window.open(doc.url, '_blank');
-                                              });
+                                              let delay = 0;
+                                              if (request.documents) {
+                                                request.documents.forEach((doc: any) => {
+                                                  if (doc.url) {
+                                                    setTimeout(() => window.open(doc.url, '_blank'), delay);
+                                                    delay += 100;
+                                                  }
+                                                });
+                                              }
+                                              if (request.data?.receiptUrl) {
+                                                setTimeout(() => window.open(request.data.receiptUrl, '_blank'), delay);
+                                              }
                                             }}
-                                            title="عرض جميع الصور والملفات"
-                                            style={{ padding: '6px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                            title="عرض جميع الملفات والصور"
+                                            style={{ padding: '8px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: '8px', cursor: 'pointer' }}
                                           >
-                                            <Eye size={18} strokeWidth={2.5} />
+                                            <Eye size={16} strokeWidth={2.5} />
                                           </button>
                                         )}
+
                                         <button
                                           onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
                                           disabled={request.status === 'completed'}
                                           title="قبول"
-                                          style={{ padding: '8px', background: request.status === 'completed' ? '#86efac' : '#f0fdf4', color: '#166534', border: '1px solid #86efac', borderRadius: '8px', cursor: request.status === 'completed' ? 'default' : 'pointer', fontWeight: 'bold', opacity: request.status === 'completed' ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                          style={{ padding: '8px', background: '#f0fdf4', color: '#166534', border: '1px solid #86efac', borderRadius: '8px', cursor: 'pointer' }}
                                         >
-                                          <CheckCircle size={20} strokeWidth={2.5} />
+                                          <CheckCircle size={18} />
                                         </button>
+
                                         <button
                                           onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
                                           disabled={request.status === 'rejected'}
                                           title="رفض"
-                                          style={{ padding: '8px', background: request.status === 'rejected' ? '#fca5a5' : '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: '8px', cursor: request.status === 'rejected' ? 'default' : 'pointer', fontWeight: 'bold', opacity: request.status === 'rejected' ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                          style={{ padding: '8px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: '8px', cursor: 'pointer' }}
                                         >
-                                          <XCircle size={20} strokeWidth={2.5} />
+                                          <XCircle size={18} />
                                         </button>
+
+                                        <button
+                                          onClick={() => {
+                                            setEditingRequestId(request.id || null);
+                                            setEditingServiceId(request.serviceId || null);
+                                            const initializedData = { ...request.data };
+                                            allDataKeys.forEach((k: string) => {
+                                              if (initializedData[k] === undefined) initializedData[k] = '';
+                                            });
+                                            setTempRequestData(initializedData);
+                                            setIsEditingRequestModalOpen(true);
+                                          }}
+                                          title="تعديل"
+                                          style={{ padding: '8px', background: '#f0f9ff', color: '#0284c7', border: '1px solid #bae6fd', borderRadius: '8px', cursor: 'pointer' }}
+                                        >
+                                          <Edit2 size={16} />
+                                        </button>
+
                                         <button
                                           onClick={() => handleDeleteRequest(request.id || '', request.serviceId)}
                                           title="حذف"
-                                          style={{ padding: '8px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                          style={{ padding: '8px', background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer' }}
                                         >
-                                          <X size={20} strokeWidth={2.5} />
+                                          <Trash2 size={16} />
                                         </button>
+
                                         {(request.data?.receiptUrl || (request.documents && request.documents.length > 0)) && (
                                           <button
                                             onClick={() => handleDownloadAll(request)}
-                                            title="تحميل جميع الملفات (Zip)"
-                                            style={{ padding: '8px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                            title="تحميل جميع الملفات"
+                                            style={{ padding: '8px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer' }}
                                           >
-                                            <Download size={20} strokeWidth={2.5} />
+                                            <Download size={18} />
                                           </button>
                                         )}
                                       </div>
@@ -3462,6 +3713,109 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         )
       }
 
+      {/* Edit Request Modal */}
+      {
+        isEditingRequestModalOpen && editingRequestId && editingServiceId && (
+          <div className="request-modal-overlay" onClick={() => setIsEditingRequestModalOpen(false)}>
+            <div className="request-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
+              <div className="modal-header">
+                <h2>تعديل البيانات</h2>
+                <button onClick={() => setIsEditingRequestModalOpen(false)} className="close-button">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="modal-content" style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {Object.keys(tempRequestData).map((key) => {
+                    const val = tempRequestData[key];
+                    if (key === 'receiptUrl' || typeof val === 'object' && !Array.isArray(val) && val !== null) return null;
+
+                    if (key === 'student_names' || key === 'names_array') {
+                      const names = typeof val === 'string' ? val.split('\n') : Array.isArray(val) ? val : [''];
+                      return (
+                        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <label style={{ fontSize: '13px', fontWeight: 'bold' }}>{translateKey(key)}</label>
+                          {names.map((n: string, i: number) => (
+                            <input
+                              key={i}
+                              type="text"
+                              value={n}
+                              onChange={(e) => {
+                                const newNames = [...names];
+                                newNames[i] = e.target.value;
+                                setTempRequestData({ ...tempRequestData, [key]: newNames.join('\n') });
+                              }}
+                              className="form-input"
+                              placeholder={`الاسم رقم ${i + 1}`}
+                            />
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newNames = [...names, ''];
+                              setTempRequestData({ ...tempRequestData, [key]: newNames.join('\n') });
+                            }}
+                            style={{ padding: '6px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}
+                          >
+                            + إضافة اسم آخر
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    if (Array.isArray(val)) return null;
+
+                    return (
+                      <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: 'bold' }}>{translateKey(key)}</label>
+                        {key === 'wantsMalazem' ? (
+                          <select
+                            value={val ? 'true' : 'false'}
+                            onChange={(e) => setTempRequestData({ ...tempRequestData, [key]: e.target.value === 'true' })}
+                            className="form-input"
+                          >
+                            <option value="true">نعم</option>
+                            <option value="false">لا</option>
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={val || ''}
+                            onChange={(e) => setTempRequestData({ ...tempRequestData, [key]: e.target.value })}
+                            className="form-input"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="modal-footer" style={{ marginTop: '20px' }}>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await updateServiceRequestData(editingRequestId, editingServiceId, tempRequestData);
+                        setToastState({ message: 'تم تعديل الطلب بنجاح', type: 'success', duration: 3000 });
+                        setIsEditingRequestModalOpen(false);
+                      } catch (err: any) {
+                        setToastState({ message: 'فشل تعديل الطلب', type: 'error', duration: 3000 });
+                      }
+                    }}
+                    className="save-button"
+                  >
+                    <Save size={18} /> حفظ التغييرات
+                  </button>
+                  <button onClick={() => setIsEditingRequestModalOpen(false)} className="cancel-button">
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
       {/* Edit Student Modal */}
       {
         isEditingStudent && editedStudentData && (
@@ -3721,7 +4075,39 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                               {Object.entries(req.data || {}).map(([key, value]) => {
                                 const stringValue = String(value || '').trim();
-                                if (key === 'selectedCertificate' || key === 'receiptUrl' || key === 'names_array' || key === 'tracks_array' || key === 'selectedAssignmentsData' || key === 'selectedTransformationType' || typeof value === 'object' || !stringValue || stringValue === 'undefined' || stringValue === 'null') return null;
+
+                                // Special rendering for certificate and names
+                                if (key === 'selectedCertificate') {
+                                  return (
+                                    <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{translateKey(key)}:</span>
+                                      <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: '600' }}>
+                                        {typeof value === 'object' && value !== null ? (value as any).name : stringValue}
+                                      </span>
+                                    </div>
+                                  );
+                                }
+
+                                if (key === 'student_names' || key === 'names_array') {
+                                  const names = typeof value === 'string' ? value.split('\n').filter(Boolean) : Array.isArray(value) ? value : [];
+                                  if (names.length === 0) return null;
+                                  return (
+                                    <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' }}>
+                                      <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{translateKey(key)}:</span>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        {names.map((name: string, i: number) => (
+                                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: key === 'student_names' ? '#f8fafc' : '#f0fdf4', padding: '6px 8px', borderRadius: '6px', border: key === 'student_names' ? '1px solid #cbd5e1' : '1px solid #bbf7d0', maxWidth: '300px' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: key === 'student_names' ? '#3b82f6' : '#10b981', color: 'white', width: '22px', height: '22px', borderRadius: '50%', fontSize: '12px', fontWeight: 'bold', flexShrink: 0 }}>{i + 1}</span>
+                                            <span style={{ fontWeight: '600', color: key === 'student_names' ? '#1e293b' : '#166534' }}>{name || 'بدون اسم'}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                if (key === 'receiptUrl' || key === 'tracks_array' || key === 'selectedAssignmentsData' || key === 'selectedTransformationType' || typeof value === 'object' || !stringValue || stringValue === 'undefined' || stringValue === 'null') return null;
+
                                 return (
                                   <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{translateKey(key)}:</span>

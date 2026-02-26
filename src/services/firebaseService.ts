@@ -897,7 +897,16 @@ export const subscribeToServiceRequests = (
   // Subscribe to all service collections and merge results
   const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
   const unsubscribes: (() => void)[] = [];
-  const allRequests: ServiceRequest[] = [];
+  const requestsByService = new Map<string, ServiceRequest[]>();
+  const loadedServices = new Set<string>();
+  let initialLoadComplete = false;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const flushCallback = () => {
+    const merged: ServiceRequest[] = [];
+    requestsByService.forEach(reqs => merged.push(...reqs));
+    callback(merged);
+  };
 
   serviceIds.forEach(serviceId => {
     const collectionName = `serviceRequests_${serviceId}`;
@@ -918,15 +927,25 @@ export const subscribeToServiceRequests = (
         } as ServiceRequest;
       });
 
-      // Update allRequests array - remove old requests for this service and add new ones
-      const filteredRequests = allRequests.filter(r => r.serviceId !== serviceId);
-      allRequests.length = 0;
-      allRequests.push(...filteredRequests, ...requests);
+      requestsByService.set(serviceId, requests);
+      loadedServices.add(serviceId);
 
-      // Call callback with merged results
-      callback([...allRequests]);
+      if (!initialLoadComplete) {
+        if (loadedServices.size === serviceIds.length) {
+          initialLoadComplete = true;
+          flushCallback();
+        }
+      } else {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(flushCallback, 50);
+      }
     }, (error) => {
       logger.error(`Error in service requests subscription for ${serviceId}:`, error);
+      loadedServices.add(serviceId);
+      if (!initialLoadComplete && loadedServices.size === serviceIds.length) {
+        initialLoadComplete = true;
+        flushCallback();
+      }
     });
 
     unsubscribes.push(unsubscribe);
@@ -934,6 +953,7 @@ export const subscribeToServiceRequests = (
 
   // Return function to unsubscribe from all
   return () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
     unsubscribes.forEach(unsub => unsub());
   };
 };
@@ -977,7 +997,18 @@ export const subscribeToAllServiceRequests = (
   // Subscribe to all service collections and merge results
   const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
   const unsubscribes: (() => void)[] = [];
-  const allRequests: ServiceRequest[] = [];
+  // Use a Map keyed by serviceId for O(1) lookup/replace
+  const requestsByService = new Map<string, ServiceRequest[]>();
+  const loadedServices = new Set<string>();
+  let initialLoadComplete = false;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const flushCallback = () => {
+    // Merge all service requests into a single array
+    const merged: ServiceRequest[] = [];
+    requestsByService.forEach(reqs => merged.push(...reqs));
+    callback(merged);
+  };
 
   serviceIds.forEach(serviceId => {
     const collectionName = `serviceRequests_${serviceId}`;
@@ -993,19 +1024,31 @@ export const subscribeToAllServiceRequests = (
         } as ServiceRequest;
       });
 
-      // Update allRequests array
-      const existingIndex = allRequests.findIndex(r => r.serviceId === serviceId);
-      if (existingIndex >= 0) {
-        // Remove old requests for this service
-        allRequests.splice(existingIndex, allRequests.filter(r => r.serviceId === serviceId).length);
-      }
-      // Add new requests
-      allRequests.push(...requests);
+      // Replace requests for this service
+      requestsByService.set(serviceId, requests);
+      loadedServices.add(serviceId);
 
-      // Call callback with merged results
-      callback([...allRequests]);
+      if (!initialLoadComplete) {
+        // Wait until ALL services have reported their initial snapshot
+        if (loadedServices.size === serviceIds.length) {
+          initialLoadComplete = true;
+          flushCallback();
+        }
+        // Don't call back yet during initial load
+      } else {
+        // After initial load, debounce updates (50ms) so rapid multi-collection
+        // changes only trigger one callback
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(flushCallback, 50);
+      }
     }, (error) => {
       logger.error(`Error in service requests subscription for ${serviceId}:`, error);
+      // Still mark as loaded so we don't block the initial load
+      loadedServices.add(serviceId);
+      if (!initialLoadComplete && loadedServices.size === serviceIds.length) {
+        initialLoadComplete = true;
+        flushCallback();
+      }
     });
 
     unsubscribes.push(unsubscribe);
@@ -1013,6 +1056,7 @@ export const subscribeToAllServiceRequests = (
 
   // Return function to unsubscribe from all
   return () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
     unsubscribes.forEach(unsub => unsub());
   };
 };
