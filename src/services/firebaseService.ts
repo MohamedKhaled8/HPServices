@@ -1698,6 +1698,37 @@ export const subscribeToLatestNews = (
 // Service Settings (Enable/Disable Services)
 // ============================================
 
+// Clear Latest News (Stop Publishing)
+export const clearLatestNews = async (): Promise<void> => {
+  try {
+    const docRef = doc(db, 'config', 'latestNews');
+    await setDoc(docRef, {
+      content: '',
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    logger.log('Latest news cleared successfully');
+  } catch (error: any) {
+    logger.error('Error clearing latest news:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء إيقاف نشر الأخبار');
+  }
+};
+
+// Clear Quick Notification (Stop Publishing)
+export const clearQuickNotification = async (): Promise<void> => {
+  try {
+    const docRef = doc(db, 'config', 'quickNotification');
+    await setDoc(docRef, {
+      content: '',
+      timestamp: serverTimestamp(),
+      id: ''
+    }, { merge: true });
+    logger.log('Quick notification cleared successfully');
+  } catch (error: any) {
+    logger.error('Error clearing quick notification:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء إيقاف الرسائل السريعة');
+  }
+};
+
 export const getServiceSettings = async (): Promise<ServiceSettings> => {
   try {
     const docRef = doc(db, 'config', 'services');

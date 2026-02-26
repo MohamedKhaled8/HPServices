@@ -38,7 +38,9 @@ import {
   subscribeToServiceSettings,
   updateServiceSettings,
   subscribeToAdminPreferences,
-  updateAdminPreferences
+  updateAdminPreferences,
+  clearLatestNews,
+  clearQuickNotification
 } from '../services/firebaseService';
 import { normalizeTrackName } from '../utils/trackUtils';
 import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
@@ -1385,6 +1387,20 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   };
 
+  const handleStopPublishing = async () => {
+    showConfirm('إيقاف النشر', 'هل أنت متأكد من إيقاف نشر الأخبار والرسائل السريعة؟ سيتم إزالة الخبر الحالي والرسائل السريعة من جميع المستخدمين.', async () => {
+      try {
+        await clearLatestNews();
+        await clearQuickNotification();
+        setLatestNews('');
+        showAlert('تم الإيقاف', 'تم إيقاف نشر الأخبار والرسائل السريعة بنجاح', 'success');
+      } catch (error: any) {
+        logger.error('Error stopping publishing:', error);
+        showAlert('خطأ', 'حدث خطأ أثناء إيقاف النشر', 'error');
+      }
+    });
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
@@ -1758,6 +1774,29 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       نشر وحفظ الخبر
                     </>
                   )}
+                </button>
+
+                <button
+                  onClick={handleStopPublishing}
+                  style={{
+                    background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                    color: 'white',
+                    padding: '12px 24px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.2)',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                >
+                  <X size={18} />
+                  إيقاف النشر
                 </button>
               </div>
             </div>

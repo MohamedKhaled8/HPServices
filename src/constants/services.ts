@@ -123,7 +123,7 @@ export const SERVICES: Service[] = [
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: VIP_DIPLOMA_TYPES },
       { name: 'address', label: 'العنوان بالتفصيل', type: 'editable', required: true }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   },
   {
     id: '3',
@@ -139,7 +139,7 @@ export const SERVICES: Service[] = [
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: DIPLOMA_TYPES },
       { name: 'address_details', label: 'العنوان بالتفصيل (المحافظة / المدينة / اسم الشارع / علامة مميزة / رقم العقار)', type: 'textarea', required: true }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   },
   {
     id: '4',
@@ -157,7 +157,7 @@ export const SERVICES: Service[] = [
       { name: 'track_other', label: 'اذكر المسار', type: 'text', required: false },
       { name: 'diploma_year', label: 'سنة الدبلومة', type: 'select', required: true, options: ['اختر سنة الدبلومة', ...DIPLOMA_YEARS] }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   },
   {
     id: '5',
@@ -173,7 +173,7 @@ export const SERVICES: Service[] = [
       { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] },
       { name: 'whatsapp_number', label: 'رقم واتساب باللغة الإنجليزية', type: 'editable', required: true }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   },
   {
     id: '6',
@@ -191,7 +191,7 @@ export const SERVICES: Service[] = [
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true },
       { name: 'address', label: 'العنوان بالتفصيل لحد باب البيت', type: 'editable', required: true }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   },
   {
     id: '7',
@@ -209,7 +209,7 @@ export const SERVICES: Service[] = [
       { name: 'email', label: 'الجيميل', type: 'editable', required: true },
       { name: 'transformation_type', label: 'اختر نوع التحول الرقمي', type: 'select', required: true }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   },
   {
     id: '8',
@@ -225,7 +225,7 @@ export const SERVICES: Service[] = [
       { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] },
       { name: 'address', label: 'العنوان', type: 'editable', required: true }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   },
   {
     id: '9',
@@ -247,7 +247,7 @@ export const SERVICES: Service[] = [
       { name: 'project_title', label: 'عنوان المشروع كامل كما تم كتابته في الاستمارة', type: 'textarea', required: true },
       { name: 'group_link', label: 'لينك الجروب الخاص بالمجموعة', type: 'text', required: true }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   },
   {
     id: '10',
@@ -264,7 +264,7 @@ export const SERVICES: Service[] = [
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: ['اختر نوع الدبلومة', ...DIPLOMA_TYPES] },
       { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay'],
+    paymentMethods: ['Vodafone', 'instaPay'],
     requiredDocuments: [
       'شهادة ميلاد',
       'صورة شخصية',
@@ -287,7 +287,7 @@ export const SERVICES: Service[] = [
       { name: 'whatsapp_number', label: 'رقم للتواصل (تليفون او واتساب)', type: 'editable', required: true },
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true }
     ],
-    paymentMethods: ['Vodafone', 'Etisalat', 'Orange', 'instaPay']
+    paymentMethods: ['Vodafone', 'instaPay']
   }
 ];
 

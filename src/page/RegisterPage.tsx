@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StudentData, ValidationError } from '../types';
-import { validateStudentData } from '../utils/validation';
+import { validateStudentData, validateArabicText, validateEnglishText } from '../utils/validation';
 import { GOVERNORATES, DIPLOMA_YEARS, COURSES, DIPLOMA_TYPES } from '../constants/services';
 import { useStudent } from '../context';
 import { registerUser } from '../services/firebaseService';
@@ -35,7 +35,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(true);
   const [isCourseOther, setIsCourseOther] = useState(false);
 
   const getFieldError = (fieldName: string) =>
@@ -57,14 +57,15 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
   };
 
   /* Step validation before advancing */
-  const validateStep = (): boolean => {
+  const validateStep = (targetStep?: number): boolean => {
+    const s = targetStep !== undefined ? targetStep : step;
     const stepFields: Record<number, string[]> = {
       0: ['fullNameArabic', 'vehicleNameEnglish', 'whatsappNumber', 'nationalID'],
       1: ['diplomaYear', 'diplomaType', 'course'],
       2: ['address.governorate', 'address.city', 'address.street', 'address.building', 'email', 'password'],
     };
     const allErrors: ValidationError[] = [];
-    const fields = stepFields[step];
+    const fields = stepFields[s];
 
     fields.forEach((f) => {
       if (f.startsWith('address.')) {
@@ -77,6 +78,27 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           allErrors.push({ field: f, message: 'هذا الحقل مطلوب' });
       }
     });
+
+    // Additional validation for step 0: Arabic name must be 4 words in Arabic
+    if (s === 0 && formData.fullNameArabic && formData.fullNameArabic.trim() !== '') {
+      const arabicResult = validateArabicText(formData.fullNameArabic, 4);
+      if (!arabicResult.valid) {
+        // Remove generic error if exists, add specific one
+        const idx = allErrors.findIndex(e => e.field === 'fullNameArabic');
+        if (idx !== -1) allErrors.splice(idx, 1);
+        allErrors.push({ field: 'fullNameArabic', message: arabicResult.error || 'يجب إدخال الاسم رباعي بالعربية' });
+      }
+    }
+
+    // Additional validation for step 0: English name must be 4 words in English
+    if (s === 0 && formData.vehicleNameEnglish && formData.vehicleNameEnglish.trim() !== '') {
+      const englishResult = validateEnglishText(formData.vehicleNameEnglish, 4);
+      if (!englishResult.valid) {
+        const idx = allErrors.findIndex(e => e.field === 'vehicleNameEnglish');
+        if (idx !== -1) allErrors.splice(idx, 1);
+        allErrors.push({ field: 'vehicleNameEnglish', message: englishResult.error || 'يجب إدخال الاسم رباعي بالإنجليزية' });
+      }
+    }
 
     if (allErrors.length > 0) { setErrors(allErrors); return false; }
     return true;
@@ -96,7 +118,20 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
     const allErrors = validateStudentData(formData as StudentData);
     if (allErrors.length > 0) {
       setErrors(allErrors);
-      setSubmitError('يرجى مراجعة الحقول المطلوبة');
+      // Auto-navigate to the first step that has an error
+      const step0Fields = ['fullNameArabic', 'vehicleNameEnglish', 'whatsappNumber', 'nationalID'];
+      const step1Fields = ['diplomaYear', 'diplomaType', 'course'];
+      const hasStep0Error = allErrors.some(err => step0Fields.includes(err.field));
+      const hasStep1Error = allErrors.some(err => step1Fields.includes(err.field));
+      if (hasStep0Error) {
+        setStep(0);
+        setSubmitError('يرجى مراجعة البيانات الشخصية في الخطوة الأولى');
+      } else if (hasStep1Error) {
+        setStep(1);
+        setSubmitError('يرجى مراجعة بيانات الدبلوم في الخطوة الثانية');
+      } else {
+        setSubmitError('يرجى مراجعة الحقول المطلوبة');
+      }
       setIsSubmitting(false);
       return;
     }
@@ -135,7 +170,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
 
       <div className="auth-row">
         <div className="auth-field">
-          <label htmlFor="fullNameArabic">الاسم بالعربية <span className="req">*</span></label>
+          <label htmlFor="fullNameArabic">الاسم رباعي عربي <span className="req">*</span></label>
           <input
             id="fullNameArabic" type="text" dir="rtl"
             placeholder="الاسم رباعي بالعربية"
@@ -146,7 +181,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           {getFieldError('fullNameArabic') && <div className="field-error"><AlertCircle size={12} />{getFieldError('fullNameArabic')}</div>}
         </div>
         <div className="auth-field">
-          <label htmlFor="vehicleNameEnglish">الاسم بالإنجليزية <span className="req">*</span></label>
+          <label htmlFor="vehicleNameEnglish">الاسم رباعي انجليزي <span className="req">*</span></label>
           <input
             id="vehicleNameEnglish" type="text" dir="ltr" style={{ textAlign: 'right' }}
             placeholder="Full name in English"

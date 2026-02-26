@@ -711,6 +711,25 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                       }
                     }}
                   >
+                    <div className="assignment-select-circle" style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      border: selectedAssignments.includes(assignment.id) ? '2px solid #10b981' : '2px solid #d1d5db',
+                      background: selectedAssignments.includes(assignment.id) ? '#10b981' : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      transition: 'all 0.2s ease',
+                      marginLeft: '12px'
+                    }}>
+                      {selectedAssignments.includes(assignment.id) && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      )}
+                    </div>
                     <div className="assignment-card-content">
                       <h3>{assignment.name}</h3>
                       <div className="assignment-price">{assignment.price} جنيه</div>
@@ -1689,7 +1708,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
                   // Define default numbers
                   const defaultWallet = '01050889591';
-                  const defaultInstaPay = '01017180923';
+                  const defaultInstaPay = 'raoufpk97@instapay';
 
                   // Try to get from specific configs first
                   if (service.id === '3' && bookConfig?.paymentMethods) {
@@ -1710,9 +1729,12 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                   }
 
                   // Force empty string for methods that aren't wallets/instapay if any
-                  if (method !== 'Vodafone' && method !== 'Etisalat' && method !== 'Orange' && method !== 'instaPay') {
+                  if (method !== 'Vodafone' && method !== 'instaPay') {
                     phoneNumber = '';
                   }
+
+                  // Display labels
+                  const displayLabel = method === 'Vodafone' ? `فودافون ${phoneNumber || defaultWallet}` : method === 'instaPay' ? `انستا باي ${defaultInstaPay}` : method;
 
                   return (
                     <label key={method} className="payment-option" onClick={(e) => {
@@ -1724,7 +1746,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
                       if (phoneNumber) {
                         // 1. Copy to clipboard
-                        navigator.clipboard.writeText(phoneNumber);
+                        navigator.clipboard.writeText(method === 'instaPay' ? 'raoufpk97@instapay' : phoneNumber);
 
                         // Show stylish toast instead of alert
                         setShowCopyToast(true);
@@ -1745,15 +1767,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         style={{ pointerEvents: 'none' }}
                       />
                       <div className="payment-info">
-                        <span className="payment-label">{method}</span>
-                        {phoneNumber && (
-                          <span className="payment-number">{phoneNumber}</span>
-                        )}
-                        {method === 'instaPay' && (
-                          <span className="instapay-id" style={{ display: 'block', direction: 'ltr', fontSize: '0.9em', color: '#6366f1', marginTop: '2px' }}>
-                            raoufpk97@instapay
-                          </span>
-                        )}
+                        <span className="payment-label">{displayLabel}</span>
                       </div>
                     </label>
                   );
