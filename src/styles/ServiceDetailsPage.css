@@ -197,6 +197,24 @@
     width: 100%;
     padding: 14px;
   }
+
+  .payment-methods {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .payment-option {
+    padding: 12px;
+  }
+
+  .payment-label {
+    font-size: 14px;
+  }
+
+  .payment-number {
+    font-size: 11px !important;
+    color: #475569;
+  }
 }
 
 

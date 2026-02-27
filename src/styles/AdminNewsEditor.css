@@ -28,28 +28,47 @@
     box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
 }
 
-.publish-button-premium {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+.publish-button-premium,
+.quick-message-button-premium,
+.stop-button-premium {
     color: white;
     border: none;
-    padding: 14px 32px;
-    border-radius: 50px;
-    font-size: 16px;
+    padding: 14px 28px;
+    border-radius: 12px;
+    font-size: 15px;
     font-weight: 700;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    gap: 8px;
     transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    white-space: nowrap;
+}
+
+.publish-button-premium {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
 }
 
-.publish-button-premium:hover:not(:disabled) {
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
+.quick-message-button-premium {
+    background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
 }
 
-.publish-button-premium:disabled {
+.stop-button-premium {
+    background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+.publish-button-premium:hover:not(:disabled),
+.quick-message-button-premium:hover:not(:disabled),
+.stop-button-premium:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.02);
+}
+
+.publish-button-premium:disabled,
+.quick-message-button-premium:disabled {
     opacity: 0.6;
     cursor: not-allowed;
     background: #94a3b8;
@@ -82,4 +101,41 @@
 .action-row-end {
     display: flex;
     justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+    .premium-news-editor {
+        padding: 24px 15px;
+        border-radius: 16px;
+    }
+
+    .action-row-end {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .publish-button-premium,
+    .quick-message-button-premium,
+    .stop-button-premium {
+        width: 100%;
+        padding: 16px;
+        font-size: 14px;
+    }
+
+    .section-header-compact {
+        flex-direction: column;
+        text-align: center;
+        gap: 12px;
+    }
+
+    .section-header-compact h2 {
+        font-size: 18px;
+    }
+
+    .section-header-compact p {
+        font-size: 13px;
+    }
 }

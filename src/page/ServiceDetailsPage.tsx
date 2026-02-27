@@ -1777,8 +1777,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                     phoneNumber = '';
                   }
 
-                  // Display labels
-                  const displayLabel = method === 'Vodafone' ? `فودافون ${phoneNumber || defaultWallet}` : method === 'instaPay' ? `انستا باي ${defaultInstaPay}` : method;
+                  // Display labels - separated for better mobile responsive handling
+                  const mainTitle = method === 'Vodafone' ? 'فودافون كاش' : method === 'instaPay' ? 'انستا باي' : method;
+                  const identifier = (method === 'Vodafone' || method === 'instaPay') ? phoneNumber : '';
 
                   return (
                     <label key={method} className="payment-option" onClick={(e) => {
@@ -1790,7 +1791,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
                       if (phoneNumber) {
                         // 1. Copy to clipboard
-                        navigator.clipboard.writeText(method === 'instaPay' ? 'raoufpk97@instapay' : phoneNumber);
+                        navigator.clipboard.writeText(method === 'instaPay' ? (phoneNumber || 'raoufpk97@instapay') : phoneNumber);
 
                         // Show stylish toast instead of alert
                         setShowCopyToast(true);
@@ -1811,7 +1812,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         style={{ pointerEvents: 'none' }}
                       />
                       <div className="payment-info">
-                        <span className="payment-label">{displayLabel}</span>
+                        <span className="payment-label">{mainTitle}</span>
+                        {identifier && <span className="payment-number">{identifier}</span>}
                       </div>
                     </label>
                   );

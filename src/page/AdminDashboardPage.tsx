@@ -1812,27 +1812,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 />
               </div>
 
-              <div className="action-row-end" style={{ marginTop: '20px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <div className="action-row-end">
                 <button
                   className="quick-message-button-premium"
                   onClick={handleSendQuickMessage}
                   disabled={isSendingQuickMessage}
-                  style={{
-                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                    color: 'white',
-                    padding: '12px 24px',
-                    borderRadius: '12px',
-                    border: 'none',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                 >
                   {isSendingQuickMessage ? (
                     'جاري الإرسال...'
@@ -1860,23 +1844,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </button>
 
                 <button
+                  className="stop-button-premium"
                   onClick={handleStopPublishing}
-                  style={{
-                    background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
-                    color: 'white',
-                    padding: '12px 24px',
-                    borderRadius: '12px',
-                    border: 'none',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.2)',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                 >
                   <X size={18} />
                   إيقاف النشر
@@ -3256,236 +3225,173 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   );
                 }
 
-                return filteredStudents.map((student) => {
-                  const studentRequests = getStudentRequests(student.id || '');
-                  const isExpanded = expandedUsers.has(student.id || '');
-
-                  const toggleExpand = () => {
-                    const newExpanded = new Set(expandedUsers);
-                    if (isExpanded) {
-                      newExpanded.delete(student.id || '');
-                    } else {
-                      newExpanded.add(student.id || '');
-                    }
-                    setExpandedUsers(newExpanded);
-                  };
-
-                  return (
-                    <div key={student.id} className="request-row-wrapper">
-                      <div className={`request-row ${isExpanded ? 'expanded' : ''}`}>
-                        {/* Main Row Content */}
-                        <div className="request-row-main">
-                          {/* Right Side: User Info */}
-                          <div className="request-row-info">
-                            <div className="request-user-name">
-                              {student.fullNameArabic}
-                            </div>
-                            <div className="request-meta">
-                              <span className="request-email">{student.email}</span>
-                              <span className="request-date">
-                                {studentRequests.length} طلبات مسجلة
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Center: Meta Info Badge */}
-                          <div className="request-row-status">
-                            <div className="status-badge completed" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
-                              <User size={14} />
-                              <span>{student.nationalID || 'بدون رقم قومي'}</span>
-                            </div>
-                          </div>
-
-                          {/* Left Side: Actions */}
-                          <div className="request-row-actions">
-                            {(() => {
-                              const flagKey = `student-${student.id}`;
-                              const isFlagged = !!toggledFlags[flagKey];
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleFlag(flagKey)}
-                                  className="action-btn"
-                                  title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز هذا المشترك مؤقتاً'}
-                                  style={{
-                                    background: isFlagged ? '#fef3c7' : '#fffbeb',
-                                    color: isFlagged ? '#92400e' : '#b45309',
-                                    borderColor: isFlagged ? '#fbbf24' : '#fde68a',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                  }}
-                                >
-                                  <Star size={18} fill={isFlagged ? 'currentColor' : 'none'} />
-                                </button>
-                              );
-                            })()}
-                            <button
-                              onClick={() => handleEditStudent(student)}
-                              className="action-btn accept-btn"
-                              style={{ background: '#3b82f6', color: 'white', borderColor: '#3b82f6' }}
-                              title="تعديل البيانات"
-                            >
-                              <Edit2 size={18} />
-                            </button>
-                            <button
-                              onClick={async () => {
-                                if (!window.confirm("هل أنت متأكد من حذف هذا المشترك نهائياً من المنصة؟")) return;
-                                try {
-                                  await deleteStudentData(student.id!);
-                                  showAlert('نجاح', 'تم حذف المشترك بنجاح', 'success');
-                                } catch (error: any) {
-                                  showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
-                                }
-                              }}
-                              className="action-btn reject-btn"
-                              style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}
-                              title="حذف المشترك"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                            <button
-                              onClick={() => setViewingStudentRequests(student)}
-                              className="action-btn"
-                              style={{ background: '#8b5cf6', color: 'white', borderColor: '#8b5cf6', border: '1px solid #8b5cf6', borderRadius: '8px', padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
-                              title="عرض جميع الطلبات"
-                            >
-                              <ClipboardList size={18} />
-                            </button>
-
-                            <button
-                              onClick={toggleExpand}
-                              className={`expand-btn ${isExpanded ? 'expanded' : ''}`}
-                              title={isExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}
-                            >
-                              <svg
-                                width="20"
-                                height="20"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <polyline points="6 9 12 15 18 9"></polyline>
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Expanded Details */}
-                        {isExpanded && (
-                          <div className="request-row-details">
-                            <div className="details-grid">
-                              {/* Account Info Column */}
-                              <div className="details-section">
-                                <h4 className="details-section-title">بيانات الحساب الأساسية</h4>
-                                <div className="details-items">
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">الاسم الكامل:</span>
-                                    <span className="detail-value">{student.fullNameArabic}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">الاسم بالإنجليزية:</span>
-                                    <span className="detail-value">{student.vehicleNameEnglish || 'غير متاح'}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">الرقم القومي:</span>
-                                    <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">البريد الإلكتروني:</span>
-                                    <span className="detail-value">{student.email}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">كلمة المرور:</span>
-                                    <div className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      <span>{showPasswords[student.id || ''] ? (student.password || 'غير متاح') : '••••••••'}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: 0 }}
-                                      >
-                                        {showPasswords[student.id || ''] ? <EyeOff size={16} /> : <Eye size={16} />}
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">نوع الدبلومة:</span>
-                                    <span className="detail-value">{student.diplomaType || 'غير متاح'}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">سنة الدبلومة:</span>
-                                    <span className="detail-value">{student.diplomaYear || 'غير متاح'}</span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Contact & Address Column */}
-                              <div className="details-section">
-                                <h4 className="details-section-title">بيانات التواصل والآنوان</h4>
-                                <div className="details-items">
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">رقم الهاتف/الواتساب:</span>
-                                    <span className="detail-value">{student.whatsappNumber || 'غير متاح'}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">المحافظة:</span>
-                                    <span className="detail-value">{student.address?.governorate || 'غير متاح'}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">المدينة/المركز:</span>
-                                    <span className="detail-value">{student.address?.city || 'غير متاح'}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">الشارع:</span>
-                                    <span className="detail-value">{student.address?.street || 'غير متاح'}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">رقم المبنى:</span>
-                                    <span className="detail-value">{student.address?.building || 'غير متاح'}</span>
-                                  </div>
-                                  <div className="detail-item-row">
-                                    <span className="detail-label">تاريخ الانضمام:</span>
-                                    <span className="detail-value">
-                                      {student.createdAt
-                                        ? new Date(student.createdAt).toLocaleDateString('ar-EG', {
-                                          year: 'numeric',
-                                          month: 'long',
-                                          day: 'numeric'
-                                        })
-                                        : 'غير متاح'}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Linked Requests Summary */}
-                            {studentRequests.length > 0 && (
-                              <div className="details-section" style={{ marginTop: '24px' }}>
-                                <h4 className="details-section-title">نشاط المستخدم (آخر الطلبات)</h4>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginTop: '16px' }}>
-                                  {studentRequests.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()).slice(0, 6).map((req) => (
-                                    <div key={req.id} className="detail-item-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span style={{ fontSize: '14px', fontWeight: '700' }}>{getServiceName(req.serviceId)}</span>
-                                        <span style={{ fontSize: '11px', color: '#64748b' }}>{req.createdAt ? new Date(req.createdAt).toLocaleDateString('ar-EG') : ''}</span>
-                                      </div>
-                                      {getStatusBadge(req.status)}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div className="request-row-separator"></div>
+                return (
+                  <>
+                    <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px' }}>
+                      إجمالي المستخدمين: {filteredStudents.length} مستخدم
                     </div>
-                  );
-                });
+
+                    <div className="excel-table-wrapper" style={{
+                      maxHeight: 'none',
+                      overflowY: 'visible',
+                      overflowX: 'auto',
+                      borderRadius: '12px',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                    }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                        <thead>
+                          <tr style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', width: '50px' }}>#</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', width: '40px' }}>✓</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '180px' }}>الاسم</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '140px' }}>الرقم القومي</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '180px' }}>البريد الإلكتروني</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '120px' }}>رقم الواتساب</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '120px' }}>نوع الدبلومة</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>سنة الدبلومة</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '80px' }}>المسار</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '150px' }}>العنوان</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>كلمة المرور</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>تاريخ الانضمام</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '60px' }}>الطلبات</th>
+                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>إجراءات</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredStudents.map((student, index) => {
+                            const studentRequests = getStudentRequests(student.id || '');
+                            const flagKey = `student-${student.id}`;
+                            const isFlagged = !!toggledFlags[flagKey];
+                            const addressStr = [student.address?.governorate, student.address?.city, student.address?.street].filter(Boolean).join(' - ') || '';
+
+                            return (
+                              <tr key={student.id} style={{
+                                background: isFlagged ? '#eff6ff' : (index % 2 === 0 ? '#ffffff' : '#f8fafc'),
+                                borderLeft: isFlagged ? '3px solid #2563eb' : 'none',
+                                transition: 'background-color 0.2s'
+                              }}>
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '13px', color: '#64748b', fontWeight: '700' }}>
+                                  {index + 1}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFlag(flagKey)}
+                                    style={{ background: 'none', border: 'none', padding: '0', cursor: 'pointer', color: isFlagged ? '#2563eb' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}
+                                  >
+                                    {isFlagged ? <CheckSquare size={20} strokeWidth={2.5} /> : <Square size={20} strokeWidth={1.5} />}
+                                  </button>
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#1e293b', fontWeight: '700', minWidth: '180px' }}>
+                                  {student.fullNameArabic || 'بدون اسم'}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', fontWeight: '600', direction: 'ltr', textAlign: 'right' }}>
+                                  {student.nationalID || '-'}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', direction: 'ltr', textAlign: 'right', maxWidth: '200px', wordBreak: 'break-all' }}>
+                                  {student.email || '-'}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', direction: 'ltr', textAlign: 'right' }}>
+                                  {student.whatsappNumber || '-'}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
+                                  {student.diplomaType || '-'}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', textAlign: 'center' }}>
+                                  {student.diplomaYear || '-'}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
+                                  {student.track || '-'}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', maxWidth: '200px' }}>
+                                  <div style={{ maxHeight: '60px', overflowY: 'auto', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                    {addressStr || '-'}
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+                                      {showPasswords[student.id || ''] ? (student.password || '-') : '••••••••'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: 0, display: 'flex' }}
+                                    >
+                                      {showPasswords[student.id || ''] ? <EyeOff size={14} /> : <Eye size={14} />}
+                                    </button>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                  {student.createdAt ? new Date(student.createdAt).toLocaleDateString('ar-EG') : '-'}
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                                  <span style={{
+                                    background: studentRequests.length > 0 ? '#dbeafe' : '#f1f5f9',
+                                    color: studentRequests.length > 0 ? '#1d4ed8' : '#94a3b8',
+                                    padding: '4px 10px',
+                                    borderRadius: '12px',
+                                    fontSize: '13px',
+                                    fontWeight: '700'
+                                  }}>
+                                    {studentRequests.length}
+                                  </span>
+                                </td>
+
+                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                                    <button
+                                      onClick={() => setViewingStudentRequests(student)}
+                                      title="عرض جميع الطلبات"
+                                      style={{ padding: '8px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: '8px', cursor: 'pointer' }}
+                                    >
+                                      <ClipboardList size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleEditStudent(student)}
+                                      title="تعديل البيانات"
+                                      style={{ padding: '8px', background: '#eff6ff', color: '#2563eb', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer' }}
+                                    >
+                                      <Edit2 size={16} />
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        if (!window.confirm("هل أنت متأكد من حذف هذا المشترك نهائياً من المنصة؟")) return;
+                                        try {
+                                          await deleteStudentData(student.id!);
+                                          showAlert('نجاح', 'تم حذف المشترك بنجاح', 'success');
+                                        } catch (error: any) {
+                                          showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
+                                        }
+                                      }}
+                                      title="حذف المشترك"
+                                      style={{ padding: '8px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '8px', cursor: 'pointer' }}
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                );
               })()}
             </div>
           </div>
