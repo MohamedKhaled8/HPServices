@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useStudent } from '../context';
 import {
   subscribeToAllServiceRequests,
@@ -175,6 +175,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
   const [toastState, setToastState] = useState<{ message: string; type: 'loading' | 'success' | 'error'; duration?: number } | null>(null);
   const [viewingStudentRequests, setViewingStudentRequests] = useState<StudentData | null>(null);
+
+  const dtCodesIndex = useMemo(() => {
+    const map: Record<string, any> = {};
+    dtCodes.forEach(code => {
+      if (code.requestId) {
+        map[code.requestId] = code;
+      }
+    });
+    return map;
+  }, [dtCodes]);
+
+  const epCodesIndex = useMemo(() => {
+    const map: Record<string, any> = {};
+    epCodes.forEach(code => {
+      if (code.requestId) {
+        map[code.requestId] = code;
+      }
+    });
+    return map;
+  }, [epCodes]);
 
   // Custom Alert Modal State
   const [alertConfig, setAlertConfig] = useState<{
@@ -2011,20 +2031,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   </div>
 
                   {(() => {
+                    const term = serviceSearchTerm.toLowerCase().trim();
                     const filteredRequests = serviceRequests
                       .filter(r => r.serviceId === selectedServiceId)
                       .filter(request => {
-                        if (!serviceSearchTerm.trim()) return true;
-                        const term = serviceSearchTerm.toLowerCase().trim();
+                        if (!term) return true;
                         const studentData = students[request.studentId];
 
-                        // Check all strings in request data
                         const dataMatch = Object.values(request.data || {}).some(val =>
                           val && String(val).toLowerCase().includes(term)
                         );
                         if (dataMatch) return true;
 
-                        // Check student profile fields
                         if (studentData) {
                           if (studentData.fullNameArabic?.toLowerCase().includes(term)) return true;
                           if (studentData.nationalID?.includes(term)) return true;
@@ -2032,12 +2050,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           if (studentData.email?.toLowerCase().includes(term)) return true;
                         }
 
-                        // Check status translations
                         const statusAr = request.status === 'completed' ? 'مكتمل' :
                           request.status === 'rejected' ? 'مرفوض' : 'قيد الانتظار';
                         if (statusAr.includes(term)) return true;
 
-                        // Check date
                         if (request.createdAt) {
                           const dateStr = new Date(request.createdAt).toLocaleDateString('ar-EG');
                           if (dateStr.includes(term)) return true;
@@ -2128,6 +2144,22 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     const colProjectTitle = { id: 'project_title', label: 'عنوان المشروع', getValue: (r: any) => r.data.project_title || '-' };
                     const colGroupLink = { id: 'group_link', label: 'لينك الجروب', getValue: (r: any) => r.data.group_link || '-' };
                     const colLeaderWhatsapp = { id: 'leader_whatsapp', label: 'واتساب الليدر', getValue: (r: any) => r.data.leader_whatsapp || '-' };
+                    const colDtFawryCode = {
+                      id: 'dt_fawry_code',
+                      label: 'رقم فوري',
+                      getValue: (r: any) => {
+                        const code = dtCodesIndex[r.id];
+                        return code?.fawryCode || code?.serialNumber || '-';
+                      }
+                    };
+                    const colEpOrderNumber = {
+                      id: 'ep_order_number',
+                      label: 'رقم الطلب',
+                      getValue: (r: any) => {
+                        const code = epCodesIndex[r.id];
+                        return code?.orderNumber || '-';
+                      }
+                    };
 
                     switch (selectedServiceId) {
                       case '2': // العميل المميز
@@ -2137,7 +2169,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         columns = [colCopies, colStudentNames, colWhatsapp, colAddress, colDiplomaType];
                         break;
                       case '4': // دفع المصروفات
-                        columns = [colName, colNationalId, colWhatsapp, colDiplomaType, colDiplomaYear, colTrack];
+                        columns = [colName, colNationalId, colWhatsapp, colDiplomaType, colDiplomaYear, colTrack, colEpOrderNumber];
                         break;
                       case '5': // حل التكليفات
                         columns = [colName, colWhatsapp, colTrack, colTotalPrice, colSpecialization];
@@ -2146,7 +2178,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         columns = [colName, colNameEn, colNationalId, colEmail, colWhatsapp, colServiceType, colAddress, colTotalPrice];
                         break;
                       case '7': // التقديم علي التحول الرقمي
-                        columns = [colName, colNameEn, colNationalId, colEmail, colWhatsapp, colTransType, colExamLang, colTotalPrice];
+                        columns = [colName, colNameEn, colNationalId, colEmail, colWhatsapp, colTransType, colExamLang, colTotalPrice, colDtFawryCode];
                         break;
                       case '8': // المراجعة النهائية
                         columns = [colName, colWhatsapp, colAddress, colTrack];
@@ -2272,6 +2304,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const colProjectTitleVal = request.data.project_title || '-';
                                 const colGroupLinkVal = request.data.group_link ? <a href={request.data.group_link} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>الرابط</a> : '-';
                                 const colLeaderWhatsappVal = request.data.leader_whatsapp || '-';
+                                const colDtFawryCodeVal = (() => {
+                                  const code = request.id ? dtCodesIndex[request.id] : undefined;
+                                  return code?.fawryCode || code?.serialNumber || '-';
+                                })();
+                                const colEpOrderNumberVal = (() => {
+                                  const code = request.id ? epCodesIndex[request.id] : undefined;
+                                  return code?.orderNumber || '-';
+                                })();
 
                                 const colStudentNamesVal = (() => {
                                   const rawNames = request.data.student_names || request.data.names || request.data.names_array || request.data.student_names_array;
@@ -2304,10 +2344,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 switch (selectedServiceId) {
                                   case '2': rowValues = [colNameVal, colWhatsappVal, colDiplomaTypeVal]; break;
                                   case '3': rowValues = [colCopiesVal, colStudentNamesVal, colWhatsappVal, colAddressVal, colDiplomaTypeVal]; break;
-                                  case '4': rowValues = [colNameVal, colNationalIdVal, colWhatsappVal, colDiplomaTypeVal, colDiplomaYearVal, colTrackVal]; break;
+                                  case '4': rowValues = [colNameVal, colNationalIdVal, colWhatsappVal, colDiplomaTypeVal, colDiplomaYearVal, colTrackVal, colEpOrderNumberVal]; break;
                                   case '5': rowValues = [colNameVal, colWhatsappVal, colTrackVal, colTotalPriceVal, colSpecializationVal]; break;
                                   case '6': rowValues = [colNameVal, colNameEnVal, colNationalIdVal, colEmailVal, colWhatsappVal, colServiceTypeVal, colAddressVal, colTotalPriceVal]; break;
-                                  case '7': rowValues = [colNameVal, colNameEnVal, colNationalIdVal, colEmailVal, colWhatsappVal, colTransTypeVal, colExamLangVal, colTotalPriceVal]; break;
+                                  case '7': rowValues = [colNameVal, colNameEnVal, colNationalIdVal, colEmailVal, colWhatsappVal, colTransTypeVal, colExamLangVal, colTotalPriceVal, colDtFawryCodeVal]; break;
                                   case '8': rowValues = [colNameVal, colWhatsappVal, colAddressVal, colTrackVal]; break;
                                   case '9': rowValues = [colStudentNamesVal, colLeaderWhatsappVal, colTrackVal, colProjectTitleVal, colGroupLinkVal]; break;
                                   case '10': rowValues = [colNameVal, colWhatsappVal, colDiplomaYearVal, colTrackVal, colDiplomaTypeVal, colTotalPriceVal]; break;
