@@ -82,7 +82,12 @@ import {
   Settings,
   Star,
   CheckSquare,
-  Square
+  Square,
+  ArrowRight,
+  ArrowLeft,
+  ArrowUp,
+  ArrowDown,
+  GripVertical
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
@@ -138,6 +143,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const requestsSectionRef = React.useRef<HTMLDivElement>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [serviceSearchTerm, setServiceSearchTerm] = useState<string>('');
+  const [dtSearchTerm, setDtSearchTerm] = useState<string>('');
+  const [epSearchTerm, setEpSearchTerm] = useState<string>('');
   const [isEditingStudent, setIsEditingStudent] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [tempRequestData, setTempRequestData] = useState<any>({});
@@ -148,6 +156,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   // Admin Preferences Editor State
   const [adminPrefs, setAdminPrefs] = useState<any>({ serviceOrder: [], profitCosts: {} });
+  const [statsDateRange, setStatsDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth <= 900 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 900);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
   const [editedStudentData, setEditedStudentData] = useState<StudentData | null>(null);
   const [newFeeYear, setNewFeeYear] = useState<string>('');
@@ -1625,6 +1642,47 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   };
 
+  const viewDocuments = (request: ServiceRequest) => {
+    const urls: string[] = [];
+    if (request.data?.receiptUrl) urls.push(request.data.receiptUrl);
+    if (request.documents && request.documents.length > 0) {
+      request.documents.forEach(doc => urls.push(doc.url));
+    }
+
+    if (urls.length === 0) {
+      setToastState({ message: 'لا توجد مرفقات لهذا الطلب', type: 'error', duration: 3000 });
+      return;
+    }
+
+    // Open each URL in a new tab
+    urls.forEach(url => {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    });
+  };
+
+  const moveServiceManual = async (serviceId: string, direction: 'up' | 'down') => {
+    const currentOrder = (adminPrefs.serviceOrder && adminPrefs.serviceOrder.length > 0)
+      ? [...adminPrefs.serviceOrder]
+      : SERVICES.map(s => s.id);
+
+    const index = currentOrder.indexOf(serviceId);
+    if (index === -1) return;
+
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= currentOrder.length) return;
+
+    const newOrder = [...currentOrder];
+    [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
+
+    const updatedPrefs = { ...adminPrefs, serviceOrder: newOrder };
+    setAdminPrefs(updatedPrefs);
+    try {
+      await updateAdminPreferences(updatedPrefs);
+    } catch (e) {
+      logger.error('Failed to update service order:', e);
+    }
+  };
+
 
   const handleDeleteDTCode = async (id: string) => {
     if (!id) return;
@@ -1939,10 +1997,59 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </div>
 
                 <div className="requests-list-container">
+                  <div className="search-bar" style={{ marginBottom: '25px' }}>
+                    <div className="search-input-wrapper">
+                      <Search size={20} className="search-icon" />
+                      <input
+                        type="text"
+                        placeholder="ابحث في جميع بيانات الطلبات (الاسم، الرقم القومي، الهاتف، العنوان، الحالة...)"
+                        value={serviceSearchTerm}
+                        onChange={(e) => setServiceSearchTerm(e.target.value)}
+                        className="search-input"
+                      />
+                    </div>
+                  </div>
+
                   {(() => {
                     const filteredRequests = serviceRequests
                       .filter(r => r.serviceId === selectedServiceId)
-                      .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+                      .filter(request => {
+                        if (!serviceSearchTerm.trim()) return true;
+                        const term = serviceSearchTerm.toLowerCase().trim();
+                        const studentData = students[request.studentId];
+
+                        // Check all strings in request data
+                        const dataMatch = Object.values(request.data || {}).some(val =>
+                          val && String(val).toLowerCase().includes(term)
+                        );
+                        if (dataMatch) return true;
+
+                        // Check student profile fields
+                        if (studentData) {
+                          if (studentData.fullNameArabic?.toLowerCase().includes(term)) return true;
+                          if (studentData.nationalID?.includes(term)) return true;
+                          if (studentData.whatsappNumber?.includes(term)) return true;
+                          if (studentData.email?.toLowerCase().includes(term)) return true;
+                        }
+
+                        // Check status translations
+                        const statusAr = request.status === 'completed' ? 'مكتمل' :
+                          request.status === 'rejected' ? 'مرفوض' : 'قيد الانتظار';
+                        if (statusAr.includes(term)) return true;
+
+                        // Check date
+                        if (request.createdAt) {
+                          const dateStr = new Date(request.createdAt).toLocaleDateString('ar-EG');
+                          if (dateStr.includes(term)) return true;
+                        }
+
+                        return false;
+                      })
+                      .sort((a, b) => {
+                        const nameA = (a.data.full_name_arabic || a.data.full_name || students[a.studentId]?.fullNameArabic || '').toLowerCase();
+                        const nameB = (b.data.full_name_arabic || b.data.full_name || students[b.studentId]?.fullNameArabic || '').toLowerCase();
+                        return nameA.localeCompare(nameB, 'ar');
+                      });
 
                     if (!dataReady) {
                       return (
@@ -1997,6 +2104,74 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     const hasStudentNames = filteredRequests.some(r => (r.data?.student_names || r.data?.names) && (typeof (r.data.student_names || r.data.names) === 'string' || Array.isArray(r.data.student_names || r.data.names)));
                     const hasNamesArray = filteredRequests.some(r => (r.data?.names_array || r.data?.student_names_array) && (typeof (r.data.names_array || r.data.student_names_array) === 'string' || Array.isArray(r.data.names_array || r.data.student_names_array)));
 
+                    // Define columns based on Service ID
+                    let columns: { id: string, label: string, getValue: (r: any) => string }[] = [];
+
+                    const colName = { id: 'name', label: 'الاسم', getValue: (r: any) => r.data.full_name_arabic || r.data.full_name || students[r.studentId]?.fullNameArabic || '-' };
+                    const colNationalId = { id: 'national_id', label: 'الرقم القومي', getValue: (r: any) => r.data.national_id || students[r.studentId]?.nationalID || '-' };
+                    const colWhatsapp = { id: 'whatsapp', label: 'الواتساب', getValue: (r: any) => r.data.whatsapp_number || r.data.phone_whatsapp || students[r.studentId]?.whatsappNumber || '-' };
+                    const colEmail = { id: 'email', label: 'الإيميل', getValue: (r: any) => r.data.email || students[r.studentId]?.email || '-' };
+                    const colAddress = { id: 'address', label: 'العنوان', getValue: (r: any) => r.data.address || r.data.address_details || r.data.deliveryAddress || '-' };
+                    const colDiplomaType = { id: 'diploma_type', label: 'نوع الدبلومة', getValue: (r: any) => r.data.diploma_type || r.data.diplomaType || '-' };
+                    const colDiplomaYear = { id: 'diploma_year', label: 'سنة الدبلومة', getValue: (r: any) => r.data.diploma_year || r.data.diplomaYear || '-' };
+                    const colTrack = { id: 'track', label: 'المسار', getValue: (r: any) => normalizeTrackName(r.data.track || r.data.track_category || r.data.track_name || '') };
+                    const colCopies = { id: 'copies', label: 'عدد النسخ', getValue: (r: any) => String(r.data.number_of_copies || '-') };
+                    const colStudentNames = { id: 'student_names', label: 'الأسماء', getValue: (r: any) => { const v = r.data?.student_names || r.data?.names || r.data?.names_array || r.data?.student_names_array; return Array.isArray(v) ? v.join(', ') : (typeof v === 'string' ? v.replace(/\n/g, ', ') : '-'); } };
+                    const colTracksList = { id: 'tracks_list', label: 'tracks', getValue: (r: any) => Array.isArray(r.data.tracks_array) ? r.data.tracks_array.join(', ') : '-' };
+                    const colReceipt = { id: 'receipt', label: 'الإيصال', getValue: (r: any) => r.data.receiptUrl ? 'رابط الإيصال' : '-' };
+                    const colSpecialization = { id: 'specialization', label: 'التخصص', getValue: (r: any) => r.data.educational_specialization || '-' };
+                    const colTotalPrice = { id: 'total_price', label: 'السعر الإجمالي', getValue: (r: any) => String(r.data.totalPrice || '-') };
+                    const colNameEn = { id: 'name_en', label: 'الاسم بالإنجليزية', getValue: (r: any) => r.data.full_name_english || '-' };
+                    const colServiceType = { id: 'service_type', label: 'نوع الخدمة', getValue: (r: any) => typeof r.data?.selectedCertificate === 'object' ? r.data?.selectedCertificate?.name : (r.data?.selectedCertificate || '-') };
+                    const colTransType = { id: 'trans_type', label: 'نوع التحول الرقمي', getValue: (r: any) => r.data.transformation_type || '-' };
+                    const colExamLang = { id: 'exam_lang', label: 'لغة الامتحان', getValue: (r: any) => r.data.selectedExamLanguage || '-' };
+                    const colProjectTitle = { id: 'project_title', label: 'عنوان المشروع', getValue: (r: any) => r.data.project_title || '-' };
+                    const colGroupLink = { id: 'group_link', label: 'لينك الجروب', getValue: (r: any) => r.data.group_link || '-' };
+                    const colLeaderWhatsapp = { id: 'leader_whatsapp', label: 'واتساب الليدر', getValue: (r: any) => r.data.leader_whatsapp || '-' };
+
+                    switch (selectedServiceId) {
+                      case '2': // العميل المميز
+                        columns = [colName, colWhatsapp, colDiplomaType];
+                        break;
+                      case '3': // شحن الكتب
+                        columns = [colCopies, colStudentNames, colWhatsapp, colAddress, colDiplomaType];
+                        break;
+                      case '4': // دفع المصروفات
+                        columns = [colName, colNationalId, colWhatsapp, colDiplomaType, colDiplomaYear, colTrack];
+                        break;
+                      case '5': // حل التكليفات
+                        columns = [colName, colWhatsapp, colTrack, colTotalPrice, colSpecialization];
+                        break;
+                      case '6': // شهادات اونلاين
+                        columns = [colName, colNameEn, colNationalId, colEmail, colWhatsapp, colServiceType, colAddress, colTotalPrice];
+                        break;
+                      case '7': // التقديم علي التحول الرقمي
+                        columns = [colName, colNameEn, colNationalId, colEmail, colWhatsapp, colTransType, colExamLang, colTotalPrice];
+                        break;
+                      case '8': // المراجعة النهائية
+                        columns = [colName, colWhatsapp, colAddress, colTrack];
+                        break;
+                      case '9': // مشروع التخرج
+                        columns = [colStudentNames, colLeaderWhatsapp, colTrack, colProjectTitle, colGroupLink];
+                        break;
+                      case '10': // استخراج مستندات
+                        columns = [colName, colWhatsapp, colDiplomaYear, colTrack, colDiplomaType, colTotalPrice];
+                        break;
+                      case '11': // استلام و شحن التحول الرقمي
+                        columns = [colName, colWhatsapp, colNationalId, colAddress, colTotalPrice];
+                        break;
+                      default:
+                        // Default order for other services
+                        columns = [colName, colNationalId, colWhatsapp, colEmail];
+                        if (hasAddress) columns.push(colAddress);
+                        if (hasDiploma) columns.push(colDiplomaType);
+                        if (hasTrack) columns.push(colTrack);
+                    }
+
+                    // Identify which keys are "extra" (not covered by the fixed columns)
+                    const fixedKeys = new Set(['full_name', 'full_name_arabic', 'full_name_english', 'national_id', 'whatsapp_number', 'phone_whatsapp', 'leader_whatsapp', 'email', 'address', 'address_details', 'deliveryAddress', 'diploma_type', 'diplomaType', 'diploma_year', 'diplomaYear', 'track', 'track_category', 'track_name', 'number_of_copies', 'student_names', 'names', 'names_array', 'student_names_array', 'tracks_array', 'receiptUrl', 'educational_specialization', 'totalPrice', 'selectedCertificate', 'transformation_type', 'selectedExamLanguage', 'project_title', 'group_link']);
+                    const extraKeys = Array.from(allDataKeys).filter(k => !fixedKeys.has(k));
+
                     return (
                       <>
                         <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px' }}>
@@ -2016,118 +2191,35 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           <table className="excel-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '15px', minWidth: '1200px' }}>
                             <thead>
                               <tr style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', color: '#1e293b', borderBottom: '2px solid #e2e8f0' }}>
-                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', color: '#64748b' }}>#</th>
+                                <th style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', color: '#475569', background: '#f1f5f9' }}>#</th>
+                                <th style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>إجراءات</th>
+                                <th style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>الحالة</th>
 
-                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                    الاسم
-                                    <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                      <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('الاسم', filteredRequests, r => r.data.full_name_arabic || r.data.full_name || students[r.studentId]?.fullNameArabic || '-')} />
-                                    </span>
-                                  </div>
-                                </th>
+                                {columns.map(col => {
+                                  let headerWidthStyle: React.CSSProperties = { padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'right', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9', color: '#475569' };
+                                  let headerContainerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' };
+                                  if (col && ['name', 'name_en', 'address', 'project_title', 'group_link', 'student_names'].includes(col.id)) {
+                                    headerWidthStyle.minWidth = '220px';
+                                    headerWidthStyle.width = '220px';
+                                    headerWidthStyle.maxWidth = '350px';
+                                    headerWidthStyle.whiteSpace = 'normal';
+                                  } else if (col && col.id === 'specialization') {
+                                    headerWidthStyle.maxWidth = '200px';
+                                  }
 
-                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                    الرقم القومي
-                                    <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                      <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('الرقم القومي', filteredRequests, r => r.data.national_id || students[r.studentId]?.nationalID || '-')} />
-                                    </span>
-                                  </div>
-                                </th>
-
-                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                    الواتساب
-                                    <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                      <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('الواتساب', filteredRequests, r => r.data.whatsapp_number || r.data.phone_whatsapp || students[r.studentId]?.whatsappNumber || '-')} />
-                                    </span>
-                                  </div>
-                                </th>
-
-                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                    الإيميل
-                                    <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                      <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('الإيميل', filteredRequests, r => r.data.email || students[r.studentId]?.email || '-')} />
-                                    </span>
-                                  </div>
-                                </th>
-
-                                {hasAddress && (
-                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                      العنوان
-                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('العنوان', filteredRequests, r => r.data.address || r.data.address_details || r.data.deliveryAddress || '-')} />
-                                      </span>
-                                    </div>
-                                  </th>
-                                )}
-
-                                {hasDiploma && (
-                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                      نوع الدبلومه
-                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('نوع الدبلومه', filteredRequests, r => `${r.data.diploma_type || r.data.diplomaType || ''} ${(r.data.diploma_year || r.data.diplomaYear) ? `(${r.data.diploma_year || r.data.diplomaYear})` : ''}`.trim() || '')} />
-                                      </span>
-                                    </div>
-                                  </th>
-                                )}
-
-                                {hasTrack && (
-                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                      المسار
-                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('المسار', filteredRequests, r => normalizeTrackName(r.data.track || r.data.track_category || r.data.track_name || r.data.educational_specialization || r.data.faculty || r.data.department || ''))} />
-                                      </span>
-                                    </div>
-                                  </th>
-                                )}
-
-                                {hasSelectedCertificate && (
-                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                      اسم الشهاده المختاره
-                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('اسم الشهاده المختاره', filteredRequests, r => typeof r.data?.selectedCertificate === 'object' ? r.data?.selectedCertificate?.name : (r.data?.selectedCertificate || ''))} />
-                                      </span>
-                                    </div>
-                                  </th>
-                                )}
-
-                                {hasStudentNames && (
-                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                      أسماء الطلاب المشتركين
-                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('أسماء الطلاب المشتركين', filteredRequests, r => {
-                                          const v = r.data?.student_names || r.data?.names;
-                                          return Array.isArray(v) ? v.join(', ') : (typeof v === 'string' ? v.replace(/\n/g, ', ') : '');
-                                        })} />
-                                      </span>
-                                    </div>
-                                  </th>
-                                )}
-
-                                {hasNamesArray && (
-                                  <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                      اسماء اصحاب النسخ
-                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn('اسماء اصحاب النسخ', filteredRequests, r => {
-                                          const v = r.data?.names_array || r.data?.student_names_array;
-                                          return Array.isArray(v) ? v.join(', ') : (typeof v === 'string' ? v.replace(/\n/g, ', ') : '');
-                                        })} />
-                                      </span>
-                                    </div>
-                                  </th>
-                                )}
-
-                                {Array.from(allDataKeys).map(key => (
-                                  <th key={key} style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                                  return (
+                                    <th key={col.id} style={headerWidthStyle}>
+                                      <div style={headerContainerStyle}>
+                                        {col.label}
+                                        <span title="نسخ العمود" style={{ display: 'flex' }}>
+                                          <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn(col.label, filteredRequests, col.getValue)} />
+                                        </span>
+                                      </div>
+                                    </th>
+                                  );
+                                })}
+                                {extraKeys.map(key => (
+                                  <th key={key} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'right', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
                                       {translateKey(key)}
                                       <span title="نسخ العمود" style={{ display: 'flex' }}>
@@ -2136,10 +2228,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                     </div>
                                   </th>
                                 ))}
-
-                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>الحالة</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>التاريخ</th>
-                                <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>إجراءات</th>
+                                <th style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>التاريخ</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -2148,7 +2237,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const rNationalID = request.data.national_id || studentData?.nationalID;
                                 const rEmail = request.data.email || studentData?.email;
 
-                                // إيجاد عدد مرات التقديم لنفس المستخدم في هذه الخدمة
                                 const userRequestsCount = filteredRequests.filter(
                                   r => {
                                     const rStudentData = students[r.studentId];
@@ -2160,232 +2248,154 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   }
                                 ).length;
                                 const isDuplicate = userRequestsCount > 1;
-
                                 const rowKey = `req-${request.id || index}`;
                                 const isFlagged = !!toggledFlags[rowKey];
+                                const rowBg = isDuplicate ? '#fff1f2' : index % 2 === 0 ? '#ffffff' : '#f8fafc';
 
-                                const rowBg = isDuplicate
-                                  ? '#fff1f2'
-                                  : index % 2 === 0
-                                    ? '#ffffff'
-                                    : '#f8fafc';
+                                // Define values list to match headers
+                                const colNameVal = request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح';
+                                const colNationalIdVal = request.data.national_id || studentData?.nationalID || '';
+                                const colWhatsappVal = request.data.whatsapp_number || request.data.phone_whatsapp || studentData?.whatsappNumber || '';
+                                const colEmailVal = request.data.email || studentData?.email || '';
+                                const colAddressVal = request.data.address || request.data.address_details || request.data.deliveryAddress || '';
+                                const colDiplomaTypeVal = `${request.data.diploma_type || request.data.diplomaType || ''} ${(request.data.diploma_year || request.data.diplomaYear) ? `(${request.data.diploma_year || request.data.diplomaYear})` : ''}`.trim();
+                                const colDiplomaYearVal = request.data.diploma_year || request.data.diplomaYear || '';
+                                const colTrackVal = normalizeTrackName(request.data.track || request.data.track_category || request.data.track_name || '');
+                                const colCopiesVal = String(request.data.number_of_copies || '-');
+                                const colReceiptVal = request.data.receiptUrl ? <a href={request.data.receiptUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>عرض الإيصال</a> : '-';
+                                const colSpecializationVal = request.data.educational_specialization || '-';
+                                const colTotalPriceVal = String(request.data.totalPrice || '-');
+                                const colNameEnVal = request.data.full_name_english || '-';
+                                const colServiceTypeVal = typeof request.data.selectedCertificate === 'object' ? request.data.selectedCertificate.name : request.data.selectedCertificate || '-';
+                                const colTransTypeVal = request.data.transformation_type || '-';
+                                const colExamLangVal = request.data.selectedExamLanguage || '-';
+                                const colProjectTitleVal = request.data.project_title || '-';
+                                const colGroupLinkVal = request.data.group_link ? <a href={request.data.group_link} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>الرابط</a> : '-';
+                                const colLeaderWhatsappVal = request.data.leader_whatsapp || '-';
+
+                                const colStudentNamesVal = (() => {
+                                  const rawNames = request.data.student_names || request.data.names || request.data.names_array || request.data.student_names_array;
+                                  // Split by newlines, commas (English/Arabic), or semicolons
+                                  const names = typeof rawNames === 'string'
+                                    ? rawNames.split(/[\n\r,،;]+/).map(n => n.trim()).filter(Boolean)
+                                    : Array.isArray(rawNames) ? rawNames : [];
+
+                                  return names.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                      {names.map((name: string, i: number) => (
+                                        <div key={i} style={{
+                                          fontSize: '13px',
+                                          display: 'flex',
+                                          gap: '8px',
+                                          lineHeight: '1.4',
+                                          padding: '2px 0'
+                                        }}>
+                                          <span style={{ color: '#2563eb', fontWeight: '800', minWidth: '20px' }}>{i + 1}.</span>
+                                          <span style={{ fontWeight: '500' }}>{name}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : '-';
+                                })();
+
+                                const colTracksListVal = Array.isArray(request.data.tracks_array) ? request.data.tracks_array.join(', ') : '-';
+
+                                let rowValues: any[] = [];
+                                switch (selectedServiceId) {
+                                  case '2': rowValues = [colNameVal, colWhatsappVal, colDiplomaTypeVal]; break;
+                                  case '3': rowValues = [colCopiesVal, colStudentNamesVal, colWhatsappVal, colAddressVal, colDiplomaTypeVal]; break;
+                                  case '4': rowValues = [colNameVal, colNationalIdVal, colWhatsappVal, colDiplomaTypeVal, colDiplomaYearVal, colTrackVal]; break;
+                                  case '5': rowValues = [colNameVal, colWhatsappVal, colTrackVal, colTotalPriceVal, colSpecializationVal]; break;
+                                  case '6': rowValues = [colNameVal, colNameEnVal, colNationalIdVal, colEmailVal, colWhatsappVal, colServiceTypeVal, colAddressVal, colTotalPriceVal]; break;
+                                  case '7': rowValues = [colNameVal, colNameEnVal, colNationalIdVal, colEmailVal, colWhatsappVal, colTransTypeVal, colExamLangVal, colTotalPriceVal]; break;
+                                  case '8': rowValues = [colNameVal, colWhatsappVal, colAddressVal, colTrackVal]; break;
+                                  case '9': rowValues = [colStudentNamesVal, colLeaderWhatsappVal, colTrackVal, colProjectTitleVal, colGroupLinkVal]; break;
+                                  case '10': rowValues = [colNameVal, colWhatsappVal, colDiplomaYearVal, colTrackVal, colDiplomaTypeVal, colTotalPriceVal]; break;
+                                  case '11': rowValues = [colNameVal, colWhatsappVal, colNationalIdVal, colAddressVal, colTotalPriceVal]; break;
+                                  default:
+                                    rowValues = [colNameVal, colNationalIdVal, colWhatsappVal, colEmailVal];
+                                    if (hasAddress) rowValues.push(colAddressVal);
+                                    if (hasDiploma) rowValues.push(colDiplomaTypeVal);
+                                    if (hasTrack) rowValues.push(colTrackVal);
+                                }
 
                                 return (
-                                  <tr key={request.id} style={{ background: rowBg, borderRight: isDuplicate ? '5px solid #ef4444' : 'none', transition: 'all 0.2s ease' }}
-                                    onMouseOver={(e) => e.currentTarget.style.background = '#f0f9ff'}
-                                    onMouseOut={(e) => e.currentTarget.style.background = rowBg}
-                                  >
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '700', color: '#64748b', fontSize: '13px' }}>
-                                      {index + 1}
-                                    </td>
-
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontWeight: '600', color: '#1e293b', whiteSpace: 'normal', minWidth: '180px', textAlign: 'right' }}>
-                                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexDirection: 'column' }}>
-                                        <span style={{ fontSize: '14px' }}>{request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح'}</span>
+                                  <tr key={request.id} style={{ background: rowBg, borderRight: isDuplicate ? '5px solid #ef4444' : 'none', transition: 'all 0.2s ease' }}>
+                                    <td style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '14px', verticalAlign: 'top' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                        {index + 1}
                                         {isDuplicate && (
-                                          <span style={{ fontSize: '10px', backgroundColor: '#ef4444', color: 'white', padding: '1px 6px', borderRadius: '10px', fontWeight: 'bold' }}>
-                                            مكرر ({userRequestsCount})
-                                          </span>
+                                          <span style={{
+                                            background: '#ef4444',
+                                            color: 'white',
+                                            fontSize: '10px',
+                                            padding: '2px 6px',
+                                            borderRadius: '6px',
+                                            fontWeight: '800',
+                                            display: 'inline-block'
+                                          }}>مكرر</span>
                                         )}
                                       </div>
                                     </td>
-
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>
-                                      {request.data.national_id || studentData?.nationalID || ''}
+                                    <td style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                        <button onClick={() => toggleFlag(rowKey)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: isFlagged ? '#2563eb' : '#94a3b8' }}>{isFlagged ? <CheckSquare size={20} /> : <Square size={20} />}</button>
+                                        <button onClick={() => viewDocuments(request)} title="عرض المستندات" style={{ padding: '6px', background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5', borderRadius: '6px' }}><Eye size={16} /></button>
+                                        <button onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)} title="قبول" style={{ padding: '6px', background: '#f0fdf4', color: '#166534', border: '1px solid #dcfce7', borderRadius: '6px' }}><CheckCircle size={16} /></button>
+                                        <button onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)} title="رفض" style={{ padding: '6px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fee2e2', borderRadius: '6px' }}><XCircle size={16} /></button>
+                                        <button onClick={() => { setEditingRequestId(request.id || null); setEditingServiceId(request.serviceId || null); setTempRequestData({ ...request.data }); setIsEditingRequestModalOpen(true); }} title="تعديل" style={{ padding: '6px', background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe', borderRadius: '6px' }}><Edit2 size={16} /></button>
+                                        <button onClick={() => handleDeleteRequest(request.id || '', request.serviceId)} title="حذف" style={{ padding: '6px', background: '#fff1f2', color: '#e11d48', border: '1px solid #ffe4e6', borderRadius: '6px' }}><Trash2 size={16} /></button>
+                                      </div>
                                     </td>
+                                    <td style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', verticalAlign: 'top' }}>{getStatusBadge(request.status)}</td>
 
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '13px', color: '#334155', whiteSpace: 'nowrap' }}>
-                                      {request.data.whatsapp_number || request.data.phone_whatsapp || studentData?.whatsappNumber || ''}
-                                    </td>
+                                    {rowValues.map((val, i) => {
+                                      // Determine styles based on context
+                                      let dynamicWidthStyle: React.CSSProperties = { whiteSpace: 'nowrap', paddingRight: '4px' };
 
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#64748b', minWidth: '150px' }}>
-                                      {request.data.email || studentData?.email || ''}
-                                    </td>
+                                      // Get the current column definition to know what we are rendering
+                                      const currentColumn = columns[i];
+                                      let cellStyle: React.CSSProperties = { padding: '12px 10px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#1e293b', textAlign: 'right', verticalAlign: 'top', lineHeight: '1.6' };
 
-                                    {hasAddress && (
-                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', minWidth: '180px' }}>
-                                        {request.data.address || request.data.address_details || request.data.deliveryAddress || ''}
-                                      </td>
-                                    )}
+                                      if (currentColumn && ['name', 'name_en', 'address', 'project_title', 'group_link', 'student_names'].includes(currentColumn.id)) {
+                                        dynamicWidthStyle.whiteSpace = 'normal';
+                                        dynamicWidthStyle.wordBreak = 'break-word';
+                                        dynamicWidthStyle.minWidth = '220px';
+                                        dynamicWidthStyle.maxWidth = '350px';
+                                      } else if (currentColumn && currentColumn.id === 'specialization') {
+                                        dynamicWidthStyle.whiteSpace = 'normal';
+                                        dynamicWidthStyle.wordBreak = 'break-word';
+                                        dynamicWidthStyle.maxWidth = '200px';
+                                      }
 
-                                    {hasDiploma && (
-                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>
-                                        {request.data.diploma_type || request.data.diplomaType || ''}
-                                        {(request.data.diploma_year || request.data.diplomaYear) && ` (${request.data.diploma_year || request.data.diplomaYear})`}
-                                      </td>
-                                    )}
-                                    {hasTrack && (
-                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
-                                        {normalizeTrackName(request.data.track || request.data.track_category || request.data.track_name || request.data.educational_specialization || request.data.faculty || request.data.department || '')}
-                                      </td>
-                                    )}
+                                      return (
+                                        <td key={i} style={cellStyle}>
+                                          <div style={dynamicWidthStyle}>
+                                            {val}
+                                          </div>
+                                        </td>
+                                      );
+                                    })}
 
-                                    {hasSelectedCertificate && (
-                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#475569', fontWeight: '600', minWidth: '150px' }}>
-                                        {typeof request.data.selectedCertificate === 'object' ? request.data.selectedCertificate.name : request.data.selectedCertificate || ''}
-                                      </td>
-                                    )}
-
-                                    {hasStudentNames && (
-                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', minWidth: '220px', maxWidth: '300px' }}>
-                                        {(() => {
-                                          const rawNames = request.data.student_names || request.data.names;
-                                          const names = typeof rawNames === 'string' ? rawNames.split(/\r?\n/).filter(Boolean) : Array.isArray(rawNames) ? rawNames : [];
-                                          return names.length > 0 ? (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '130px', overflowY: 'auto', paddingRight: '6px' }}>
-                                              {names.map((name: string, i: number) => (
-                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#3b82f6', color: 'white', width: '22px', height: '22px', borderRadius: '50%', fontSize: '12px', fontWeight: 'bold', flexShrink: 0 }}>{i + 1}</span>
-                                                  <span style={{ fontWeight: '600', color: '#1e293b' }}>{name || 'بدون اسم'}</span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          ) : '';
-                                        })()}
-                                      </td>
-                                    )}
-
-                                    {hasNamesArray && (
-                                      <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', minWidth: '220px', maxWidth: '300px' }}>
-                                        {(() => {
-                                          const rawNames = request.data.names_array || request.data.student_names_array;
-                                          const names = typeof rawNames === 'string' ? rawNames.split(/\r?\n/).filter(Boolean) : Array.isArray(rawNames) ? rawNames : [];
-                                          return names.length > 0 ? (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '130px', overflowY: 'auto', paddingRight: '6px' }}>
-                                              {names.map((name: string, i: number) => (
-                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f0fdf4', padding: '6px 8px', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
-                                                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#10b981', color: 'white', width: '22px', height: '22px', borderRadius: '50%', fontSize: '12px', fontWeight: 'bold', flexShrink: 0 }}>{i + 1}</span>
-                                                  <span style={{ fontWeight: '600', color: '#166534' }}>{name || 'بدون اسم'}</span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          ) : '';
-                                        })()}
-                                      </td>
-                                    )}
-
-                                    {Array.from(allDataKeys).map(key => {
+                                    {extraKeys.map(key => {
                                       const value = request.data?.[key];
                                       const stringValue = String(value || '').trim();
-                                      let displayValue: React.ReactNode = stringValue || '';
+                                      let displayValue: React.ReactNode = stringValue || '-';
                                       if (key === 'wantsMalazem') displayValue = value ? 'نعم' : 'لا';
-                                      else if (stringValue.startsWith('http')) {
-                                        displayValue = <a href={stringValue} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline', wordBreak: 'break-all', display: 'inline-block' }}>{stringValue}</a>;
-                                      }
+                                      else if (stringValue.startsWith('http')) displayValue = <a href={stringValue} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>فتح الرابط</a>;
                                       return (
-                                        <td key={key} style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', minWidth: '150px', maxWidth: '250px' }}>
-                                          <div style={{ maxHeight: '100px', overflowY: 'auto', paddingRight: '4px', whiteSpace: 'normal', wordWrap: 'break-word' }}>
+                                        <td key={key} style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', textAlign: 'right', verticalAlign: 'top' }}>
+                                          <div style={{ whiteSpace: stringValue.length > 40 ? 'normal' : 'nowrap', maxWidth: stringValue.length > 40 ? '300px' : 'none', wordBreak: stringValue.length > 40 ? 'break-word' : 'normal', paddingRight: '4px' }}>
                                             {displayValue}
                                           </div>
                                         </td>
                                       );
                                     })}
 
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                                      {getStatusBadge(request.status)}
-                                    </td>
-
-
-
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
-                                      {request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : ''}
-                                    </td>
-
-                                    <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleFlag(rowKey)}
-                                          title={isFlagged ? 'إلغاء التحديد' : 'تحديد الصف'}
-                                          style={{
-                                            background: 'none',
-                                            border: 'none',
-                                            padding: '8px',
-                                            cursor: 'pointer',
-                                            color: isFlagged ? '#2563eb' : '#94a3b8',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center'
-                                          }}
-                                        >
-                                          {isFlagged ? <CheckSquare size={20} strokeWidth={2.5} /> : <Square size={20} strokeWidth={1.5} />}
-                                        </button>
-
-                                        {((request.documents && request.documents.length > 0) || request.data?.receiptUrl) && (
-                                          <button
-                                            onClick={() => {
-                                              let delay = 0;
-                                              if (request.documents) {
-                                                request.documents.forEach((doc: any) => {
-                                                  if (doc.url) {
-                                                    setTimeout(() => window.open(doc.url, '_blank'), delay);
-                                                    delay += 100;
-                                                  }
-                                                });
-                                              }
-                                              if (request.data?.receiptUrl) {
-                                                setTimeout(() => window.open(request.data.receiptUrl, '_blank'), delay);
-                                              }
-                                            }}
-                                            title="عرض جميع الملفات والصور"
-                                            style={{ padding: '8px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: '8px', cursor: 'pointer' }}
-                                          >
-                                            <Eye size={16} strokeWidth={2.5} />
-                                          </button>
-                                        )}
-
-                                        <button
-                                          onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)}
-                                          disabled={request.status === 'completed'}
-                                          title="قبول"
-                                          style={{ padding: '8px', background: '#f0fdf4', color: '#166534', border: '1px solid #86efac', borderRadius: '8px', cursor: 'pointer' }}
-                                        >
-                                          <CheckCircle size={18} />
-                                        </button>
-
-                                        <button
-                                          onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)}
-                                          disabled={request.status === 'rejected'}
-                                          title="رفض"
-                                          style={{ padding: '8px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: '8px', cursor: 'pointer' }}
-                                        >
-                                          <XCircle size={18} />
-                                        </button>
-
-                                        <button
-                                          onClick={() => {
-                                            setEditingRequestId(request.id || null);
-                                            setEditingServiceId(request.serviceId || null);
-                                            const initializedData = { ...request.data };
-                                            allDataKeys.forEach((k: string) => {
-                                              if (initializedData[k] === undefined) initializedData[k] = '';
-                                            });
-                                            setTempRequestData(initializedData);
-                                            setIsEditingRequestModalOpen(true);
-                                          }}
-                                          title="تعديل"
-                                          style={{ padding: '8px', background: '#f0f9ff', color: '#0284c7', border: '1px solid #bae6fd', borderRadius: '8px', cursor: 'pointer' }}
-                                        >
-                                          <Edit2 size={16} />
-                                        </button>
-
-                                        <button
-                                          onClick={() => handleDeleteRequest(request.id || '', request.serviceId)}
-                                          title="حذف"
-                                          style={{ padding: '8px', background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer' }}
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-
-                                        {(request.data?.receiptUrl || (request.documents && request.documents.length > 0)) && (
-                                          <button
-                                            onClick={() => handleDownloadAll(request)}
-                                            title="تحميل جميع الملفات"
-                                            style={{ padding: '8px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer' }}
-                                          >
-                                            <Download size={18} />
-                                          </button>
-                                        )}
+                                    <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span>{request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : 'بدون تاريخ'}</span>
+                                        <span style={{ fontSize: '11px', opacity: 0.8 }}>{request.createdAt ? new Date(request.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
                                       </div>
                                     </td>
                                   </tr>
@@ -3290,7 +3300,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 </td>
 
                                 <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', fontWeight: '600', direction: 'ltr', textAlign: 'right' }}>
-                                  {student.nationalID || '-'}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                                    {student.nationalID || '-'}
+                                    {student.nationalID && (
+                                      <Copy
+                                        size={14}
+                                        style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.6 }}
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(student.nationalID!);
+                                          setToastState({ message: 'تم نسخ الرقم القومي', type: 'success', duration: 2000 });
+                                        }}
+                                      />
+                                    )}
+                                  </div>
                                 </td>
 
                                 <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', direction: 'ltr', textAlign: 'right', maxWidth: '200px', wordBreak: 'break-all' }}>
@@ -3298,7 +3320,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 </td>
 
                                 <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', direction: 'ltr', textAlign: 'right' }}>
-                                  {student.whatsappNumber || '-'}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                                    {student.whatsappNumber || '-'}
+                                    {student.whatsappNumber && (
+                                      <Copy
+                                        size={14}
+                                        style={{ cursor: 'pointer', color: '#10b981', opacity: 0.6 }}
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(student.whatsappNumber!);
+                                          setToastState({ message: 'تم نسخ رقم الواتساب', type: 'success', duration: 2000 });
+                                        }}
+                                      />
+                                    )}
+                                  </div>
                                 </td>
 
                                 <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
@@ -3406,7 +3440,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             <div className="section-header">
               <h2>إدارة الخدمات (تفعيل/تعطيل)</h2>
             </div>
-            <div className="services-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', padding: '20px 0' }}>
+            <div className="admin-services-grid" style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))',
+              gap: '20px',
+              padding: '20px 0',
+              overflowY: 'visible'
+            }}>
               <AnimatePresence>
                 {[...SERVICES]
                   .sort((a, b) => {
@@ -3520,15 +3560,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                     return (
                       <motion.div
-                        layout
+                        {...(isMobile ? {} : { layout: true })}
                         initial={{ opacity: 0, scale: 0.8, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.8, y: -10 }}
                         transition={{ type: "spring", stiffness: 300, damping: 20 }}
                         key={service.id}
                         className="service-card-premium"
-                        style={{ '--card-color': service.color, cursor: 'grab' } as React.CSSProperties}
-                        draggable
+                        style={{ '--card-color': service.color, cursor: 'grab', touchAction: 'pan-y' } as React.CSSProperties}
+                        draggable={true}
                         onDragStart={handleDragStart as any}
                         onDragEnd={handleDragEnd as any}
                         onDragOver={handleDragOver as any}
@@ -3536,7 +3576,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       >
                         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ color: '#94a3b8', cursor: 'grab' }}>⋮⋮</span>
+                            <div style={{ cursor: 'grab', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                              <GripVertical size={20} />
+                            </div>
                             <h3 style={{ margin: 0 }}>{service.nameAr}</h3>
                           </div>
                           <div className={`status-badge ${isActive ? 'status-completed' : 'status-rejected'}`}>
@@ -3565,6 +3607,57 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 تفعيل الخدمة
                               </>
                             )}
+                          </button>
+                        </div>
+
+                        {/* Movement controls - Radical Solution for Reordering */}
+                        <div style={{
+                          marginTop: '15px',
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          gap: '12px',
+                          borderTop: '1px solid #e2e8f0',
+                          paddingTop: '12px'
+                        }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); moveServiceManual(service.id, 'up'); }}
+                            title="تحريك للأعلى (الترتيب)"
+                            style={{
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '50%',
+                              width: '32px',
+                              height: '32px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              color: '#3b82f6',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                            }}
+                          >
+                            <ArrowUp size={18} />
+                          </button>
+                          <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 'bold' }}>ترتيب الخدمة</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); moveServiceManual(service.id, 'down'); }}
+                            title="تحريك للأسفل (الترتيب)"
+                            style={{
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '50%',
+                              width: '32px',
+                              height: '32px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              color: '#3b82f6',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                            }}
+                          >
+                            <ArrowDown size={18} />
                           </button>
                         </div>
 
@@ -4232,155 +4325,185 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               </div>
             </div>
 
+            <div className="search-bar" style={{ marginBottom: '25px' }}>
+              <div className="search-input-wrapper">
+                <Search size={20} className="search-icon" />
+                <input
+                  type="text"
+                  placeholder="ابحث في الأكواد (الاسم، الموبايل، البريد، النوع، رقم فوري...)"
+                  value={dtSearchTerm}
+                  onChange={(e) => setDtSearchTerm(e.target.value)}
+                  className="search-input"
+                />
+              </div>
+            </div>
+
             <div className="table-container" style={{ userSelect: 'text', WebkitUserSelect: 'text', MozUserSelect: 'text', overflowX: 'auto', maxWidth: '100%' }}>
-              {dtCodes.length > 0 ? (
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', userSelect: 'text', minWidth: '800px' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                          الاسم
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('الاسم', 0)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          موبايل
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('موبايل', 1)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                          البريد
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('البريد', 2)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                          النوع
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('النوع', 3)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          القيمة
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('القيمة', 4)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          الحالة
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('الحالة', 5)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          تاريخ الحفظ
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('تاريخ الحفظ', 6)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          رقم فوري
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('رقم فوري', 7)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>إجراءات</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dtCodes.map((code, index) => (
-                      <tr
-                        key={code.id || index}
-                        style={{
-                          borderBottom: '1px solid #e2e8f0',
-                          transition: 'background 0.15s ease',
-                          userSelect: 'text'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile || code.phone}</td>
-                        <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email}</td>
-                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.type}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.value}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>
-                          <span style={{
-                            padding: '4px 8px',
-                            borderRadius: '12px',
-                            fontSize: '0.85rem',
-                            background: code.status === 'NEW' ? '#dcfce7' : '#f1f5f9',
-                            color: code.status === 'NEW' ? '#166534' : '#64748b',
-                            userSelect: 'text'
-                          }}>
-                            {code.status}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b', userSelect: 'text', cursor: 'text' }}>
-                          {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.fawryCode}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
-                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
-                            {(() => {
-                              const flagKey = `dt-${code.id || index}`;
-                              const isFlagged = !!toggledFlags[flagKey];
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleFlag(flagKey)}
-                                  title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
-                                  style={{
-                                    padding: '6px',
-                                    background: isFlagged ? '#eef2ff' : '#f5f3ff',
-                                    color: isFlagged ? '#3730a3' : '#4c1d95',
-                                    border: `1px solid ${isFlagged ? '#a5b4fc' : '#c4b5fd'}`,
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                  }}
-                                >
-                                  <Star size={16} fill={isFlagged ? 'currentColor' : 'none'} />
-                                </button>
-                              );
-                            })()}
-                            <button
-                              onClick={() => handleDeleteDTCode(code.id)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
-                              title="حذف"
-                            >
-                              <Trash2 size={18} />
-                            </button>
+              {(() => {
+                const filteredDtCodes = dtCodes.filter(code => {
+                  if (!dtSearchTerm.trim()) return true;
+                  const term = dtSearchTerm.toLowerCase().trim();
+                  return (
+                    code.name?.toLowerCase().includes(term) ||
+                    code.mobile?.includes(term) ||
+                    code.phone?.includes(term) ||
+                    code.email?.toLowerCase().includes(term) ||
+                    code.type?.toLowerCase().includes(term) ||
+                    code.status?.toLowerCase().includes(term) ||
+                    code.fawryCode?.includes(term) ||
+                    code.value?.toString().includes(term)
+                  );
+                }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+
+                if (filteredDtCodes.length === 0) {
+                  return <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>لا توجد نتائج لمطابقة بحثك</div>;
+                }
+
+                return (
+                  <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', userSelect: 'text', minWidth: '800px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                            الاسم
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('الاسم', 0)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
                           </div>
-                        </td>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            موبايل
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('موبايل', 1)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                            البريد
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('البريد', 2)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                            النوع
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('النوع', 3)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            القيمة
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('القيمة', 4)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            الحالة
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('الحالة', 5)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            تاريخ الحفظ
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('تاريخ الحفظ', 6)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            رقم فوري
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyDTColumn('رقم فوري', 7)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>إجراءات</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                  لا توجد أكواد محفوظة حتى الآن
-                </div>
-              )}
+                    </thead>
+                    <tbody>
+                      {filteredDtCodes.map((code, index) => (
+                        <tr
+                          key={code.id || index}
+                          style={{
+                            borderBottom: '1px solid #e2e8f0',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'text'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile || code.phone}</td>
+                          <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email}</td>
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.type}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.value}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>
+                            <span style={{
+                              padding: '4px 8px',
+                              borderRadius: '12px',
+                              fontSize: '0.85rem',
+                              background: code.status === 'NEW' ? '#dcfce7' : '#f1f5f9',
+                              color: code.status === 'NEW' ? '#166534' : '#64748b',
+                              userSelect: 'text'
+                            }}>
+                              {code.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b', userSelect: 'text', cursor: 'text' }}>
+                            {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.fawryCode}</td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
+                              {(() => {
+                                const flagKey = `dt-${code.id || index}`;
+                                const isFlagged = !!toggledFlags[flagKey];
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFlag(flagKey)}
+                                    title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
+                                    style={{
+                                      padding: '6px',
+                                      background: isFlagged ? '#eef2ff' : '#f5f3ff',
+                                      color: isFlagged ? '#3730a3' : '#4c1d95',
+                                      border: `1px solid ${isFlagged ? '#a5b4fc' : '#c4b5fd'}`,
+                                      borderRadius: '8px',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}
+                                  >
+                                    <Star size={16} fill={isFlagged ? 'currentColor' : 'none'} />
+                                  </button>
+                                );
+                              })()}
+                              <button
+                                onClick={() => handleDeleteDTCode(code.id)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
+                                title="حذف"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
           </div>
         )
@@ -4408,146 +4531,176 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               </div>
             </div>
 
+            <div className="search-bar" style={{ marginBottom: '25px' }}>
+              <div className="search-input-wrapper">
+                <Search size={20} className="search-icon" />
+                <input
+                  type="text"
+                  placeholder="ابحث في الأكواد (الاسم، الموبايل، البريد، النوع، رقم فوري...)"
+                  value={epSearchTerm}
+                  onChange={(e) => setEpSearchTerm(e.target.value)}
+                  className="search-input"
+                />
+              </div>
+            </div>
+
             <div className="table-container" style={{ userSelect: 'text', WebkitUserSelect: 'text', MozUserSelect: 'text', overflowX: 'auto', maxWidth: '100%' }}>
-              {epCodes.length > 0 ? (
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', userSelect: 'text', minWidth: '900px' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                          الاسم
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الاسم', 0)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          الموبايل
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الموبايل', 1)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                          البريد الإلكتروني
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('البريد الإلكتروني', 2)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          الرقم القومي
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الرقم القومي', 3)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                          الجهة
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الجهة', 4)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                          نوع الخدمة
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('نوع الخدمة', 5)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          تاريخ الإنشاء
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('تاريخ الإنشاء', 6)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                          رقم الطلب
-                          <span title="نسخ العمود كامل">
-                            <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('رقم الطلب', 7)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
-                          </span>
-                        </div>
-                      </th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>إجراءات</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {epCodes.map((code, index) => (
-                      <tr
-                        key={code.id || index}
-                        style={{
-                          borderBottom: '1px solid #e2e8f0',
-                          transition: 'background 0.15s ease',
-                          userSelect: 'text'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile}</td>
-                        <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.nationalID}</td>
-                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.entity}</td>
-                        <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.serviceType}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b', userSelect: 'text', cursor: 'text' }}>
-                          {code.createdAt?.seconds
-                            ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG')
-                            : (code.createdAt || 'الان')}
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.orderNumber}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
-                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
-                            {(() => {
-                              const flagKey = `ep-${code.id || index}`;
-                              const isFlagged = !!toggledFlags[flagKey];
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleFlag(flagKey)}
-                                  title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
-                                  style={{
-                                    padding: '6px',
-                                    background: isFlagged ? '#ecfdf5' : '#f0fdf4',
-                                    color: isFlagged ? '#047857' : '#15803d',
-                                    border: `1px solid ${isFlagged ? '#6ee7b7' : '#bbf7d0'}`,
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                  }}
-                                >
-                                  <Star size={16} fill={isFlagged ? 'currentColor' : 'none'} />
-                                </button>
-                              );
-                            })()}
-                            <button
-                              onClick={() => handleDeleteEPCode(code.id)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
-                              title="حذف"
-                            >
-                              <Trash2 size={18} />
-                            </button>
+              {(() => {
+                const filteredEpCodes = epCodes.filter(code => {
+                  if (!epSearchTerm.trim()) return true;
+                  const term = epSearchTerm.toLowerCase().trim();
+                  return (
+                    code.name?.toLowerCase().includes(term) ||
+                    code.mobile?.includes(term) ||
+                    code.phone?.includes(term) ||
+                    code.email?.toLowerCase().includes(term) ||
+                    code.type?.toLowerCase().includes(term) ||
+                    code.status?.toLowerCase().includes(term) ||
+                    code.fawryCode?.includes(term) ||
+                    code.value?.toString().includes(term)
+                  );
+                }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+
+                if (filteredEpCodes.length === 0) {
+                  return <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>لا توجد نتائج لمطابقة بحثك</div>;
+                }
+
+                return (
+                  <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', userSelect: 'text', minWidth: '900px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                            الاسم
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الاسم', 0)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
                           </div>
-                        </td>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            الموبايل
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الموبايل', 1)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                            البريد الإلكتروني
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('البريد الإلكتروني', 2)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            الرقم القومي
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الرقم القومي', 3)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                            الجهة
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الجهة', 4)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                            نوع الخدمة
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('نوع الخدمة', 5)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            تاريخ الإنشاء
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('تاريخ الإنشاء', 6)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                            رقم الطلب
+                            <span title="نسخ العمود كامل">
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('رقم الطلب', 7)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                            </span>
+                          </div>
+                        </th>
+                        <th style={{ padding: '12px', textAlign: 'center' }}>إجراءات</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                  لا توجد أكواد دفع إلكتروني محفوظة حتى الآن
-                </div>
-              )}
+                    </thead>
+                    <tbody>
+                      {filteredEpCodes.map((code, index) => (
+                        <tr
+                          key={code.id || index}
+                          style={{
+                            borderBottom: '1px solid #e2e8f0',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'text'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile}</td>
+                          <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.nationalID}</td>
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.entity}</td>
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.serviceType}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b', userSelect: 'text', cursor: 'text' }}>
+                            {code.createdAt?.seconds
+                              ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG')
+                              : (code.createdAt || 'الان')}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.orderNumber}</td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
+                              {(() => {
+                                const flagKey = `ep-${code.id || index}`;
+                                const isFlagged = !!toggledFlags[flagKey];
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFlag(flagKey)}
+                                    title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
+                                    style={{
+                                      padding: '6px',
+                                      background: isFlagged ? '#ecfdf5' : '#f0fdf4',
+                                      color: isFlagged ? '#047857' : '#15803d',
+                                      border: `1px solid ${isFlagged ? '#6ee7b7' : '#bbf7d0'}`,
+                                      borderRadius: '8px',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}
+                                  >
+                                    <Star size={16} fill={isFlagged ? 'currentColor' : 'none'} />
+                                  </button>
+                                );
+                              })()}
+                              <button
+                                onClick={() => handleDeleteEPCode(code.id)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
+                                title="حذف"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
           </div>
         )
@@ -4567,8 +4720,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           serviceStats[s.id] = { id: s.id, count: 0, revenue: 0, profit: 0, name: s.nameAr, color: s.color };
         });
 
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
         // Loop through all requests to gather data
         serviceRequests.forEach(req => {
+          const reqDate = req.createdAt ? new Date(req.createdAt) : null;
+
+          // Apply Date Filtering
+          if (statsDateRange !== 'all' && (!reqDate || isNaN(reqDate.getTime()))) return;
+          if (statsDateRange === 'today' && reqDate! < startOfDay) return;
+          if (statsDateRange === 'week' && reqDate! < startOfWeek) return;
+          if (statsDateRange === 'month' && reqDate! < startOfMonth) return;
+
           // Status Counts
           if (req.status === 'completed') completedCount++;
           else if (req.status === 'rejected') rejectedCount++;
@@ -4603,26 +4769,43 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
         const sortedServicesByRew = Object.values(serviceStats).sort((a, b) => b.revenue - a.revenue);
         const sortedServicesByCount = Object.values(serviceStats).sort((a, b) => b.count - a.count);
-        const maxServiceCount = Math.max(...Object.values(serviceStats).map(s => s.count), 11); // avoid div by zero
+        const maxServiceCount = Math.max(...Object.values(serviceStats).map(s => s.count), 1); // avoid div by zero
 
         return (
           <div className="admin-content stats-dashboard" style={{ animation: 'fadeIn 0.5s ease-out' }}>
-            <div className="section-header" style={{ marginBottom: '30px' }}>
-              <div>
+            <div className="section-header" style={{ marginBottom: '30px', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: '20px' }}>
+              <div style={{ flex: 1 }}>
                 <h2 style={{ fontSize: '1.8rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <TrendingUp size={32} color="#2563eb" />
                   مركز الإحصائيات والتقارير المالية
                 </h2>
-                <p style={{ color: '#64748b', marginTop: '8px' }}>تحليل شامل لأداء المنصة والمبالغ المحصلة</p>
-              </div>
-              <div style={{ display: 'flex', gap: '20px' }}>
-                <div style={{ background: '#f1f5f9', padding: '10px 20px', borderRadius: '12px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.9rem', color: '#64748b' }}>إجمالي الدخل المحقق</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#10b981' }}>{totalRevenue.toLocaleString()} ج.م</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '15px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => setStatsDateRange('all')}
+                    style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', border: '1px solid #e2e8f0', background: statsDateRange === 'all' ? '#2563eb' : 'white', color: statsDateRange === 'all' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.2s' }}
+                  >الكل</button>
+                  <button
+                    onClick={() => setStatsDateRange('today')}
+                    style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', border: '1px solid #e2e8f0', background: statsDateRange === 'today' ? '#2563eb' : 'white', color: statsDateRange === 'today' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.2s' }}
+                  >اليوم</button>
+                  <button
+                    onClick={() => setStatsDateRange('week')}
+                    style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', border: '1px solid #e2e8f0', background: statsDateRange === 'week' ? '#2563eb' : 'white', color: statsDateRange === 'week' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.2s' }}
+                  >آخر أسبوع</button>
+                  <button
+                    onClick={() => setStatsDateRange('month')}
+                    style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', border: '1px solid #e2e8f0', background: statsDateRange === 'month' ? '#2563eb' : 'white', color: statsDateRange === 'month' ? 'white' : '#64748b', cursor: 'pointer', transition: 'all 0.2s' }}
+                  >آخر شهر</button>
                 </div>
-                <div style={{ background: '#fef3c7', padding: '10px 20px', borderRadius: '12px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.9rem', color: '#b45309' }}>إجمالي المكسب</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#d97706' }}>{totalProfit.toLocaleString()} ج.م</div>
+              </div>
+              <div style={{ display: 'flex', gap: '15px' }}>
+                <div style={{ background: '#f1f5f9', padding: '12px 24px', borderRadius: '16px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '4px' }}>إجمالي الدخل المحقق</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#10b981' }}>{totalRevenue.toLocaleString()} ج.م</div>
+                </div>
+                <div style={{ background: '#fef3c7', padding: '12px 24px', borderRadius: '16px', textAlign: 'center', border: '1px solid #fde68a' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#b45309', marginBottom: '4px' }}>إجمالي المكسب</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#d97706' }}>{totalProfit.toLocaleString()} ج.م</div>
                 </div>
               </div>
             </div>

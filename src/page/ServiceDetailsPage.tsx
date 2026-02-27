@@ -716,7 +716,25 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                       if (selectedAssignments.includes(assignment.id)) {
                         setSelectedAssignments(selectedAssignments.filter(id => id !== assignment.id));
                       } else {
-                        setSelectedAssignments([...selectedAssignments, assignment.id]);
+                        // Implement mutual exclusivity for 500 and 300 EGP assignments
+                        const selectedPrice = Number(assignment.price);
+                        let newSelections = [...selectedAssignments];
+
+                        if (selectedPrice === 500) {
+                          // Filter out any 300 EGP assignments
+                          newSelections = newSelections.filter(id => {
+                            const a = assignmentsConfig.assignments.find(item => item.id === id);
+                            return a && Number(a.price) !== 300;
+                          });
+                        } else if (selectedPrice === 300) {
+                          // Filter out any 500 EGP assignments
+                          newSelections = newSelections.filter(id => {
+                            const a = assignmentsConfig.assignments.find(item => item.id === id);
+                            return a && Number(a.price) !== 500;
+                          });
+                        }
+
+                        setSelectedAssignments([...newSelections, assignment.id]);
                       }
                     }}
                   >

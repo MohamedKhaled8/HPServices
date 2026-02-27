@@ -393,7 +393,35 @@ export const getAssignmentFilesForTrack = async (track: TrackKey): Promise<Assig
   }
 };
 
-export const distributeAssignmentsForTrack = async (track: TrackKey, fileIds?: string[]): Promise<void> => {
+export type ServiceTier = '500' | '300';
+
+// Helper: Get student IDs who bought a specific assignment tier (by price) with accepted requests
+const getStudentIdsByTier = async (tierPrice: number): Promise<Set<string>> => {
+  const collectionName = `serviceRequests_5`; // Service 5 = assignments
+  const requestsSnap = await getDocs(collection(db, collectionName));
+  const studentIds = new Set<string>();
+
+  requestsSnap.forEach((docSnap) => {
+    const data = docSnap.data();
+    // Only include completed/accepted requests
+    if (data.status !== 'completed') return;
+
+    const selectedData = data.data?.selectedAssignmentsData || [];
+    const hasThisTier = selectedData.some((a: any) => a.price === tierPrice);
+
+    if (hasThisTier) {
+      studentIds.add(data.studentId);
+    }
+  });
+
+  return studentIds;
+};
+
+export const distributeAssignmentsForTrack = async (
+  track: TrackKey,
+  fileIds?: string[],
+  serviceTier?: ServiceTier
+): Promise<void> => {
   try {
     // 1) Get all files for this track (or only selected ones)
     let files = await getAssignmentFilesForTrack(track);
@@ -405,21 +433,31 @@ export const distributeAssignmentsForTrack = async (track: TrackKey, fileIds?: s
       throw new Error('لا توجد ملفات مرفوعة لهذا المسار');
     }
 
-    // 2) Get all students for this track
+    // 2) Get students filtered by tier (if specified) AND track
     const studentsRef = collection(db, 'students');
     const studentsSnap = await getDocs(studentsRef);
-    const students: { id: string; data: StudentData }[] = [];
+    let allStudentsInTrack: { id: string; data: StudentData }[] = [];
 
     studentsSnap.forEach((docSnap) => {
       const data = docSnap.data() as StudentData;
       const studentTrackKey = trackToKey(data.track || null);
       if (studentTrackKey === track) {
-        students.push({ id: docSnap.id, data });
+        allStudentsInTrack.push({ id: docSnap.id, data });
       }
     });
 
+    let students = allStudentsInTrack;
+
+    // If a tier is specified, filter by students who bought that tier
+    if (serviceTier) {
+      const tierPrice = serviceTier === '500' ? 500 : 300;
+      const tierStudentIds = await getStudentIdsByTier(tierPrice);
+      students = allStudentsInTrack.filter(s => tierStudentIds.has(s.id));
+    }
+
     if (students.length === 0) {
-      throw new Error('لا يوجد طلاب في هذا المسار حالياً');
+      const tierLabel = serviceTier === '500' ? 'خدمة الـ 500' : serviceTier === '300' ? 'خدمة الـ 300' : 'هذا المسار';
+      throw new Error(`لا يوجد طلاب مشتركين في ${tierLabel} في هذا المسار حالياً`);
     }
 
     // 3) Shuffle files randomly
@@ -435,15 +473,27 @@ export const distributeAssignmentsForTrack = async (track: TrackKey, fileIds?: s
         ? file.name.substring(file.name.lastIndexOf('.'))
         : '';
 
-      // Create new file name using student's name + original extension
-      // Replace spaces and special characters with underscores for safety
+      // Extract file name without extension for display
+      const fileNameWithoutExt = file.name.includes('.')
+        ? file.name.substring(0, file.name.lastIndexOf('.'))
+        : file.name;
+
+      // Create custom file name based on tier
       const studentName = (student.data.fullNameArabic || 'طالب').replace(/\s+/g, '_').replace(/[^\u0600-\u06FF\w.-]/g, '_');
-      const customFileName = `${studentName}${fileExtension}`;
+
+      let customFileName: string;
+      if (serviceTier === '300') {
+        // 300 EGP: file title only (no student name)
+        customFileName = file.name;
+      } else {
+        // 500 EGP (or no tier specified - backward compatible): student name + file title
+        customFileName = `${studentName}_-_${fileNameWithoutExt}${fileExtension}`;
+      }
 
       const assigned: AssignedFile = {
         id: file.id,
         name: file.name, // الاسم الأصلي للملف
-        customName: customFileName, // الاسم المخصص (اسم الطالب)
+        customName: customFileName, // الاسم المخصص حسب نوع الخدمة
         url: file.url,
         track,
         assignedAt: new Date().toISOString()
@@ -470,6 +520,185 @@ export const distributeAssignmentsForTrack = async (track: TrackKey, fileIds?: s
   } catch (error: any) {
     logger.error('Error distributing assignments:', error);
     throw new Error(error.message || 'حدث خطأ أثناء توزيع ملفات التكاليف على الطلاب');
+  }
+};
+
+// ============================================
+// 130 EGP Unified File (one file for all buyers)
+// ============================================
+
+export const upload130UnifiedFile = async (
+  file: File,
+  adminId: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<AssignmentFileMeta> => {
+  try {
+    if (!adminId) {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        adminId = currentUser.uid;
+      } else {
+        throw new Error('يجب تسجيل الدخول كمسؤول لرفع الملفات');
+      }
+    }
+
+    const uploadResults = await uploadMultipleToCloudStorage([file], onProgress);
+    const result = uploadResults[0];
+
+    const filesCollection = collection(db, 'assignments', 'unified130', 'files');
+    const fileDocRef = doc(filesCollection);
+
+    const meta: AssignmentFileMeta = {
+      id: fileDocRef.id,
+      name: result.fileName,
+      url: result.url,
+      track: 'track1' as TrackKey, // placeholder, not relevant for 130
+      storagePath: result.fileId || result.url,
+      uploadedAt: serverTimestamp()
+    };
+
+    await setDoc(fileDocRef, {
+      ...meta,
+      adminId,
+      provider: result.provider,
+      bucket: 'cloud-storage',
+      uploadedAt: serverTimestamp()
+    });
+
+    return meta;
+  } catch (error: any) {
+    logger.error('Error uploading 130 unified file:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء رفع الملف الموحد');
+  }
+};
+
+export const get130UnifiedFiles = async (): Promise<AssignmentFileMeta[]> => {
+  try {
+    const filesCollection = collection(db, 'assignments', 'unified130', 'files');
+    const snapshot = await getDocs(filesCollection);
+
+    return snapshot.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        name: data.name,
+        url: data.url,
+        track: 'track1' as TrackKey,
+        storagePath: data.storagePath,
+        uploadedAt: data.uploadedAt
+      };
+    });
+  } catch (error: any) {
+    logger.error('Error fetching 130 unified files:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء جلب الملفات الموحدة');
+  }
+};
+
+export const delete130UnifiedFiles = async (fileIds: string[]): Promise<void> => {
+  try {
+    const filesCollection = collection(db, 'assignments', 'unified130', 'files');
+
+    const deletePromises = fileIds.map(async (fileId) => {
+      const fileDocRef = doc(filesCollection, fileId);
+      const snap = await getDoc(fileDocRef);
+      if (!snap.exists()) return;
+
+      const data = snap.data() as any;
+      const storagePath = data?.storagePath as string | undefined;
+      const provider = data?.provider as string | undefined;
+
+      await deleteDoc(fileDocRef);
+
+      if (storagePath) {
+        try {
+          if (provider === 'supabase') {
+            const { error } = await supabase.storage
+              .from(ASSIGNMENTS_BUCKET)
+              .remove([storagePath]);
+            if (error) logger.error('Error removing from Supabase:', error);
+          } else {
+            await deleteObject(ref(storage, storagePath));
+          }
+        } catch (storageError) {
+          logger.error('Error deleting 130 file from storage:', storageError);
+        }
+      }
+    });
+
+    await Promise.all(deletePromises);
+  } catch (error: any) {
+    logger.error('Error deleting 130 unified files:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء حذف الملفات الموحدة');
+  }
+};
+
+export const distribute130UnifiedFiles = async (fileIds?: string[]): Promise<void> => {
+  try {
+    // 1) Get 130 unified files
+    let files = await get130UnifiedFiles();
+    if (fileIds && fileIds.length > 0) {
+      const fileIdSet = new Set(fileIds);
+      files = files.filter((f) => fileIdSet.has(f.id));
+    }
+    if (files.length === 0) {
+      throw new Error('لا توجد ملفات موحدة مرفوعة');
+    }
+
+    // 2) Get all students who bought the 130 tier
+    const tierStudentIds = await getStudentIdsByTier(130);
+    if (tierStudentIds.size === 0) {
+      throw new Error('لا يوجد طلاب مشتركين في خدمة الـ 130 حالياً');
+    }
+
+    // 3) Get student data
+    const studentsRef = collection(db, 'students');
+    const studentsSnap = await getDocs(studentsRef);
+    const students: { id: string; data: StudentData }[] = [];
+
+    studentsSnap.forEach((docSnap) => {
+      if (tierStudentIds.has(docSnap.id)) {
+        students.push({ id: docSnap.id, data: docSnap.data() as StudentData });
+      }
+    });
+
+    if (students.length === 0) {
+      throw new Error('لا يوجد طلاب مشتركين في خدمة الـ 130 حالياً');
+    }
+
+    // 4) Send ALL files to ALL students (same file for everyone)
+    for (const student of students) {
+      const existingFiles = student.data.assignedFiles || [];
+
+      let updatedFiles = [...existingFiles];
+      let hasNewFiles = false;
+
+      for (const file of files) {
+        const isAlreadyAssigned = existingFiles.some(f => f.id === file.id);
+
+        if (!isAlreadyAssigned) {
+          const assigned: AssignedFile = {
+            id: file.id,
+            name: file.name,
+            customName: file.name, // Same file for everyone, no custom naming
+            url: file.url,
+            track: 'track1' as any, // placeholder
+            assignedAt: new Date().toISOString()
+          };
+          updatedFiles.push(assigned);
+          hasNewFiles = true;
+        }
+      }
+
+      if (hasNewFiles) {
+        await updateStudentData(student.id, {
+          assignedFiles: updatedFiles,
+          assignedFile: updatedFiles[updatedFiles.length - 1]
+        } as any);
+      }
+    }
+  } catch (error: any) {
+    logger.error('Error distributing 130 unified files:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء توزيع الملفات الموحدة');
   }
 };
 

@@ -8,7 +8,12 @@ import {
   getAssignmentsServiceConfig,
   updateAssignmentsServiceConfig,
   getCurrentUser,
-  TrackKey
+  TrackKey,
+  ServiceTier,
+  upload130UnifiedFile,
+  get130UnifiedFiles,
+  delete130UnifiedFiles,
+  distribute130UnifiedFiles
 } from '../services/firebaseService';
 import { AssignmentsServiceConfig, AssignmentItem } from '../types';
 import {
@@ -33,7 +38,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
 
   // Tabs: إدارة التكليفات / إدارة تكاليف المسارات
-  const [activeTab, setActiveTab] = useState<'assignments' | 'tracks'>('assignments');
+  const [activeTab, setActiveTab] = useState<'assignments' | 'tracks' | 'unified130'>('assignments');
 
   // Tracks view state
   const [activeTrackFolder, setActiveTrackFolder] = useState<TrackKey>('track1');
@@ -74,6 +79,16 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
   const [isDistributingAssignments, setIsDistributingAssignments] = useState(false);
   const [assignmentsMessage, setAssignmentsMessage] = useState<string | null>(null);
+
+  // Tier selection modal state
+  const [showTierModal, setShowTierModal] = useState(false);
+
+  // 130 unified files state
+  const [unified130Files, setUnified130Files] = useState<any[]>([]);
+  const [isUploading130, setIsUploading130] = useState(false);
+  const [isDistributing130, setIsDistributing130] = useState(false);
+  const [selected130FileIds, setSelected130FileIds] = useState<Set<string>>(new Set());
+  const [isDeleting130, setIsDeleting130] = useState(false);
   const [assignmentsConfig, setAssignmentsConfig] = useState<AssignmentsServiceConfig>({
     serviceName: 'حل وتسليم تكليفات',
     assignments: [],
@@ -128,6 +143,19 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     };
 
     loadAllTracks();
+  }, []);
+
+  // Load 130 unified files
+  useEffect(() => {
+    const load130Files = async () => {
+      try {
+        const files = await get130UnifiedFiles();
+        setUnified130Files(files);
+      } catch (error) {
+        console.error('Error loading 130 unified files:', error);
+      }
+    };
+    load130Files();
   }, []);
 
   // Prevent closing tab/browser while uploading
@@ -242,8 +270,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     }
   };
 
-  const handleDistribute = async () => {
+  const handleDistribute = async (tier: ServiceTier) => {
     try {
+      setShowTierModal(false);
       setAssignmentsMessage(null);
       setIsDistributingAssignments(true);
 
@@ -253,9 +282,10 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
       const targetTrack = openedTrack || activeTrackFolder;
       const ids = Array.from(selectedFileIds[targetTrack] || []);
-      await distributeAssignmentsForTrack(targetTrack, ids);
+      await distributeAssignmentsForTrack(targetTrack, ids, tier);
 
-      showSnackbarNotification(`تم إرسال ${ids.length} ملف للطلاب بنجاح`, 'success');
+      const tierLabel = tier === '500' ? 'مشتركي الـ 500 (حل وتسليم)' : 'مشتركي الـ 300 (حل فقط)';
+      showSnackbarNotification(`تم إرسال ${ids.length} ملف لـ ${tierLabel} بنجاح`, 'success');
 
       // Clear selection
       setSelectedFileIds(prev => ({
@@ -266,6 +296,56 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       showSnackbarNotification(error.message || 'حدث خطأ أثناء توزيع الملفات', 'error');
     } finally {
       setIsDistributingAssignments(false);
+    }
+  };
+
+  // 130 Unified File Handlers
+  const handle130FileUpload = async (file: File) => {
+    const user = getCurrentUser();
+    if (!user) return;
+    try {
+      setIsUploading130(true);
+      const uploaded = await upload130UnifiedFile(file, user.uid);
+      setUnified130Files(prev => [...prev, uploaded]);
+      showSnackbarNotification('تم رفع الملف الموحد بنجاح', 'success');
+    } catch (error: any) {
+      showSnackbarNotification(error.message || 'حدث خطأ أثناء رفع الملف', 'error');
+    } finally {
+      setIsUploading130(false);
+    }
+  };
+
+  const handle130Distribute = async () => {
+    try {
+      setIsDistributing130(true);
+      setShowPaperPlane(true);
+      setTimeout(() => setShowPaperPlane(false), 1500);
+
+      const ids = Array.from(selected130FileIds);
+      await distribute130UnifiedFiles(ids.length > 0 ? ids : undefined);
+      showSnackbarNotification('تم إرسال الملفات الموحدة لمشتركي الـ 130 بنجاح', 'success');
+      setSelected130FileIds(new Set());
+    } catch (error: any) {
+      showSnackbarNotification(error.message || 'حدث خطأ أثناء التوزيع', 'error');
+    } finally {
+      setIsDistributing130(false);
+    }
+  };
+
+  const handle130Delete = async () => {
+    const ids = Array.from(selected130FileIds);
+    if (ids.length === 0) return;
+    if (!confirm(`هل أنت متأكد من مسح ${ids.length} ملف محدد؟`)) return;
+    try {
+      setIsDeleting130(true);
+      await delete130UnifiedFiles(ids);
+      setUnified130Files(prev => prev.filter(f => !ids.includes(f.id)));
+      setSelected130FileIds(new Set());
+      showSnackbarNotification(`تم مسح ${ids.length} ملف بنجاح`, 'success');
+    } catch (error: any) {
+      showSnackbarNotification(error.message || 'حدث خطأ أثناء الحذف', 'error');
+    } finally {
+      setIsDeleting130(false);
     }
   };
 
@@ -384,6 +464,17 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
           }}
         >
           إدارة التكليفات
+        </button>
+        <button
+          type="button"
+          className={`tab-button inner-tab ${activeTab === 'unified130' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('unified130');
+            setTrackView('overview');
+            setOpenedTrack(null);
+          }}
+        >
+          ملفات الـ 130 (موحد)
         </button>
         <button
           type="button"
@@ -657,7 +748,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                         !selectedFileIds[openedTrack] ||
                         selectedFileIds[openedTrack].size === 0
                       }
-                      onClick={handleDistribute}
+                      onClick={() => setShowTierModal(true)}
                     >
                       {isDistributingAssignments ? (
                         <>
@@ -829,6 +920,155 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
             )}
           </div>
         )}
+
+        {/* TAB: ملفات الـ 130 الموحدة */}
+        {activeTab === 'unified130' && (
+          <div className="track-files-panel">
+            <div className="track-files-header">
+              <div className="track-header-main">
+                <h3>ملفات خدمة الـ 130 جنيه (ملف موحد للكل)</h3>
+              </div>
+              <div className="track-files-actions">
+                <input
+                  type="file"
+                  id="upload-input-130"
+                  style={{ display: 'none' }}
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.bmp,.gif"
+                  disabled={isUploading130}
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      handle130FileUpload(e.target.files[0]);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="add-costs-button"
+                  onClick={() => document.getElementById('upload-input-130')?.click()}
+                  disabled={isUploading130}
+                >
+                  {isUploading130 ? (
+                    <><Loader2 className="spinning-loader-small" size={16} /> جاري الرفع...</>
+                  ) : (
+                    <><Upload size={16} /> رفع ملف</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="send-button"
+                  disabled={isDistributing130}
+                  onClick={handle130Distribute}
+                >
+                  {isDistributing130 ? (
+                    <><Loader2 className="spinning-loader-small" size={16} /> جاري التوزيع...</>
+                  ) : (
+                    <><Send size={16} /> إرسال لمشتركي الـ 130</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="delete-button"
+                  disabled={isDeleting130 || selected130FileIds.size === 0}
+                  onClick={handle130Delete}
+                >
+                  {isDeleting130 ? (
+                    <><Loader2 className="spinning-loader-small" size={16} /> جاري المسح...</>
+                  ) : (
+                    <><Trash2 size={16} /> مسح المحدد</>
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="track-files-body">
+              <div className="files-table-wrapper">
+                {unified130Files.length === 0 ? (
+                  <div className="no-items-message">
+                    لا توجد ملفات موحدة مرفوعة بعد. الملفات المرفوعة هنا ستُرسل لجميع مشتركي خدمة الـ 130 جنيه.
+                  </div>
+                ) : (
+                  <table className="files-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '50px' }}>
+                          <label className="checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={unified130Files.length > 0 && selected130FileIds.size === unified130Files.length}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelected130FileIds(new Set(unified130Files.map(f => f.id)));
+                                } else {
+                                  setSelected130FileIds(new Set());
+                                }
+                              }}
+                            />
+                            <span className="checkbox-custom" />
+                          </label>
+                        </th>
+                        <th>اسم الملف</th>
+                        <th>الإجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unified130Files.map((file: any) => {
+                        const isSelected = selected130FileIds.has(file.id);
+                        return (
+                          <tr key={file.id} className={isSelected ? 'selected-row' : ''}>
+                            <td>
+                              <label className="checkbox-label">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    setSelected130FileIds(prev => {
+                                      const s = new Set(prev);
+                                      if (s.has(file.id)) s.delete(file.id);
+                                      else s.add(file.id);
+                                      return s;
+                                    });
+                                  }}
+                                />
+                                <span className="checkbox-custom" />
+                              </label>
+                            </td>
+                            <td>
+                              <div className="file-info-cell">
+                                <div className={`file-icon-simple ${file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'img'}`}>
+                                  {file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'IMG'}
+                                </div>
+                                <a href={file.url} target="_blank" rel="noreferrer" className="file-link-simple">{file.name}</a>
+                              </div>
+                            </td>
+                            <td>
+                              <button
+                                className="icon-button delete"
+                                onClick={async () => {
+                                  if (confirm('هل أنت متأكد من حذف هذا الملف؟')) {
+                                    try {
+                                      await delete130UnifiedFiles([file.id]);
+                                      setUnified130Files(prev => prev.filter(f => f.id !== file.id));
+                                      showSnackbarNotification('تم حذف الملف بنجاح', 'success');
+                                    } catch (err: any) {
+                                      showSnackbarNotification('فشل حذف الملف', 'error');
+                                    }
+                                  }
+                                }}
+                                title="حذف الملف"
+                              >
+                                <X size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Snackbar Notification */}
@@ -843,6 +1083,37 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       {showPaperPlane && (
         <div className="paper-plane-container">
           <div className="paper-plane">✈️</div>
+        </div>
+      )}
+
+      {/* Tier Selection Modal */}
+      {showTierModal && (
+        <div className="tier-modal-overlay" onClick={() => setShowTierModal(false)}>
+          <div className="tier-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>اختر نوع الخدمة للتوزيع</h3>
+            <p style={{ color: '#64748B', fontSize: '14px', marginBottom: '20px' }}>
+              سيتم إرسال الملفات المحددة للطلاب المشتركين في الخدمة المختارة فقط
+            </p>
+            <div className="tier-modal-buttons">
+              <button
+                className="tier-button tier-500"
+                onClick={() => handleDistribute('500')}
+              >
+                <strong>500 جنيه — حل وتسليم</strong>
+                <span>الملف باسم الطالب + اسم الملف</span>
+              </button>
+              <button
+                className="tier-button tier-300"
+                onClick={() => handleDistribute('300')}
+              >
+                <strong>300 جنيه — حل فقط</strong>
+                <span>الملف باسم الملف فقط</span>
+              </button>
+            </div>
+            <button className="tier-cancel" onClick={() => setShowTierModal(false)}>
+              إلغاء
+            </button>
+          </div>
         </div>
       )}
     </div>

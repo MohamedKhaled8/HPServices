@@ -3162,8 +3162,10 @@
 
   /* Layout Containers */
   .admin-dashboard-page {
-    width: 100vw;
+    width: 100%;
     overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .admin-content {
@@ -3171,6 +3173,7 @@
     width: 100%;
     box-sizing: border-box;
     overflow-x: hidden;
+    overflow-y: visible;
   }
 
   .admin-header {
@@ -3552,6 +3555,7 @@
   /* Additional safety for small screens overflow */
   .admin-dashboard-page {
     overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .book-config-form,

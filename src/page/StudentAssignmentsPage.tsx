@@ -168,23 +168,35 @@ const StudentAssignmentsPage: React.FC<StudentAssignmentsPageProps> = ({ onBack 
                                         >
                                             {(() => {
                                                 const studentName = student?.fullNameArabic || 'طالب';
+
+                                                // 1. New 500 Tier Files (contains our _-_ separator)
+                                                if (assignedFile.customName && assignedFile.customName.includes('_-_')) {
+                                                    return assignedFile.customName.replace(/_-_/g, ' - ').replace(/_/g, ' ');
+                                                }
+
+                                                const cleanStudentName = studentName.replace(/\s+/g, '_');
+                                                const fileExtension = assignedFile.name?.includes('.') ? assignedFile.name.substring(assignedFile.name.lastIndexOf('.')) : '';
+                                                const oldSystemCustomName = `${cleanStudentName}${fileExtension}`;
+
+                                                // 2. New 300 and 130 Tier Files (customName exists but is NOT the old studentName-only format)
+                                                if (assignedFile.customName &&
+                                                    assignedFile.customName !== oldSystemCustomName &&
+                                                    !assignedFile.customName.includes(cleanStudentName)) {
+                                                    return assignedFile.customName;
+                                                }
+
+                                                // 3. Fallback for OLD files (where customName was just the student's name)
                                                 let storedFileName = assignedFile.name;
                                                 const originalNameFromMap = fileMap[assignedFile.id];
 
-                                                // 0. GOLDEN RULE: If we found the original name in the source map (Admin files), USE IT!
                                                 if (originalNameFromMap) {
                                                     return `${studentName} - ${originalNameFromMap}`;
                                                 }
 
-                                                const cleanStudentName = studentName.replace(/\s+/g, '_');
-
-                                                // 1. Fallback: Check if it's a NEW file (stored name is different from student name)
                                                 if (!storedFileName.includes(cleanStudentName) && !storedFileName.includes(studentName)) {
                                                     return `${studentName} - ${storedFileName}`;
                                                 }
 
-                                                // 2. Fallback: It's an OLD file and we couldn't find the original name map
-                                                // Just show it nicely cleaned up to avoid duplication
                                                 return storedFileName.replace(/_/g, ' ');
                                             })()}
                                         </h3>
