@@ -16,6 +16,7 @@ import {
   distribute130UnifiedFiles
 } from '../services/firebaseService';
 import { AssignmentsServiceConfig, AssignmentItem } from '../types';
+import { normalizeInstaPay } from '../utils/validation';
 import {
   ArrowRight,
   Folder,
@@ -93,7 +94,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     serviceName: 'حل وتسليم تكليفات',
     assignments: [],
     paymentMethods: {
-      instaPay: '01017180923',
+      instaPay: 'raoufpk97@instapay',
       cashWallet: '01050889591'
     }
   });
@@ -113,6 +114,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       try {
         const config = await getAssignmentsServiceConfig();
         if (config) {
+          if (config.paymentMethods?.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+          }
           setAssignmentsConfig(config);
         }
       } catch (error) {

@@ -3994,3 +3994,22 @@
     gap: 8px !important;
   }
 }
+
+/* عارض المرفقات: ديسكتوب 5 صور في الصف، تابلت 4، موبايل عمود واحد */
+.document-viewer-grid {
+  grid-template-columns: repeat(5, 1fr);
+}
+@media (max-width: 1024px) {
+  .document-viewer-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .document-viewer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes document-viewer-spin {
+  to { transform: rotate(360deg); }
+}

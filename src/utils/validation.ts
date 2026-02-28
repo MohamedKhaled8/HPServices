@@ -180,3 +180,13 @@ export const validateStudentData = (data: Partial<StudentData>): ValidationError
 
   return errors;
 };
+
+/** استبدال رقم هاتف مخزن في حقل انستاباي بمعرف الانستاباي الرسمي */
+const INSTAPAY_ID = 'raoufpk97@instapay';
+export function normalizeInstaPay(val: string | undefined): string {
+  if (!val || typeof val !== 'string') return INSTAPAY_ID;
+  const t = val.trim();
+  if (!t) return INSTAPAY_ID;
+  if (/^01[0-9]{9}$/.test(t) || /^1[0-9]{9}$/.test(t)) return INSTAPAY_ID;
+  return t;
+}

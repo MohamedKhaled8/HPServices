@@ -22,6 +22,7 @@ import {
   updateGraduationProjectConfig,
   checkIsAdmin,
   getStudentData,
+  getStudentsByIds,
   subscribeToAllStudents,
   searchStudent,
   updateStudentData,
@@ -44,7 +45,7 @@ import {
   clearQuickNotification
 } from '../services/firebaseService';
 import { normalizeTrackName } from '../utils/trackUtils';
-import { ServiceRequest, StudentData, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
+import { ServiceRequest, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
 import {
   LogOut,
   Package,
@@ -89,10 +90,12 @@ import {
   ArrowUp,
   ArrowDown,
   GripVertical,
-  ChevronDown
+  ChevronDown,
+  Folder
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
+import { normalizeInstaPay } from '../utils/validation';
 import CustomToast from '../components/CustomToast';
 import { useSpreadsheetGrid } from '../hooks/useSpreadsheetGrid';
 import SpreadsheetContextMenu, { type SpreadsheetMenuAction } from '../components/SpreadsheetContextMenu';
@@ -184,6 +187,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   /* Spreadsheet-style grid: selection, clipboard, keyboard, context menu */
   const gridApi = useSpreadsheetGrid();
   const requestsTableRef = React.useRef<HTMLDivElement>(null);
+  const requestsScrollContainerRef = React.useRef<HTMLDivElement | null>(null);
   const [spreadsheetMenu, setSpreadsheetMenu] = useState<{
     open: boolean; x: number; y: number; tableId: string;
     columnLabel?: string; columnIndex?: number;
@@ -270,7 +274,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       } else if (e.key === 'ArrowRight' && sel.endCol < colCount - 1) {
         e.preventDefault();
         gridApi.selectCell('requests', sel.endRow, sel.endCol + 1);
-      } else if (e.ctrlKey && e.key === 'c') {
+      } else if (e.ctrlKey && e.code === 'KeyC') {
         e.preventDefault();
         if (!data) return;
         const sr = Math.min(sel.startRow, sel.endRow);
@@ -286,7 +290,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         gridApi.copyToClipboard(values, false);
         try { navigator.clipboard.writeText(values.map(row => row.join('\t')).join('\n')); } catch (_) {}
         setToastState({ message: 'تم النسخ إلى الحافظة', type: 'success', duration: 1500 });
-      } else if (e.ctrlKey && e.key === 'v') {
+      } else if (e.ctrlKey && e.code === 'KeyV') {
         e.preventDefault();
         const { values } = gridApi.getClipboard();
         if (!values.length || !data?.setCellValue) return;
@@ -314,7 +318,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [gridApi.activeTableId, gridApi.selection, gridApi]);
 
-  /* Mouse drag to select range */
+  /* Mouse drag to select range + auto-scroll while dragging */
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragStartRef.current) return;
@@ -322,8 +326,31 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       if (t) {
         const r = parseInt(t.getAttribute('data-row')!, 10);
         const c = parseInt(t.getAttribute('data-col')!, 10);
-        if (!Number.isNaN(r) && !Number.isNaN(c)) {
+        const isActionsCell = t.classList.contains('spreadsheet-cell-actions');
+        if (!Number.isNaN(r) && !Number.isNaN(c) && c !== 1 && !isActionsCell) {
           gridApi.selectRange(dragStartRef.current.tableId, dragStartRef.current.row, dragStartRef.current.col, r, c);
+        }
+      }
+
+      // Auto-scroll vertically when mouse is near viewport edges
+      const edgeThreshold = 80;
+      const scrollStep = 25;
+      const viewportHeight = window.innerHeight || 0;
+      if (e.clientY < edgeThreshold) {
+        window.scrollBy({ top: -scrollStep, behavior: 'auto' });
+      } else if (e.clientY > viewportHeight - edgeThreshold) {
+        window.scrollBy({ top: scrollStep, behavior: 'auto' });
+      }
+
+      // Auto-scroll horizontally inside the spreadsheet scroll container
+      const container = requestsScrollContainerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const horizontalThreshold = 60;
+        if (e.clientX < rect.left + horizontalThreshold) {
+          container.scrollLeft -= scrollStep;
+        } else if (e.clientX > rect.right - horizontalThreshold) {
+          container.scrollLeft += scrollStep;
         }
       }
     };
@@ -334,6 +361,25 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
+  }, [gridApi]);
+
+  /* إلغاء التحديد عند النقر في أي نقطة خارج خلايا الجدول القابلة للتحديد */
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (gridApi.activeTableId !== 'requests' || !gridApi.selection) return;
+      const cell = target.closest('td[data-row][data-col]');
+      const col = cell ? parseInt(cell.getAttribute('data-col') ?? '', 10) : -1;
+      if (col === 1 || (cell && cell.classList.contains('spreadsheet-cell-actions'))) {
+        gridApi.clearSelection();
+        return;
+      }
+      if (!cell) {
+        gridApi.clearSelection();
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [gridApi]);
 
   /* إعادة تعيين ترتيب الأعمدة عند تغيير الخدمة */
@@ -457,10 +503,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
 
   // Simple visual toggle flags per-row / per-item (persists in localStorage)
-  const [toggledFlags, setToggledFlags] = useState<Record<string, boolean>>(() => {
+  type RowFlags = { f1: boolean; f2: boolean; f3: boolean };
+
+  const [toggledFlags, setToggledFlags] = useState<Record<string, RowFlags>>(() => {
     try {
       const saved = localStorage.getItem('admin_toggled_flags');
-      return saved ? JSON.parse(saved) : {};
+      const parsed = saved ? JSON.parse(saved) : {};
+      const result: Record<string, RowFlags> = {};
+      Object.keys(parsed || {}).forEach((key) => {
+        const val = parsed[key];
+        if (typeof val === 'boolean') {
+          result[key] = { f1: !!val, f2: false, f3: false };
+        } else if (val && typeof val === 'object') {
+          result[key] = {
+            f1: !!val.f1,
+            f2: !!val.f2,
+            f3: !!val.f3
+          };
+        }
+      });
+      return result;
     } catch {
       return {};
     }
@@ -470,12 +532,34 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     localStorage.setItem('admin_toggled_flags', JSON.stringify(toggledFlags));
   }, [toggledFlags]);
 
-  const toggleFlag = (key: string) => {
+  const toggleFlag = (key: string, index: 1 | 2 | 3) => {
     setToggledFlags(prev => ({
       ...prev,
-      [key]: !prev[key],
+      [key]: {
+        f1: index === 1 ? !prev[key]?.f1 : !!prev[key]?.f1,
+        f2: index === 2 ? !prev[key]?.f2 : !!prev[key]?.f2,
+        f3: index === 3 ? !prev[key]?.f3 : !!prev[key]?.f3
+      }
     }));
   };
+
+  // عارض مرفقات (Sheet) لعرض كل الصور/الملفات في Overlay داخل الصفحة
+  const [documentViewer, setDocumentViewer] = useState<{ open: boolean; urls: string[] }>({
+    open: false,
+    urls: []
+  });
+  const [documentViewerLoadedImages, setDocumentViewerLoadedImages] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (documentViewer.open) setDocumentViewerLoadedImages(new Set());
+  }, [documentViewer.open]);
+
+  /** عارض تكليفات الطالب (الملفات المُرسلة له) */
+  const [assignedFilesViewer, setAssignedFilesViewer] = useState<{
+    open: boolean;
+    studentName: string;
+    files: AssignedFile[];
+  }>({ open: false, studentName: '', files: [] });
 
   const isServiceActive = (serviceId: string) => {
     const setting = serviceSettings[serviceId];
@@ -516,46 +600,39 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       setServiceRequests(requests);
       setDataReady(true);
 
-      // Fetch student data for each request - batch parallel fetch, skip already loaded
+      // Fetch student data for each request - batch fetch (أسرع من طلب كل طالب لوحده)
       const fetchStudents = async () => {
         const uniqueStudentIds = [...new Set(requests.map(r => r.studentId))];
-        // Only fetch students we don't already have
         setStudents(prev => {
           const missingIds = uniqueStudentIds.filter(id => !prev[id]);
-          if (missingIds.length === 0) return prev; // nothing to fetch
+          if (missingIds.length === 0) return prev;
 
-          // Kick off parallel fetch for missing students
-          Promise.all(
-            missingIds.map(async (studentId) => {
-              try {
-                const studentData = await getStudentData(studentId);
-                return { studentId, studentData };
-              } catch (error) {
-                logger.error(`Error fetching student ${studentId}:`, error);
-                return { studentId, studentData: null };
-              }
-            })
-          ).then(results => {
-            setStudents(current => {
-              const updated = { ...current };
-              results.forEach(({ studentId, studentData }) => {
-                if (studentData) updated[studentId] = studentData;
-              });
-              return updated;
-            });
+          getStudentsByIds(missingIds).then(fetched => {
+            setStudents(current => ({ ...current, ...fetched }));
           });
-
-          return prev; // Return existing state while fetching
+          return prev;
         });
       };
       fetchStudents();
     });
 
-    // Load book config
+    return () => unsubscribe();
+  }, [isLoading]);
+
+  // تحميل إعدادات الخدمات والأكواد بعد ظهور الطلبات (حتى لا نبطئ أول رسم للجدول)
+  useEffect(() => {
+    if (!dataReady || isLoading) return;
+
+    let unsubscribeDtCodes: (() => void) | undefined;
+    let unsubscribeEpCodes: (() => void) | undefined;
+
     const loadBookConfig = async () => {
       try {
         const config = await getBookServiceConfig();
         if (config) {
+          if (config.paymentMethods?.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+          }
           setBookConfig(config);
         } else {
           // Default config
@@ -575,7 +652,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               '11': 18500
             },
             paymentMethods: {
-              instaPay: '01017180923',
+              instaPay: 'raoufpk97@instapay',
               cashWallet: '01050889591'
             }
           });
@@ -593,9 +670,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         if (config) {
           if (!config.paymentMethods) {
             config.paymentMethods = {
-              instaPay: '01017180923',
+              instaPay: 'raoufpk97@instapay',
               cashWallet: '01050889591'
             };
+          } else if (config.paymentMethods.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
           }
           setFeesConfig(config);
         } else {
@@ -603,7 +682,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           setFeesConfig({
             prices: {},
             paymentMethods: {
-              instaPay: '01017180923',
+              instaPay: 'raoufpk97@instapay',
               cashWallet: '01050889591'
             }
           });
@@ -619,6 +698,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       try {
         const config = await getAssignmentsServiceConfig();
         if (config) {
+          if (config.paymentMethods?.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+          }
           setAssignmentsConfig(config);
         } else {
           // Default config
@@ -626,7 +708,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             serviceName: 'حل وتسليم تكاليف الترم الاول',
             assignments: [],
             paymentMethods: {
-              instaPay: '01017180923',
+              instaPay: 'raoufpk97@instapay',
               cashWallet: '01050889591'
             }
           });
@@ -643,6 +725,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         logger.log('Loading certificates config in AdminDashboard...');
         const config = await getCertificatesServiceConfig();
         if (config) {
+          if (config.paymentMethods?.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+          }
           logger.log('Setting certificates config in AdminDashboard:', config.certificates?.length || 0, 'certificates');
           setCertificatesConfig(config);
         } else {
@@ -689,7 +774,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               }
             ],
             paymentMethods: {
-              instaPay: '01017180923',
+              instaPay: 'raoufpk97@instapay',
               cashWallet: '01050889591'
             }
           };
@@ -729,6 +814,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         logger.log('Loading digital transformation config in AdminDashboard...');
         const config = await getDigitalTransformationConfig();
         if (config) {
+          if (config.paymentMethods?.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+          }
           logger.log('Setting digital transformation config in AdminDashboard:', config.transformationTypes?.length || 0, 'types');
           setDigitalTransformationConfig(config);
         } else {
@@ -737,7 +825,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             transformationTypes: [],
             examLanguage: ['اللغة العربية'],
             paymentMethods: {
-              instaPay: '01017180923',
+              instaPay: 'raoufpk97@instapay',
               cashWallet: '01050889591'
             }
           };
@@ -757,24 +845,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadDigitalTransformationConfig();
 
-    // Subscribe to digital transformation codes (Real-time)
-    const unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
-      logger.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
-      setDtCodes(codes);
-    });
-
-    // Subscribe to electronic payment codes (Real-time)
-    const unsubscribeEpCodes = subscribeToElectronicPaymentCodes((codes) => {
-      logger.log('Real-time update: Electronic Payment Codes loaded:', codes.length);
-      setEpCodes(codes);
-    });
-
     // Load final review config
     const loadFinalReviewConfig = async () => {
       try {
         logger.log('Loading final review config in AdminDashboard...');
         const config = await getFinalReviewConfig();
         if (config) {
+          if (config.paymentMethods?.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+          }
           logger.log('Setting final review config in AdminDashboard:', config);
           setFinalReviewConfig(config);
         } else {
@@ -783,7 +862,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             serviceName: 'المراجعة النهائية',
             paymentAmount: 500,
             paymentMethods: {
-              instaPay: '01017180923',
+              instaPay: 'raoufpk97@instapay',
               cashWallet: '01050889591'
             }
           };
@@ -809,6 +888,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         logger.log('Loading graduation project config in AdminDashboard...');
         const config = await getGraduationProjectConfig();
         if (config) {
+          if (config.paymentMethods?.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+          }
           logger.log('Setting graduation project config in AdminDashboard:', config);
           setGraduationProjectConfig(config);
         } else {
@@ -825,7 +907,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             ],
             prices: [],
             paymentMethods: {
-              instaPay: '01017180923',
+              instaPay: 'raoufpk97@instapay',
               cashWallet: '01050889591'
             }
           };
@@ -858,12 +940,20 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadLatestNews();
 
+    unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
+      logger.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
+      setDtCodes(codes);
+    });
+    unsubscribeEpCodes = subscribeToElectronicPaymentCodes((codes) => {
+      logger.log('Real-time update: Electronic Payment Codes loaded:', codes.length);
+      setEpCodes(codes);
+    });
+
     return () => {
-      unsubscribe();
       if (unsubscribeDtCodes) unsubscribeDtCodes();
       if (unsubscribeEpCodes) unsubscribeEpCodes();
     };
-  }, [isLoading]);
+  }, [dataReady, isLoading]);
 
   // Subscribe to service settings
   useEffect(() => {
@@ -1818,10 +1908,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       return;
     }
 
-    // Open each URL in a new tab
-    urls.forEach(url => {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    });
+    const safeUrls = Array.from(new Set(urls.map(u => u || '').filter(Boolean)));
+    if (!safeUrls.length) {
+      setToastState({ message: 'لا توجد روابط صالحة للمرفقات', type: 'error', duration: 3000 });
+      return;
+    }
+
+    // افتح Sheet داخل الصفحة يعرض كل المرفقات
+    setDocumentViewer({ open: true, urls: safeUrls });
   };
 
   const moveServiceManual = async (serviceId: string, direction: 'up' | 'down') => {
@@ -2344,48 +2438,130 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         if (hasTrack) columns.push(colTrack);
                     }
 
+                    // جميع الأعمدة النشطة في الجدول (بدون أعمدة إضافية يدوية)
+                    const allColumns = columns;
+
                     // Identify which keys are "extra" (not covered by the fixed columns)
-                    const fixedKeys = new Set(['full_name', 'full_name_arabic', 'full_name_english', 'national_id', 'whatsapp_number', 'phone_whatsapp', 'leader_whatsapp', 'email', 'address', 'address_details', 'deliveryAddress', 'diploma_type', 'diplomaType', 'diploma_year', 'diplomaYear', 'track', 'track_category', 'track_name', 'number_of_copies', 'student_names', 'names', 'names_array', 'student_names_array', 'tracks_array', 'receiptUrl', 'educational_specialization', 'totalPrice', 'selectedCertificate', 'transformation_type', 'selectedExamLanguage', 'project_title', 'group_link']);
+                    const fixedKeys = new Set([
+                      'full_name',
+                      'full_name_arabic',
+                      'full_name_english',
+                      'national_id',
+                      'whatsapp_number',
+                      'phone_whatsapp',
+                      'leader_whatsapp',
+                      'email',
+                      'address',
+                      'address_details',
+                      'deliveryAddress',
+                      'diploma_type',
+                      'diplomaType',
+                      'diploma_year',
+                      'diplomaYear',
+                      'track',
+                      'track_category',
+                      'track_name',
+                      'number_of_copies',
+                      'student_names',
+                      'names',
+                      'names_array',
+                      'student_names_array',
+                      'tracks_array',
+                      'receiptUrl',
+                      'educational_specialization',
+                      'totalPrice',
+                      'selectedCertificate',
+                      'transformation_type',
+                      'selectedExamLanguage',
+                      'project_title',
+                      'group_link'
+                    ]);
                     const extraKeys = Array.from(allDataKeys).filter(k => !fixedKeys.has(k));
 
+                    // عدد أعمدة البيانات (بعد إعادة الترتيب) وخريطة الترتيب الحالية
+                    const dataColumnCount = allColumns.length + extraKeys.length;
+                    const orderedDataIndices =
+                      requestsDataColumnOrder.length === dataColumnCount
+                        ? requestsDataColumnOrder
+                        : Array.from({ length: dataColumnCount }, (_, i) => i);
+
+                    // تطبيق الفرز مع مراعاة ترتيب الأعمدة الظاهر
                     const sortState = gridApi.getSort('requests');
                     const displayRequests = !sortState
                       ? filteredRequests
                       : [...filteredRequests].sort((a, b) => {
                           const c = sortState.colIndex;
-                          if (c < 3) return 0;
-                          if (c < 3 + columns.length) {
-                            const v = columns[c - 3].getValue;
-                            return (v(a) || '').localeCompare(v(b) || '', 'ar') * (sortState.dir === 'asc' ? 1 : -1);
+
+                          // فرز حسب الحالة (عمود الحالة رقم 2)
+                          if (c === 2) {
+                            const sa = a.status || '';
+                            const sb = b.status || '';
+                            return sa.localeCompare(sb, 'ar') * (sortState.dir === 'asc' ? 1 : -1);
                           }
-                          if (c < 3 + columns.length + extraKeys.length) {
-                            const k = extraKeys[c - 3 - columns.length];
-                            const va = String(a.data?.[k] ?? '');
-                            const vb = String(b.data?.[k] ?? '');
+
+                          // الأعمدة قبل رقم 3 ليست جزءاً من بيانات الطلب
+                          if (c < 3) return 0;
+
+                          // أعمدة البيانات (تشمل الأعمدة الإضافية المستخرجة من data)
+                          if (c >= 3 && c < 3 + dataColumnCount) {
+                            const visualPos = c - 3;
+                            const localIdx = orderedDataIndices[visualPos];
+
+                            // ضمن الأعمدة المعرفة في allColumns
+                            if (localIdx < allColumns.length) {
+                              const v = allColumns[localIdx].getValue;
+                              return (v(a) || '').localeCompare(v(b) || '', 'ar') * (sortState.dir === 'asc' ? 1 : -1);
+                            }
+
+                            // الأعمدة القادمة من extraKeys
+                            const key = extraKeys[localIdx - allColumns.length];
+                            const va = String(a.data?.[key] ?? '');
+                            const vb = String(b.data?.[key] ?? '');
                             return va.localeCompare(vb, 'ar') * (sortState.dir === 'asc' ? 1 : -1);
                           }
-                          if (c === 3 + columns.length + extraKeys.length) {
+
+                          // فرز حسب التاريخ (آخر عمود)
+                          if (c === 3 + dataColumnCount) {
                             const va = a.createdAt ? new Date(a.createdAt).getTime() : 0;
                             const vb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
                             return (va - vb) * (sortState.dir === 'asc' ? 1 : -1);
                           }
+
                           return 0;
                         });
 
-                    const requestsColCount = 3 + columns.length + extraKeys.length + 1;
+                    const requestsColCount = 3 + dataColumnCount + 2;
+
+                    // حساب تكرار أرقام الواتساب عبر الطلبات المعروضة
+                    const phoneCounts = new Map<string, number>();
+                    displayRequests.forEach((req) => {
+                      const sData = students[req.studentId];
+                      const rawPhone = req.data.whatsapp_number || req.data.phone_whatsapp || sData?.whatsappNumber || '';
+                      const normalized = String(rawPhone || '').replace(/\D/g, '');
+                      if (!normalized) return;
+                      phoneCounts.set(normalized, (phoneCounts.get(normalized) ?? 0) + 1);
+                    });
                     const getRequestsCellText = (row: number, col: number): string => {
                       const request = displayRequests[row];
                       if (!request) return '';
                       if (col === 0) return String(row + 1);
                       if (col === 1) return '';
                       if (col === 2) return request.status || '';
-                      if (col >= 3 && col < 3 + columns.length) return String(columns[col - 3].getValue(request));
-                      if (col >= 3 + columns.length && col < 3 + columns.length + extraKeys.length) {
-                        const key = extraKeys[col - 3 - columns.length];
+                      if (col >= 3 && col < 3 + dataColumnCount) {
+                        const visualPos = col - 3;
+                        const localIdx = orderedDataIndices[visualPos];
+                        if (localIdx < allColumns.length) {
+                          return String(allColumns[localIdx].getValue(request));
+                        }
+                        const key = extraKeys[localIdx - allColumns.length];
                         return request.data?.[key] != null ? String(request.data[key]) : '-';
                       }
-                      if (col === 3 + columns.length + extraKeys.length)
+                      if (col === 3 + dataColumnCount)
                         return request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : '-';
+                      if (col === 3 + dataColumnCount + 1) {
+                        const files = students[request.studentId]?.assignedFiles;
+                        return Array.isArray(files) && files.length > 0 ? `${files.length} ملف` : 'مافيش';
+                      }
                       return '';
                     };
                     requestsGridDataRef.current = {
@@ -2394,9 +2570,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       getCellText: getRequestsCellText,
                       setCellValue: undefined
                     };
-
-                    const dataColumnCount = columns.length + extraKeys.length;
-                    const orderedDataIndices = requestsDataColumnOrder.length === dataColumnCount ? requestsDataColumnOrder : Array.from({ length: dataColumnCount }, (_, i) => i);
 
                     return (
                       <>
@@ -2415,7 +2588,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           role="grid"
                           aria-label="جدول الطلبات"
                         >
-                        <div className="excel-table-wrapper spreadsheet-scroll-container" style={{
+                        <div
+                          ref={requestsScrollContainerRef}
+                          className="excel-table-wrapper spreadsheet-scroll-container"
+                          style={{
                           maxHeight: 'none',
                           overflowY: 'visible',
                           overflowX: 'auto',
@@ -2430,13 +2606,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               <tr style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', color: '#1e293b', borderBottom: '2px solid #e2e8f0' }}>
                                 <th className="spreadsheet-header-no-menu" data-col={0} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', color: '#475569', background: '#f1f5f9' }}>#</th>
                                 <th className="spreadsheet-header-no-menu" data-col={1} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>إجراءات</th>
-                                <th className="spreadsheet-header-no-menu" data-col={2} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>الحالة</th>
+                                <th
+                                  className="spreadsheet-header-no-menu"
+                                  data-col={2}
+                                  style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9', cursor: 'pointer' }}
+                                  onClick={() => {
+                                    const current = gridApi.getSort('requests');
+                                    const colIndex = 2;
+                                    const nextDir: 'asc' | 'desc' = current && current.colIndex === colIndex && current.dir === 'asc' ? 'desc' : 'asc';
+                                    gridApi.setSort('requests', colIndex, nextDir);
+                                  }}
+                                  title="اضغط للترتيب حسب الحالة"
+                                >
+                                  الحالة
+                                </th>
 
                                 {orderedDataIndices.map((localIdx, displayPos) => {
-                                    const colIndex = 3 + localIdx;
-                                    const isFromColumns = localIdx < columns.length;
-                                    const col = isFromColumns ? columns[localIdx] : null;
-                                    const key = !isFromColumns ? extraKeys[localIdx - columns.length] : null;
+                                    const colIndex = 3 + displayPos;
+                                    const isFromColumns = localIdx < allColumns.length;
+                                    const col = isFromColumns ? allColumns[localIdx] : null;
+                                    const key = !isFromColumns ? extraKeys[localIdx - allColumns.length] : null;
                                     const label = col ? col.label : (key ? translateKey(key) : '');
                                     const getValue = col ? col.getValue : (key ? (r: any) => String(r.data?.[key] ?? '-') : () => '-');
                                     let headerWidthStyle: React.CSSProperties = { padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'right', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: dropTargetColDisplayPos === displayPos ? '#dbeafe' : draggedColDisplayPos === displayPos ? '#e0e7ff' : '#f1f5f9', color: '#475569' };
@@ -2494,7 +2683,27 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       </th>
                                     );
                                   })}
-                                <th className="spreadsheet-header-no-menu" data-col={3 + columns.length + extraKeys.length} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>التاريخ</th>
+                                <th
+                                  className="spreadsheet-header-no-menu"
+                                  data-col={3 + allColumns.length + extraKeys.length}
+                                  style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9', cursor: 'pointer' }}
+                                  onClick={() => {
+                                    const current = gridApi.getSort('requests');
+                                    const colIndex = 3 + allColumns.length + extraKeys.length;
+                                    const nextDir: 'asc' | 'desc' = current && current.colIndex === colIndex && current.dir === 'asc' ? 'desc' : 'asc';
+                                    gridApi.setSort('requests', colIndex, nextDir);
+                                  }}
+                                  title="اضغط للترتيب حسب التاريخ"
+                                >
+                                  التاريخ
+                                </th>
+                                <th
+                                  className="spreadsheet-header-no-menu"
+                                  data-col={3 + allColumns.length + extraKeys.length + 1}
+                                  style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}
+                                >
+                                  الملفات
+                                </th>
                               </tr>
                             </thead>
                             <tbody
@@ -2528,8 +2737,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 ).length;
                                 const isDuplicate = userRequestsCount > 1;
                                 const rowKey = `req-${request.id || index}`;
-                                const isFlagged = !!toggledFlags[rowKey];
-                                const rowBg = isDuplicate ? '#fff1f2' : index % 2 === 0 ? '#ffffff' : '#f8fafc';
+                                const rowFlags = toggledFlags[rowKey] || { f1: false, f2: false, f3: false };
+                                const isAnyFlagged = rowFlags.f1 || rowFlags.f2 || rowFlags.f3;
+                                const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
 
                                 // Define values list to match headers
                                 const colNameVal = request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح';
@@ -2607,7 +2817,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 }
 
                                 return (
-                                  <tr key={request.id} style={{ background: rowBg, borderRight: isDuplicate ? '5px solid #ef4444' : 'none', transition: 'all 0.2s ease' }}>
+                                  <tr key={request.id} style={{ background: rowBg, transition: 'all 0.2s ease' }}>
                                     <td
                                       data-row={index}
                                       data-col={0}
@@ -2617,33 +2827,110 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                     >
                                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                                         {index + 1}
-                                        {isDuplicate && (
-                                          <span style={{
-                                            background: '#ef4444',
-                                            color: 'white',
-                                            fontSize: '10px',
-                                            padding: '2px 6px',
-                                            borderRadius: '6px',
-                                            fontWeight: '800',
-                                            display: 'inline-block'
-                                          }}>مكرر</span>
-                                        )}
                                       </div>
                                     </td>
                                     <td
                                       data-row={index}
                                       data-col={1}
-                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 1) ? ' selected' : ''}`}
-                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 1 }; gridApi.selectCell('requests', index, 1); }}
+                                      className="spreadsheet-cell spreadsheet-cell-actions"
+                                      onMouseDown={(e) => e.stopPropagation()}
                                       style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'top' }}
                                     >
-                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                                        <button onClick={() => toggleFlag(rowKey)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: isFlagged ? '#2563eb' : '#94a3b8' }}>{isFlagged ? <CheckSquare size={20} /> : <Square size={20} />}</button>
-                                        <button onClick={() => viewDocuments(request)} title="عرض المستندات" style={{ padding: '6px', background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5', borderRadius: '6px' }}><Eye size={16} /></button>
-                                        <button onClick={() => handleStatusChange(request.id || '', 'completed', request.serviceId)} title="قبول" style={{ padding: '6px', background: '#f0fdf4', color: '#166534', border: '1px solid #dcfce7', borderRadius: '6px' }}><CheckCircle size={16} /></button>
-                                        <button onClick={() => handleStatusChange(request.id || '', 'rejected', request.serviceId)} title="رفض" style={{ padding: '6px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fee2e2', borderRadius: '6px' }}><XCircle size={16} /></button>
-                                        <button onClick={() => { setEditingRequestId(request.id || null); setEditingServiceId(request.serviceId || null); setTempRequestData({ ...request.data }); setIsEditingRequestModalOpen(true); }} title="تعديل" style={{ padding: '6px', background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe', borderRadius: '6px' }}><Edit2 size={16} /></button>
-                                        <button onClick={() => handleDeleteRequest(request.id || '', request.serviceId)} title="حذف" style={{ padding: '6px', background: '#fff1f2', color: '#e11d48', border: '1px solid #ffe4e6', borderRadius: '6px' }}><Trash2 size={16} /></button>
+                                      <div
+                                        style={{
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          gap: '4px',
+                                          alignItems: 'center',
+                                          justifyContent: 'center'
+                                        }}
+                                      >
+                                        {/* الصف الأول: 5 عناصر (3 شيك بوكس + العين + التحميل) */}
+                                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFlag(rowKey, 1); }}
+                                            title={rowFlags.f1 ? 'إلغاء علامة (بدء بالحل)' : 'تمييز: بدء بالحل'}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f1 ? '#2563eb' : '#94a3b8' }}
+                                          >
+                                            {rowFlags.f1 ? <CheckSquare size={18} /> : <Square size={18} />}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFlag(rowKey, 2); }}
+                                            title={rowFlags.f2 ? 'إلغاء علامة (قيد المتابعة)' : 'تمييز: قيد المتابعة'}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f2 ? '#16a34a' : '#a3a3a3' }}
+                                          >
+                                            {rowFlags.f2 ? <CheckSquare size={18} /> : <Square size={18} />}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFlag(rowKey, 3); }}
+                                            title={rowFlags.f3 ? 'إلغاء علامة (تمت المراجعة)' : 'تمييز: تمت المراجعة'}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f3 ? '#eab308' : '#a3a3a3' }}
+                                          >
+                                            {rowFlags.f3 ? <CheckSquare size={18} /> : <Square size={18} />}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); viewDocuments(request); }}
+                                            title="عرض المستندات"
+                                            style={{ padding: '6px', background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5', borderRadius: '6px' }}
+                                          >
+                                            <Eye size={16} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDownloadAll(request); }}
+                                            title="تنزيل جميع الصور"
+                                            style={{ padding: '6px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #dbeafe', borderRadius: '6px' }}
+                                          >
+                                            <Download size={16} />
+                                          </button>
+                                        </div>
+
+                                        {/* الصف الثاني: 4 أيقونات (قبول، رفض، تعديل، حذف) */}
+                                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleStatusChange(request.id || '', 'completed', request.serviceId); }}
+                                            title="قبول"
+                                            style={{ padding: '6px', background: '#f0fdf4', color: '#166534', border: '1px solid #dcfce7', borderRadius: '6px' }}
+                                          >
+                                            <CheckCircle size={16} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleStatusChange(request.id || '', 'rejected', request.serviceId); }}
+                                            title="رفض"
+                                            style={{ padding: '6px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fee2e2', borderRadius: '6px' }}
+                                          >
+                                            <XCircle size={16} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              setEditingRequestId(request.id || null);
+                                              setEditingServiceId(request.serviceId || null);
+                                              setTempRequestData({ ...request.data });
+                                              setIsEditingRequestModalOpen(true);
+                                            }}
+                                            title="تعديل"
+                                            style={{ padding: '6px', background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe', borderRadius: '6px' }}
+                                          >
+                                            <Edit2 size={16} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteRequest(request.id || '', request.serviceId); }}
+                                            title="حذف"
+                                            style={{ padding: '6px', background: '#fff1f2', color: '#e11d48', border: '1px solid #ffe4e6', borderRadius: '6px' }}
+                                          >
+                                            <Trash2 size={16} />
+                                          </button>
+                                        </div>
                                       </div>
                                     </td>
                                     <td
@@ -2655,10 +2942,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                     >{getStatusBadge(request.status)}</td>
 
                                     {orderedDataIndices.map((localIdx, displayPos) => {
-                                      const colIndex = 3 + localIdx;
-                                      const isFromColumns = localIdx < columns.length;
-                                      const val = isFromColumns ? rowValues[localIdx] : (() => {
-                                        const key = extraKeys[localIdx - columns.length];
+                                      const colIndex = 3 + displayPos;
+                                      const isFromColumns = localIdx < allColumns.length;
+                                      let val: React.ReactNode = isFromColumns ? rowValues[localIdx] : (() => {
+                                        const key = extraKeys[localIdx - allColumns.length];
                                         const value = request.data?.[key];
                                         const stringValue = String(value || '').trim();
                                         let displayValue: React.ReactNode = stringValue || '-';
@@ -2666,7 +2953,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                         else if (stringValue.startsWith('http')) displayValue = <a href={stringValue} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>فتح الرابط</a>;
                                         return displayValue;
                                       })();
-                                      const currentColumn = isFromColumns ? columns[localIdx] : null;
+                                      const currentColumn = isFromColumns ? allColumns[localIdx] : null;
                                       let dynamicWidthStyle: React.CSSProperties = { whiteSpace: 'nowrap', paddingRight: '4px' };
                                       let cellStyle: React.CSSProperties = isFromColumns ? { padding: '12px 10px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#1e293b', textAlign: 'right', verticalAlign: 'top', lineHeight: '1.6' } : { padding: '8px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', textAlign: 'right', verticalAlign: 'top' };
                                       if (currentColumn && ['name', 'name_en', 'address', 'project_title', 'group_link', 'student_names'].includes(currentColumn.id)) {
@@ -2679,8 +2966,31 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                         dynamicWidthStyle.wordBreak = 'break-word';
                                         dynamicWidthStyle.maxWidth = '200px';
                                       }
+
+                                      // تمييز تكرار رقم الواتساب داخل نفس الجدول
+                                      if (currentColumn && currentColumn.id === 'whatsapp') {
+                                        const normalizedPhone = String(colWhatsappVal || '').replace(/\D/g, '');
+                                        const phoneCount = normalizedPhone ? (phoneCounts.get(normalizedPhone) ?? 0) : 0;
+                                        if (phoneCount > 1) {
+                                          cellStyle = {
+                                            ...cellStyle,
+                                            background: '#fef2f2',
+                                            borderColor: '#fecaca'
+                                          };
+                                          dynamicWidthStyle.whiteSpace = 'normal';
+                                          dynamicWidthStyle.wordBreak = 'break-word';
+                                          val = (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                              <span>{colWhatsappVal || '-'}</span>
+                                              <span style={{ fontSize: '11px', color: '#b91c1b', fontWeight: 700 }}>
+                                                مكرر ({phoneCount})
+                                              </span>
+                                            </div>
+                                          );
+                                        }
+                                      }
                                       if (!isFromColumns) {
-                                        const key = extraKeys[localIdx - columns.length];
+                                        const key = extraKeys[localIdx - allColumns.length];
                                         const stringValue = String(request.data?.[key] ?? '').trim();
                                         dynamicWidthStyle.whiteSpace = stringValue.length > 40 ? 'normal' : 'nowrap';
                                         dynamicWidthStyle.maxWidth = stringValue.length > 40 ? '300px' : 'none';
@@ -2704,15 +3014,61 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                                     <td
                                       data-row={index}
-                                      data-col={3 + columns.length + extraKeys.length}
-                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 3 + columns.length + extraKeys.length) ? ' selected' : ''}`}
-                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 3 + columns.length + extraKeys.length }; gridApi.selectCell('requests', index, 3 + columns.length + extraKeys.length); }}
+                                      data-col={3 + allColumns.length + extraKeys.length}
+                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 3 + allColumns.length + extraKeys.length) ? ' selected' : ''}`}
+                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 3 + allColumns.length + extraKeys.length }; gridApi.selectCell('requests', index, 3 + allColumns.length + extraKeys.length); }}
                                       style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}
                                     >
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         <span>{request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : 'بدون تاريخ'}</span>
                                         <span style={{ fontSize: '11px', opacity: 0.8 }}>{request.createdAt ? new Date(request.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
                                       </div>
+                                    </td>
+                                    <td
+                                      data-row={index}
+                                      data-col={3 + allColumns.length + extraKeys.length + 1}
+                                      className={`spreadsheet-cell spreadsheet-cell-actions`}
+                                      onMouseDown={(e) => e.stopPropagation()}
+                                      style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', verticalAlign: 'top' }}
+                                    >
+                                      {(() => {
+                                        const files = studentData?.assignedFiles;
+                                        const count = Array.isArray(files) ? files.length : 0;
+                                        if (count === 0) {
+                                          return <span style={{ color: '#94a3b8', fontSize: '13px' }}>مافيش</span>;
+                                        }
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              setAssignedFilesViewer({
+                                                open: true,
+                                                studentName: studentData?.fullNameArabic || request.data?.full_name_arabic || request.data?.full_name || 'طالب',
+                                                files: files || []
+                                              });
+                                            }}
+                                            title="عرض التكليفات المُرسلة للطالب"
+                                            style={{
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '6px',
+                                              padding: '6px 10px',
+                                              background: '#f0f9ff',
+                                              color: '#0369a1',
+                                              border: '1px solid #bae6fd',
+                                              borderRadius: '8px',
+                                              cursor: 'pointer',
+                                              fontSize: '13px',
+                                              fontWeight: 600
+                                            }}
+                                          >
+                                            <Folder size={16} />
+                                            {count} ملف
+                                          </button>
+                                        );
+                                      })()}
                                     </td>
                                   </tr>
                                 );
@@ -3589,7 +3945,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           {filteredStudents.map((student, index) => {
                             const studentRequests = getStudentRequests(student.id || '');
                             const flagKey = `student-${student.id}`;
-                            const isFlagged = !!toggledFlags[flagKey];
+                            const studentFlags = toggledFlags[flagKey] || { f1: false, f2: false, f3: false };
+                            const isFlagged = studentFlags.f1 || studentFlags.f2 || studentFlags.f3;
                             const addressStr = [student.address?.governorate, student.address?.city, student.address?.street].filter(Boolean).join(' - ') || '';
 
                             return (
@@ -3605,7 +3962,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
                                   <button
                                     type="button"
-                                    onClick={() => toggleFlag(flagKey)}
+                                    onClick={() => toggleFlag(flagKey, 1)}
                                     style={{ background: 'none', border: 'none', padding: '0', cursor: 'pointer', color: isFlagged ? '#2563eb' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}
                                   >
                                     {isFlagged ? <CheckSquare size={20} strokeWidth={2.5} /> : <Square size={20} strokeWidth={1.5} />}
@@ -4784,11 +5141,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
                               {(() => {
                                 const flagKey = `dt-${code.id || index}`;
-                                const isFlagged = !!toggledFlags[flagKey];
+                                const flags = toggledFlags[flagKey] || { f1: false, f2: false, f3: false };
+                                const isFlagged = flags.f1 || flags.f2 || flags.f3;
                                 return (
                                   <button
                                     type="button"
-                                    onClick={() => toggleFlag(flagKey)}
+                                    onClick={() => toggleFlag(flagKey, 1)}
                                     title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
                                     style={{
                                       padding: '6px',
@@ -4981,11 +5339,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
                               {(() => {
                                 const flagKey = `ep-${code.id || index}`;
-                                const isFlagged = !!toggledFlags[flagKey];
+                                const flags = toggledFlags[flagKey] || { f1: false, f2: false, f3: false };
+                                const isFlagged = flags.f1 || flags.f2 || flags.f3;
                                 return (
                                   <button
                                     type="button"
-                                    onClick={() => toggleFlag(flagKey)}
+                                    onClick={() => toggleFlag(flagKey, 1)}
                                     title={isFlagged ? 'إلغاء التمييز المؤقت' : 'تمييز الصف مؤقتاً'}
                                     style={{
                                       padding: '6px',
@@ -5400,7 +5759,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               setServiceSearchTerm('');
               setToastState({ message: 'تم إزالة الفلتر', type: 'success', duration: 1500 });
             } else if (['clearColumn', 'deleteColumn', 'insertColumnLeft', 'insertColumnRight', 'resizeColumn', 'conditionalFormatting', 'dataValidation'].includes(action)) {
-              setToastState({ message: 'متاح قريباً أو غير متاح لهذا الجدول', type: 'success', duration: 2000 });
+              setToastState({ message: 'هذا الخيار غير مفعّل حالياً لهذا الجدول', type: 'success', duration: 2000 });
             }
           }}
           onClose={() => { setSpreadsheetMenu(m => ({ ...m, open: false })); setSpreadsheetDropdownColumn(null); }}
@@ -5454,6 +5813,263 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           >
             نسخ
           </button>
+        </div>,
+        document.body
+      )}
+
+      {/* عارض المرفقات (Sheet) - يظهر عند الضغط على العين */}
+      {documentViewer.open && documentViewer.urls.length > 0 && createPortal(
+        <div
+          className="document-viewer-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10002,
+            background: 'rgba(15, 23, 42, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            boxSizing: 'border-box'
+          }}
+          onClick={() => setDocumentViewer({ open: false, urls: [] })}
+          role="dialog"
+          aria-label="عرض المرفقات"
+        >
+          <div
+            className="document-viewer-sheet"
+            style={{
+              background: '#fff',
+              borderRadius: '16px',
+              maxWidth: '100%',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+              padding: '20px',
+              direction: 'rtl'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>جميع المرفقات</h2>
+              <button
+                type="button"
+                onClick={() => setDocumentViewer({ open: false, urls: [] })}
+                style={{
+                  padding: '8px',
+                  border: 'none',
+                  background: '#f1f5f9',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                aria-label="إغلاق"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div
+              className="document-viewer-grid"
+              style={{ display: 'grid', gap: '16px' }}
+            >
+              {documentViewer.urls.map((url, i) => {
+                const isImage = /\.(png|jpe?g|webp|gif|bmp)$/i.test(url);
+                const label = `مرفق ${i + 1}`;
+                const loaded = documentViewerLoadedImages.has(i);
+                return (
+                  <a
+                    key={url + i}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'block',
+                      textDecoration: 'none',
+                      color: '#2563eb',
+                      background: '#f8fafc',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      border: '1px solid #e2e8f0',
+                      minWidth: 160
+                    }}
+                  >
+                    {isImage ? (
+                      <div
+                        style={{
+                          position: 'relative',
+                          width: '100%',
+                          aspectRatio: '1',
+                          minHeight: 160,
+                          background: '#f1f5f9'
+                        }}
+                      >
+                        {/* مكان محجوز للصورة حتى لا يحدث انكماش ثم انفراج */}
+                        <div
+                          aria-hidden
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: loaded ? 'transparent' : '#e2e8f0'
+                          }}
+                        >
+                          {!loaded && (
+                            <div
+                              style={{
+                                width: 24,
+                                height: 24,
+                                border: '2px solid #cbd5e1',
+                                borderTopColor: '#2563eb',
+                                borderRadius: '50%',
+                                animation: 'document-viewer-spin 0.7s linear infinite'
+                              }}
+                            />
+                          )}
+                        </div>
+                        <img
+                          src={url}
+                          alt={label}
+                          width={160}
+                          height={160}
+                          loading="eager"
+                          onLoad={() => setDocumentViewerLoadedImages(prev => new Set(prev).add(i))}
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            display: 'block',
+                            opacity: loaded ? 1 : 0,
+                            transition: 'opacity 0.2s ease-out'
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          width: '100%',
+                          aspectRatio: '1',
+                          minHeight: 160,
+                          background: '#f1f5f9',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <FileText size={32} color="#94a3b8" />
+                      </div>
+                    )}
+                    <span style={{ display: 'block', padding: '8px', fontSize: '12px', fontWeight: 600 }}>
+                      {label}
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* عارض التكليفات المُرسلة للطالب (عمود الملفات) */}
+      {assignedFilesViewer.open && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10002,
+            background: 'rgba(15, 23, 42, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            boxSizing: 'border-box'
+          }}
+          onClick={() => setAssignedFilesViewer({ open: false, studentName: '', files: [] })}
+          role="dialog"
+          aria-label="الملفات المُرسلة للطالب"
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '16px',
+              maxWidth: '480px',
+              width: '100%',
+              maxHeight: '85vh',
+              overflow: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+              padding: '20px',
+              direction: 'rtl'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
+                تكليفات مُرسلة لـ: {assignedFilesViewer.studentName}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setAssignedFilesViewer({ open: false, studentName: '', files: [] })}
+                style={{
+                  padding: '8px',
+                  border: 'none',
+                  background: '#f1f5f9',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+                aria-label="إغلاق"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {assignedFilesViewer.files.length === 0 ? (
+              <p style={{ color: '#64748b', margin: 0 }}>لا توجد ملفات مُرسلة لهذا الطالب.</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {assignedFilesViewer.files.map((file, i) => (
+                  <li
+                    key={file.id || i}
+                    style={{
+                      padding: '12px 14px',
+                      background: '#f8fafc',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px'
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, color: '#1e293b', fontSize: '14px' }}>
+                      {file.customName || file.name}
+                    </span>
+                    <a
+                      href={file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download
+                      style={{
+                        padding: '6px 12px',
+                        background: '#2563eb',
+                        color: '#fff',
+                        borderRadius: '8px',
+                        textDecoration: 'none',
+                        fontSize: '13px',
+                        fontWeight: 600
+                      }}
+                    >
+                      تحميل
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>,
         document.body
       )}

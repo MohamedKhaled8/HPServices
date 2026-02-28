@@ -26,7 +26,8 @@ import {
   onSnapshot,
   serverTimestamp,
   orderBy,
-  deleteDoc
+  deleteDoc,
+  documentId
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { auth, db, storage, firebaseConfig } from '../config/firebase';
@@ -240,6 +241,35 @@ export const getStudentData = async (userId: string): Promise<StudentData | null
 
     logger.error('Error getting student data:', error);
     throw new Error(errorMessage);
+  }
+};
+
+/** جلب عدة طلاب دفعة واحدة (أسرع من استدعاء getStudentData لكل واحد) */
+const FIRESTORE_IN_LIMIT = 10;
+export const getStudentsByIds = async (userIds: string[]): Promise<Record<string, StudentData>> => {
+  const result: Record<string, StudentData> = {};
+  if (userIds.length === 0) return result;
+  try {
+    for (let i = 0; i < userIds.length; i += FIRESTORE_IN_LIMIT) {
+      const chunk = userIds.slice(i, i + FIRESTORE_IN_LIMIT);
+      const q = query(
+        collection(db, 'students'),
+        where(documentId(), 'in', chunk)
+      );
+      const snapshot = await getDocs(q);
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        result[docSnap.id] = {
+          ...data,
+          id: docSnap.id,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+        } as StudentData;
+      });
+    }
+    return result;
+  } catch (error: any) {
+    logger.error('Error getting students by ids:', error);
+    return result;
   }
 };
 
@@ -1223,20 +1253,20 @@ export const getAllServiceRequests = async (): Promise<ServiceRequest[]> => {
 export const subscribeToAllServiceRequests = (
   callback: (requests: ServiceRequest[]) => void
 ): (() => void) => {
-  // Subscribe to all service collections and merge results
   const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
   const unsubscribes: (() => void)[] = [];
-  // Use a Map keyed by serviceId for O(1) lookup/replace
   const requestsByService = new Map<string, ServiceRequest[]>();
-  const loadedServices = new Set<string>();
-  let initialLoadComplete = false;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   const flushCallback = () => {
-    // Merge all service requests into a single array
     const merged: ServiceRequest[] = [];
     requestsByService.forEach(reqs => merged.push(...reqs));
     callback(merged);
+  };
+
+  const scheduleFlush = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(flushCallback, 40);
   };
 
   serviceIds.forEach(serviceId => {
@@ -1252,38 +1282,17 @@ export const subscribeToAllServiceRequests = (
           createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
         } as ServiceRequest;
       });
-
-      // Replace requests for this service
       requestsByService.set(serviceId, requests);
-      loadedServices.add(serviceId);
-
-      if (!initialLoadComplete) {
-        // Wait until ALL services have reported their initial snapshot
-        if (loadedServices.size === serviceIds.length) {
-          initialLoadComplete = true;
-          flushCallback();
-        }
-        // Don't call back yet during initial load
-      } else {
-        // After initial load, debounce updates (50ms) so rapid multi-collection
-        // changes only trigger one callback
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(flushCallback, 50);
-      }
+      scheduleFlush();
     }, (error) => {
       logger.error(`Error in service requests subscription for ${serviceId}:`, error);
-      // Still mark as loaded so we don't block the initial load
-      loadedServices.add(serviceId);
-      if (!initialLoadComplete && loadedServices.size === serviceIds.length) {
-        initialLoadComplete = true;
-        flushCallback();
-      }
+      requestsByService.set(serviceId, []);
+      scheduleFlush();
     });
 
     unsubscribes.push(unsubscribe);
   });
 
-  // Return function to unsubscribe from all
   return () => {
     if (debounceTimer) clearTimeout(debounceTimer);
     unsubscribes.forEach(unsub => unsub());

@@ -9,6 +9,7 @@ import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import { logger } from '../utils/logger';
+import { normalizeInstaPay } from '../utils/validation';
 import '../styles/ServiceDetailsPage.css';
 
 interface ServiceDetailsPageProps {
@@ -97,6 +98,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         try {
           const config = await getBookServiceConfig();
           if (config) {
+            if (config.paymentMethods?.instaPay) {
+              config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+            }
             setBookConfig(config);
           } else {
             // Default config
@@ -115,7 +119,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                 '10': 16900
               },
               paymentMethods: {
-                instaPay: '01017180923',
+                instaPay: 'raoufpk97@instapay',
                 cashWallet: '01050889591'
               }
             });
@@ -132,20 +136,22 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       const loadFeesConfig = async () => {
         try {
           const config = await getFeesServiceConfig();
-          if (config) {
-            if (!config.paymentMethods) {
-              config.paymentMethods = {
-                instaPay: '01017180923',
-                cashWallet: '01050889591'
-              };
-            }
+            if (config) {
+              if (!config.paymentMethods) {
+                config.paymentMethods = {
+                  instaPay: 'raoufpk97@instapay',
+                  cashWallet: '01050889591'
+                };
+              } else if (config.paymentMethods.instaPay) {
+                config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+              }
             setFeesConfig(config);
           } else {
             // Default config
             setFeesConfig({
               prices: {},
               paymentMethods: {
-                instaPay: '01017180923',
+                instaPay: 'raoufpk97@instapay',
                 cashWallet: '01050889591'
               }
             });
@@ -161,6 +167,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         try {
           const config = await getAssignmentsServiceConfig();
           if (config) {
+            if (config.paymentMethods?.instaPay) {
+              config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+            }
             setAssignmentsConfig(config);
           }
         } catch (error) {
@@ -175,6 +184,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           logger.log('Loading certificates config in ServiceDetailsPage...');
           const config = await getCertificatesServiceConfig();
           if (config) {
+            if (config.paymentMethods?.instaPay) {
+              config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+            }
             logger.log('Setting certificates config in ServiceDetailsPage:', config.certificates?.length || 0, 'certificates');
             logger.log('Certificates details:', config.certificates?.map(c => ({
               id: c.id,
@@ -201,6 +213,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           logger.log('Loading digital transformation config in ServiceDetailsPage...');
           const config = await getDigitalTransformationConfig();
           if (config) {
+            if (config.paymentMethods?.instaPay) {
+              config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+            }
             logger.log('Setting digital transformation config in ServiceDetailsPage:', config.transformationTypes?.length || 0, 'types');
             setDigitalTransformationConfig(config);
           } else {
@@ -221,6 +236,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           logger.log('Loading final review config in ServiceDetailsPage...');
           const config = await getFinalReviewConfig();
           if (config) {
+            if (config.paymentMethods?.instaPay) {
+              config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+            }
             logger.log('Setting final review config in ServiceDetailsPage:', config);
             setFinalReviewConfig(config);
           } else {
@@ -241,6 +259,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           logger.log('Loading graduation project config in ServiceDetailsPage...');
           const config = await getGraduationProjectConfig();
           if (config) {
+            if (config.paymentMethods?.instaPay) {
+              config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+            }
             logger.log('Setting graduation project config in ServiceDetailsPage:', config);
             setGraduationProjectConfig(config);
           } else {
@@ -417,7 +438,31 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     setFormAttempted(true);
 
     const missingFieldsObjects = service.fields
-      .filter(field => field.required && (!serviceData[field.name] || (typeof serviceData[field.name] === 'string' && (serviceData[field.name].trim() === '' || serviceData[field.name].includes('اختر')))));
+      .filter(field => {
+        if (!field.required) return false;
+
+        // خدمة شحن الكتب: لا نعتمد على student_names في التحقق العام (يتم التحقق باستخدام names_array أدناه)
+        if (service.id === '3' && field.name === 'student_names') {
+          return false;
+        }
+
+        // حقول القوائم الديناميكية (مثلاً أسماء الطلاب في مشروع التخرج)
+        if (field.type === 'dynamic_list') {
+          const rawVal = serviceData[field.name];
+          const baseList: string[] = typeof rawVal === 'string'
+            ? rawVal.split('\n').filter((s: string) => s.trim() !== '')
+            : Array.isArray(rawVal) ? rawVal.filter((s: string) => s.trim() !== '') : [];
+
+          const pendingInputEl = document.getElementById(`new-item-${field.name}`) as HTMLInputElement | null;
+          const pendingVal = pendingInputEl?.value?.trim() || '';
+          const totalCount = baseList.length + (pendingVal ? 1 : 0);
+
+          return totalCount === 0;
+        }
+
+        const value = serviceData[field.name];
+        return !value || (typeof value === 'string' && (value.trim() === '' || value.includes('اختر')));
+      });
 
     const missingFields = missingFieldsObjects.map(field => field.label);
     const newMissingNames = missingFieldsObjects.map(field => field.name);
@@ -549,6 +594,22 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         ...serviceData,
         ...(transferPhoneNumber ? { transfer_phone_number: transferPhoneNumber } : {})
       };
+
+      // Dynamic lists (مثل أسماء الطلاب في مشروع التخرج): أضف أي قيمة مكتوبة في خانة الإضافة حتى لو لم يتم الضغط على زر +
+      service.fields
+        .filter(field => field.type === 'dynamic_list')
+        .forEach(field => {
+          const inputEl = document.getElementById(`new-item-${field.name}`) as HTMLInputElement | null;
+          const pendingVal = inputEl?.value?.trim();
+          if (pendingVal) {
+            const rawVal = requestData[field.name];
+            const list: string[] = typeof rawVal === 'string'
+              ? rawVal.split('\n').filter((s: string) => s.trim() !== '')
+              : Array.isArray(rawVal) ? rawVal.filter((s: string) => s.trim() !== '') : [];
+            list.push(pendingVal);
+            requestData[field.name] = list.join('\n');
+          }
+        });
 
       // Malazem only for service 7 (Digital Transformation)
       if (service.id === '7' && wantsMalazem) {
@@ -1774,17 +1835,29 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
                   // Try to get from specific configs first
                   if (service.id === '3' && bookConfig?.paymentMethods) {
-                    phoneNumber = (method === 'instaPay') ? bookConfig.paymentMethods.instaPay : bookConfig.paymentMethods.cashWallet;
+                    phoneNumber = (method === 'instaPay')
+                      ? normalizeInstaPay(bookConfig.paymentMethods.instaPay) || defaultInstaPay
+                      : (bookConfig.paymentMethods.cashWallet || defaultWallet);
                   } else if (service.id === '5' && assignmentsConfig?.paymentMethods) {
-                    phoneNumber = (method === 'instaPay') ? assignmentsConfig.paymentMethods.instaPay : assignmentsConfig.paymentMethods.cashWallet;
+                    phoneNumber = (method === 'instaPay')
+                      ? normalizeInstaPay(assignmentsConfig.paymentMethods.instaPay) || defaultInstaPay
+                      : (assignmentsConfig.paymentMethods.cashWallet || defaultWallet);
                   } else if (service.id === '6' && certificatesConfig?.paymentMethods) {
-                    phoneNumber = (method === 'instaPay') ? certificatesConfig.paymentMethods.instaPay : certificatesConfig.paymentMethods.cashWallet;
+                    phoneNumber = (method === 'instaPay')
+                      ? normalizeInstaPay(certificatesConfig.paymentMethods.instaPay) || defaultInstaPay
+                      : (certificatesConfig.paymentMethods.cashWallet || defaultWallet);
                   } else if (service.id === '7' && digitalTransformationConfig?.paymentMethods) {
-                    phoneNumber = (method === 'instaPay') ? digitalTransformationConfig.paymentMethods.instaPay : digitalTransformationConfig.paymentMethods.cashWallet;
+                    phoneNumber = (method === 'instaPay')
+                      ? normalizeInstaPay(digitalTransformationConfig.paymentMethods.instaPay) || defaultInstaPay
+                      : (digitalTransformationConfig.paymentMethods.cashWallet || defaultWallet);
                   } else if (service.id === '8' && finalReviewConfig?.paymentMethods) {
-                    phoneNumber = (method === 'instaPay') ? finalReviewConfig.paymentMethods.instaPay : finalReviewConfig.paymentMethods.cashWallet;
+                    phoneNumber = (method === 'instaPay')
+                      ? normalizeInstaPay(finalReviewConfig.paymentMethods.instaPay) || defaultInstaPay
+                      : (finalReviewConfig.paymentMethods.cashWallet || defaultWallet);
                   } else if (service.id === '9' && graduationProjectConfig?.paymentMethods) {
-                    phoneNumber = (method === 'instaPay') ? graduationProjectConfig.paymentMethods.instaPay : graduationProjectConfig.paymentMethods.cashWallet;
+                    phoneNumber = (method === 'instaPay')
+                      ? normalizeInstaPay(graduationProjectConfig.paymentMethods.instaPay) || defaultInstaPay
+                      : (graduationProjectConfig.paymentMethods.cashWallet || defaultWallet);
                   } else {
                     // Fallback to defaults for all other services (2, 4, 10, etc.)
                     phoneNumber = (method === 'instaPay') ? defaultInstaPay : defaultWallet;
