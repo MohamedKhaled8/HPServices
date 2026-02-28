@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
 import {
   subscribeToAllServiceRequests,
@@ -87,11 +88,15 @@ import {
   ArrowLeft,
   ArrowUp,
   ArrowDown,
-  GripVertical
+  GripVertical,
+  ChevronDown
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
 import CustomToast from '../components/CustomToast';
+import { useSpreadsheetGrid } from '../hooks/useSpreadsheetGrid';
+import SpreadsheetContextMenu, { type SpreadsheetMenuAction } from '../components/SpreadsheetContextMenu';
+import '../styles/SpreadsheetGrid.css';
 import '../styles/AdminDashboardPage.css';
 import '../styles/AdminExpandableRows.css';
 import '../styles/AdminNewsEditor.css';
@@ -176,6 +181,29 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [toastState, setToastState] = useState<{ message: string; type: 'loading' | 'success' | 'error'; duration?: number } | null>(null);
   const [viewingStudentRequests, setViewingStudentRequests] = useState<StudentData | null>(null);
 
+  /* Spreadsheet-style grid: selection, clipboard, keyboard, context menu */
+  const gridApi = useSpreadsheetGrid();
+  const requestsTableRef = React.useRef<HTMLDivElement>(null);
+  const [spreadsheetMenu, setSpreadsheetMenu] = useState<{
+    open: boolean; x: number; y: number; tableId: string;
+    columnLabel?: string; columnIndex?: number;
+  }>({ open: false, x: 0, y: 0, tableId: '' });
+  const [spreadsheetDropdownColumn, setSpreadsheetDropdownColumn] = useState<number | null>(null);
+  const dragStartRef = React.useRef<{ tableId: string; row: number; col: number } | null>(null);
+  /** ترتيب أعمدة البيانات في جدول الطلبات (إعادة ترتيب بالسحب) */
+  const [requestsDataColumnOrder, setRequestsDataColumnOrder] = useState<number[]>([]);
+  const [draggedColDisplayPos, setDraggedColDisplayPos] = useState<number | null>(null);
+  const [dropTargetColDisplayPos, setDropTargetColDisplayPos] = useState<number | null>(null);
+  /** قائمة كليك يمين على الخلية: نسخ التحديد أو الخلية */
+  const [cellContextMenu, setCellContextMenu] = useState<{ open: boolean; x: number; y: number; row?: number; col?: number }>({ open: false, x: 0, y: 0 });
+  const cellContextMenuRef = React.useRef<HTMLDivElement>(null);
+  /** Ref updated each render with current requests grid data for copy/paste */
+  const requestsGridDataRef = React.useRef<{
+    rowCount: number; colCount: number;
+    getCellText: (row: number, col: number) => string;
+    setCellValue?: (row: number, col: number, value: string) => void;
+  } | null>(null);
+
   const dtCodesIndex = useMemo(() => {
     const map: Record<string, any> = {};
     dtCodes.forEach(code => {
@@ -217,6 +245,122 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setAlertConfig({ isOpen: true, title, message, type: 'warning', onConfirm });
   };
+
+  /* Keyboard: arrows, Ctrl+C, Ctrl+V, Enter for spreadsheet */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (gridApi.activeTableId !== 'requests' || !gridApi.selection) return;
+
+      const sel = gridApi.selection;
+      const data = requestsGridDataRef.current;
+      const rowCount = data?.rowCount ?? 0;
+      const colCount = data?.colCount ?? 0;
+
+      if (e.key === 'ArrowDown' && sel.endRow < rowCount - 1) {
+        e.preventDefault();
+        gridApi.selectCell('requests', sel.endRow + 1, sel.endCol);
+      } else if (e.key === 'ArrowUp' && sel.endRow > 0) {
+        e.preventDefault();
+        gridApi.selectCell('requests', sel.endRow - 1, sel.endCol);
+      } else if (e.key === 'ArrowLeft' && sel.endCol > 0) {
+        e.preventDefault();
+        gridApi.selectCell('requests', sel.endRow, sel.endCol - 1);
+      } else if (e.key === 'ArrowRight' && sel.endCol < colCount - 1) {
+        e.preventDefault();
+        gridApi.selectCell('requests', sel.endRow, sel.endCol + 1);
+      } else if (e.ctrlKey && e.key === 'c') {
+        e.preventDefault();
+        if (!data) return;
+        const sr = Math.min(sel.startRow, sel.endRow);
+        const er = Math.max(sel.startRow, sel.endRow);
+        const sc = Math.min(sel.startCol, sel.endCol);
+        const ec = Math.max(sel.startCol, sel.endCol);
+        const values: string[][] = [];
+        for (let r = sr; r <= er; r++) {
+          const row: string[] = [];
+          for (let c = sc; c <= ec; c++) row.push(data.getCellText(r, c));
+          values.push(row);
+        }
+        gridApi.copyToClipboard(values, false);
+        try { navigator.clipboard.writeText(values.map(row => row.join('\t')).join('\n')); } catch (_) {}
+        setToastState({ message: 'تم النسخ إلى الحافظة', type: 'success', duration: 1500 });
+      } else if (e.ctrlKey && e.key === 'v') {
+        e.preventDefault();
+        const { values } = gridApi.getClipboard();
+        if (!values.length || !data?.setCellValue) return;
+        const sr = sel.startRow;
+        const sc = sel.startCol;
+        for (let r = 0; r < values.length; r++) {
+          const row = values[r];
+          for (let c = 0; c < row.length; c++) {
+            const rowIndex = sr + r;
+            const colIndex = sc + c;
+            if (rowIndex < rowCount && colIndex < colCount) data.setCellValue!(rowIndex, colIndex, row[c]);
+          }
+        }
+        gridApi.clearClipboardAfterPaste();
+        setToastState({ message: 'تم اللصق', type: 'success', duration: 1500 });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        gridApi.startEditing('requests', sel.endRow, sel.endCol);
+      } else if (e.key === 'Escape') {
+        gridApi.stopEditing();
+        setSpreadsheetMenu(m => (m.open ? { ...m, open: false } : m));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [gridApi.activeTableId, gridApi.selection, gridApi]);
+
+  /* Mouse drag to select range */
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragStartRef.current) return;
+      const t = (e.target as HTMLElement).closest('[data-row][data-col]');
+      if (t) {
+        const r = parseInt(t.getAttribute('data-row')!, 10);
+        const c = parseInt(t.getAttribute('data-col')!, 10);
+        if (!Number.isNaN(r) && !Number.isNaN(c)) {
+          gridApi.selectRange(dragStartRef.current.tableId, dragStartRef.current.row, dragStartRef.current.col, r, c);
+        }
+      }
+    };
+    const onUp = () => { dragStartRef.current = null; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [gridApi]);
+
+  /* إعادة تعيين ترتيب الأعمدة عند تغيير الخدمة */
+  useEffect(() => {
+    setRequestsDataColumnOrder([]);
+  }, [selectedServiceId]);
+
+  /* إغلاق قائمة نسخ الخلية عند النقر خارجها أو Escape أو التمرير خارج القائمة */
+  useEffect(() => {
+    if (!cellContextMenu.open) return;
+    const close = () => setCellContextMenu(c => (c.open ? { ...c, open: false } : c));
+    const onDown = (e: MouseEvent) => {
+      if (cellContextMenuRef.current && !cellContextMenuRef.current.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    const onScroll = (e: Event) => {
+      if (cellContextMenuRef.current && e.target && !cellContextMenuRef.current.contains(e.target as Node)) close();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', onScroll, true);
+    };
+  }, [cellContextMenu.open]);
 
   const translateKey = (key: string) => {
     const keys: Record<string, string> = {
@@ -2204,13 +2348,74 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     const fixedKeys = new Set(['full_name', 'full_name_arabic', 'full_name_english', 'national_id', 'whatsapp_number', 'phone_whatsapp', 'leader_whatsapp', 'email', 'address', 'address_details', 'deliveryAddress', 'diploma_type', 'diplomaType', 'diploma_year', 'diplomaYear', 'track', 'track_category', 'track_name', 'number_of_copies', 'student_names', 'names', 'names_array', 'student_names_array', 'tracks_array', 'receiptUrl', 'educational_specialization', 'totalPrice', 'selectedCertificate', 'transformation_type', 'selectedExamLanguage', 'project_title', 'group_link']);
                     const extraKeys = Array.from(allDataKeys).filter(k => !fixedKeys.has(k));
 
+                    const sortState = gridApi.getSort('requests');
+                    const displayRequests = !sortState
+                      ? filteredRequests
+                      : [...filteredRequests].sort((a, b) => {
+                          const c = sortState.colIndex;
+                          if (c < 3) return 0;
+                          if (c < 3 + columns.length) {
+                            const v = columns[c - 3].getValue;
+                            return (v(a) || '').localeCompare(v(b) || '', 'ar') * (sortState.dir === 'asc' ? 1 : -1);
+                          }
+                          if (c < 3 + columns.length + extraKeys.length) {
+                            const k = extraKeys[c - 3 - columns.length];
+                            const va = String(a.data?.[k] ?? '');
+                            const vb = String(b.data?.[k] ?? '');
+                            return va.localeCompare(vb, 'ar') * (sortState.dir === 'asc' ? 1 : -1);
+                          }
+                          if (c === 3 + columns.length + extraKeys.length) {
+                            const va = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                            const vb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                            return (va - vb) * (sortState.dir === 'asc' ? 1 : -1);
+                          }
+                          return 0;
+                        });
+
+                    const requestsColCount = 3 + columns.length + extraKeys.length + 1;
+                    const getRequestsCellText = (row: number, col: number): string => {
+                      const request = displayRequests[row];
+                      if (!request) return '';
+                      if (col === 0) return String(row + 1);
+                      if (col === 1) return '';
+                      if (col === 2) return request.status || '';
+                      if (col >= 3 && col < 3 + columns.length) return String(columns[col - 3].getValue(request));
+                      if (col >= 3 + columns.length && col < 3 + columns.length + extraKeys.length) {
+                        const key = extraKeys[col - 3 - columns.length];
+                        return request.data?.[key] != null ? String(request.data[key]) : '-';
+                      }
+                      if (col === 3 + columns.length + extraKeys.length)
+                        return request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : '-';
+                      return '';
+                    };
+                    requestsGridDataRef.current = {
+                      rowCount: displayRequests.length,
+                      colCount: requestsColCount,
+                      getCellText: getRequestsCellText,
+                      setCellValue: undefined
+                    };
+
+                    const dataColumnCount = columns.length + extraKeys.length;
+                    const orderedDataIndices = requestsDataColumnOrder.length === dataColumnCount ? requestsDataColumnOrder : Array.from({ length: dataColumnCount }, (_, i) => i);
+
                     return (
                       <>
                         <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px' }}>
-                          إجمالي طلبات الخدمة: {filteredRequests.length} طلب
+                          إجمالي طلبات الخدمة: {displayRequests.length} طلب
                         </div>
 
-                        <div className="excel-table-wrapper" style={{
+                        <div
+                          ref={requestsTableRef}
+                          tabIndex={0}
+                          className="spreadsheet-table-wrapper"
+                          data-spreadsheet-table-id="requests"
+                          onMouseDown={(e) => { if (!(e.target as HTMLElement).closest('th')) { gridApi.setActiveTableId('requests'); requestsTableRef.current?.focus(); } }}
+                          onMouseUp={() => { dragStartRef.current = null; }}
+                          onScroll={() => { setSpreadsheetMenu(m => (m.open ? { ...m, open: false } : m)); setSpreadsheetDropdownColumn(null); }}
+                          role="grid"
+                          aria-label="جدول الطلبات"
+                        >
+                        <div className="excel-table-wrapper spreadsheet-scroll-container" style={{
                           maxHeight: 'none',
                           overflowY: 'visible',
                           overflowX: 'auto',
@@ -2221,55 +2426,97 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           background: 'white'
                         }}>
                           <table className="excel-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '15px', minWidth: '1200px' }}>
-                            <thead>
+                            <thead onMouseDown={(e) => e.stopPropagation()}>
                               <tr style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', color: '#1e293b', borderBottom: '2px solid #e2e8f0' }}>
-                                <th style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', color: '#475569', background: '#f1f5f9' }}>#</th>
-                                <th style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>إجراءات</th>
-                                <th style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>الحالة</th>
+                                <th className="spreadsheet-header-no-menu" data-col={0} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', color: '#475569', background: '#f1f5f9' }}>#</th>
+                                <th className="spreadsheet-header-no-menu" data-col={1} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>إجراءات</th>
+                                <th className="spreadsheet-header-no-menu" data-col={2} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>الحالة</th>
 
-                                {columns.map(col => {
-                                  let headerWidthStyle: React.CSSProperties = { padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'right', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9', color: '#475569' };
-                                  let headerContainerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' };
-                                  if (col && ['name', 'name_en', 'address', 'project_title', 'group_link', 'student_names'].includes(col.id)) {
-                                    headerWidthStyle.minWidth = '220px';
-                                    headerWidthStyle.width = '220px';
-                                    headerWidthStyle.maxWidth = '350px';
-                                    headerWidthStyle.whiteSpace = 'normal';
-                                  } else if (col && col.id === 'specialization') {
-                                    headerWidthStyle.maxWidth = '200px';
-                                  }
-
-                                  return (
-                                    <th key={col.id} style={headerWidthStyle}>
-                                      <div style={headerContainerStyle}>
-                                        {col.label}
-                                        <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                          <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn(col.label, filteredRequests, col.getValue)} />
-                                        </span>
-                                      </div>
-                                    </th>
-                                  );
-                                })}
-                                {extraKeys.map(key => (
-                                  <th key={key} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'right', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                                      {translateKey(key)}
-                                      <span title="نسخ العمود" style={{ display: 'flex' }}>
-                                        <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} onClick={() => copyRequestsColumn(translateKey(key), filteredRequests, r => String(r.data?.[key] || '-'))} />
-                                      </span>
-                                    </div>
-                                  </th>
-                                ))}
-                                <th style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>التاريخ</th>
+                                {orderedDataIndices.map((localIdx, displayPos) => {
+                                    const colIndex = 3 + localIdx;
+                                    const isFromColumns = localIdx < columns.length;
+                                    const col = isFromColumns ? columns[localIdx] : null;
+                                    const key = !isFromColumns ? extraKeys[localIdx - columns.length] : null;
+                                    const label = col ? col.label : (key ? translateKey(key) : '');
+                                    const getValue = col ? col.getValue : (key ? (r: any) => String(r.data?.[key] ?? '-') : () => '-');
+                                    let headerWidthStyle: React.CSSProperties = { padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'right', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: dropTargetColDisplayPos === displayPos ? '#dbeafe' : draggedColDisplayPos === displayPos ? '#e0e7ff' : '#f1f5f9', color: '#475569' };
+                                    if (col && ['name', 'name_en', 'address', 'project_title', 'group_link', 'student_names'].includes(col.id)) {
+                                      headerWidthStyle.minWidth = '220px';
+                                      headerWidthStyle.width = '220px';
+                                      headerWidthStyle.maxWidth = '350px';
+                                      headerWidthStyle.whiteSpace = 'normal';
+                                    } else if (col && col.id === 'specialization') {
+                                      headerWidthStyle.maxWidth = '200px';
+                                    }
+                                    const openMenuFromHeader = (e: React.MouseEvent) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      const th = (e.target as HTMLElement).closest('th');
+                                      const rect = th?.getBoundingClientRect();
+                                      setSpreadsheetMenu({ open: true, x: rect ? rect.left : e.clientX, y: rect ? rect.bottom + 4 : e.clientY, tableId: 'requests', columnLabel: label, columnIndex: colIndex });
+                                      setSpreadsheetDropdownColumn(colIndex);
+                                    };
+                                    const handleDrop = () => {
+                                      if (draggedColDisplayPos === null || dropTargetColDisplayPos === null) return;
+                                      const newOrder = [...orderedDataIndices];
+                                      const [removed] = newOrder.splice(draggedColDisplayPos, 1);
+                                      newOrder.splice(dropTargetColDisplayPos, 0, removed);
+                                      setRequestsDataColumnOrder(newOrder);
+                                      setDraggedColDisplayPos(null);
+                                      setDropTargetColDisplayPos(null);
+                                    };
+                                    return (
+                                      <th
+                                        key={`data-col-${localIdx}`}
+                                        data-col={colIndex}
+                                        data-display-pos={displayPos}
+                                        draggable
+                                        onDragStart={() => setDraggedColDisplayPos(displayPos)}
+                                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTargetColDisplayPos(displayPos); }}
+                                        onDrop={handleDrop}
+                                        onDragEnd={() => { setDraggedColDisplayPos(null); setDropTargetColDisplayPos(null); }}
+                                        style={headerWidthStyle}
+                                        onContextMenu={(e) => { e.preventDefault(); openMenuFromHeader(e); }}
+                                        onClick={openMenuFromHeader}
+                                        className="spreadsheet-header-draggable"
+                                        title="اسحب لتحريك العمود"
+                                      >
+                                        <div className="spreadsheet-header-cell-inner" style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                          <GripVertical size={12} style={{ cursor: 'grab', color: '#94a3b8', flexShrink: 0 }} />
+                                          {label}
+                                          <span title="نسخ العمود" style={{ display: 'flex' }} onClick={(ev) => { ev.stopPropagation(); copyRequestsColumn(label, displayRequests, getValue); }}>
+                                            <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} />
+                                          </span>
+                                          <button type="button" className="spreadsheet-header-dropdown-trigger" aria-label={`قائمة ${label}`} onClick={(ev) => { ev.stopPropagation(); openMenuFromHeader(ev); }}>
+                                            <ChevronDown size={14} />
+                                          </button>
+                                        </div>
+                                      </th>
+                                    );
+                                  })}
+                                <th className="spreadsheet-header-no-menu" data-col={3 + columns.length + extraKeys.length} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>التاريخ</th>
                               </tr>
                             </thead>
-                            <tbody>
-                              {filteredRequests.map((request, index) => {
+                            <tbody
+                              onContextMenu={(e) => {
+                                const el = (e.target as HTMLElement).closest?.('td[data-row][data-col]') as HTMLElement | null;
+                                if (el) {
+                                  e.preventDefault();
+                                  setSpreadsheetMenu(m => (m.open ? { ...m, open: false } : m));
+                                  const row = parseInt(el.getAttribute('data-row') ?? '', 10);
+                                  const col = parseInt(el.getAttribute('data-col') ?? '', 10);
+                                  if (!Number.isNaN(row) && !Number.isNaN(col)) {
+                                    setCellContextMenu({ open: true, x: e.clientX, y: e.clientY, row, col });
+                                  }
+                                }
+                              }}
+                            >
+                              {displayRequests.map((request, index) => {
                                 const studentData = students[request.studentId];
                                 const rNationalID = request.data.national_id || studentData?.nationalID;
                                 const rEmail = request.data.email || studentData?.email;
 
-                                const userRequestsCount = filteredRequests.filter(
+                                const userRequestsCount = displayRequests.filter(
                                   r => {
                                     const rStudentData = students[r.studentId];
                                     const testNationalID = r.data.national_id || rStudentData?.nationalID;
@@ -2361,7 +2608,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                                 return (
                                   <tr key={request.id} style={{ background: rowBg, borderRight: isDuplicate ? '5px solid #ef4444' : 'none', transition: 'all 0.2s ease' }}>
-                                    <td style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '14px', verticalAlign: 'top' }}>
+                                    <td
+                                      data-row={index}
+                                      data-col={0}
+                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 0) ? ' selected' : ''}`}
+                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 0 }; gridApi.selectCell('requests', index, 0); }}
+                                      style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '14px', verticalAlign: 'top' }}
+                                    >
                                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                                         {index + 1}
                                         {isDuplicate && (
@@ -2377,7 +2630,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                         )}
                                       </div>
                                     </td>
-                                    <td style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                                    <td
+                                      data-row={index}
+                                      data-col={1}
+                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 1) ? ' selected' : ''}`}
+                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 1 }; gridApi.selectCell('requests', index, 1); }}
+                                      style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'top' }}
+                                    >
                                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                                         <button onClick={() => toggleFlag(rowKey)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: isFlagged ? '#2563eb' : '#94a3b8' }}>{isFlagged ? <CheckSquare size={20} /> : <Square size={20} />}</button>
                                         <button onClick={() => viewDocuments(request)} title="عرض المستندات" style={{ padding: '6px', background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5', borderRadius: '6px' }}><Eye size={16} /></button>
@@ -2387,16 +2646,29 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                         <button onClick={() => handleDeleteRequest(request.id || '', request.serviceId)} title="حذف" style={{ padding: '6px', background: '#fff1f2', color: '#e11d48', border: '1px solid #ffe4e6', borderRadius: '6px' }}><Trash2 size={16} /></button>
                                       </div>
                                     </td>
-                                    <td style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', verticalAlign: 'top' }}>{getStatusBadge(request.status)}</td>
+                                    <td
+                                      data-row={index}
+                                      data-col={2}
+                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 2) ? ' selected' : ''}`}
+                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 2 }; gridApi.selectCell('requests', index, 2); }}
+                                      style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', verticalAlign: 'top' }}
+                                    >{getStatusBadge(request.status)}</td>
 
-                                    {rowValues.map((val, i) => {
-                                      // Determine styles based on context
+                                    {orderedDataIndices.map((localIdx, displayPos) => {
+                                      const colIndex = 3 + localIdx;
+                                      const isFromColumns = localIdx < columns.length;
+                                      const val = isFromColumns ? rowValues[localIdx] : (() => {
+                                        const key = extraKeys[localIdx - columns.length];
+                                        const value = request.data?.[key];
+                                        const stringValue = String(value || '').trim();
+                                        let displayValue: React.ReactNode = stringValue || '-';
+                                        if (key === 'wantsMalazem') displayValue = value ? 'نعم' : 'لا';
+                                        else if (stringValue.startsWith('http')) displayValue = <a href={stringValue} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>فتح الرابط</a>;
+                                        return displayValue;
+                                      })();
+                                      const currentColumn = isFromColumns ? columns[localIdx] : null;
                                       let dynamicWidthStyle: React.CSSProperties = { whiteSpace: 'nowrap', paddingRight: '4px' };
-
-                                      // Get the current column definition to know what we are rendering
-                                      const currentColumn = columns[i];
-                                      let cellStyle: React.CSSProperties = { padding: '12px 10px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#1e293b', textAlign: 'right', verticalAlign: 'top', lineHeight: '1.6' };
-
+                                      let cellStyle: React.CSSProperties = isFromColumns ? { padding: '12px 10px', border: '1px solid #cbd5e1', fontSize: '14px', color: '#1e293b', textAlign: 'right', verticalAlign: 'top', lineHeight: '1.6' } : { padding: '8px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', textAlign: 'right', verticalAlign: 'top' };
                                       if (currentColumn && ['name', 'name_en', 'address', 'project_title', 'group_link', 'student_names'].includes(currentColumn.id)) {
                                         dynamicWidthStyle.whiteSpace = 'normal';
                                         dynamicWidthStyle.wordBreak = 'break-word';
@@ -2407,9 +2679,22 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                         dynamicWidthStyle.wordBreak = 'break-word';
                                         dynamicWidthStyle.maxWidth = '200px';
                                       }
-
+                                      if (!isFromColumns) {
+                                        const key = extraKeys[localIdx - columns.length];
+                                        const stringValue = String(request.data?.[key] ?? '').trim();
+                                        dynamicWidthStyle.whiteSpace = stringValue.length > 40 ? 'normal' : 'nowrap';
+                                        dynamicWidthStyle.maxWidth = stringValue.length > 40 ? '300px' : 'none';
+                                        dynamicWidthStyle.wordBreak = stringValue.length > 40 ? 'break-word' : 'normal';
+                                      }
                                       return (
-                                        <td key={i} style={cellStyle}>
+                                        <td
+                                          key={`cell-${displayPos}-${localIdx}`}
+                                          data-row={index}
+                                          data-col={colIndex}
+                                          className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, colIndex) ? ' selected' : ''}`}
+                                          onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: colIndex }; gridApi.selectCell('requests', index, colIndex); }}
+                                          style={cellStyle}
+                                        >
                                           <div style={dynamicWidthStyle}>
                                             {val}
                                           </div>
@@ -2417,22 +2702,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       );
                                     })}
 
-                                    {extraKeys.map(key => {
-                                      const value = request.data?.[key];
-                                      const stringValue = String(value || '').trim();
-                                      let displayValue: React.ReactNode = stringValue || '-';
-                                      if (key === 'wantsMalazem') displayValue = value ? 'نعم' : 'لا';
-                                      else if (stringValue.startsWith('http')) displayValue = <a href={stringValue} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>فتح الرابط</a>;
-                                      return (
-                                        <td key={key} style={{ padding: '8px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', textAlign: 'right', verticalAlign: 'top' }}>
-                                          <div style={{ whiteSpace: stringValue.length > 40 ? 'normal' : 'nowrap', maxWidth: stringValue.length > 40 ? '300px' : 'none', wordBreak: stringValue.length > 40 ? 'break-word' : 'normal', paddingRight: '4px' }}>
-                                            {displayValue}
-                                          </div>
-                                        </td>
-                                      );
-                                    })}
-
-                                    <td style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                                    <td
+                                      data-row={index}
+                                      data-col={3 + columns.length + extraKeys.length}
+                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 3 + columns.length + extraKeys.length) ? ' selected' : ''}`}
+                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 3 + columns.length + extraKeys.length }; gridApi.selectCell('requests', index, 3 + columns.length + extraKeys.length); }}
+                                      style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}
+                                    >
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         <span>{request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : 'بدون تاريخ'}</span>
                                         <span style={{ fontSize: '11px', opacity: 0.8 }}>{request.createdAt ? new Date(request.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
@@ -2443,6 +2719,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               })}
                             </tbody>
                           </table>
+                        </div>
                         </div>
                       </>
                     );
@@ -5077,6 +5354,108 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             </div>
           </div>
         </div>
+      )}
+
+      {/* Spreadsheet context menu */}
+      {spreadsheetMenu.open && (
+        <SpreadsheetContextMenu
+          x={spreadsheetMenu.x}
+          y={spreadsheetMenu.y}
+          columnLabel={spreadsheetMenu.columnLabel}
+          columnIndex={spreadsheetMenu.columnIndex}
+          canPaste={gridApi.getClipboard().values.length > 0}
+          hasFilter={!!serviceSearchTerm.trim()}
+          onAction={(action: SpreadsheetMenuAction) => {
+            if (action === 'copy' && requestsGridDataRef.current) {
+              const d = requestsGridDataRef.current;
+              const sel = gridApi.selection;
+              if (sel && sel.tableId === 'requests' && sel.startRow >= 0 && sel.startCol >= 0) {
+                const sr = Math.min(sel.startRow, sel.endRow);
+                const er = Math.max(sel.startRow, sel.endRow);
+                const sc = Math.min(sel.startCol, sel.endCol);
+                const ec = Math.max(sel.startCol, sel.endCol);
+                const values: string[][] = [];
+                for (let r = sr; r <= er; r++) {
+                  const row: string[] = [];
+                  for (let c = sc; c <= ec; c++) row.push(d.getCellText(r, c));
+                  values.push(row);
+                }
+                gridApi.copyToClipboard(values, false);
+                try { navigator.clipboard.writeText(values.map(row => row.join('\t')).join('\n')); } catch (_) {}
+                setToastState({ message: 'تم نسخ التحديد', type: 'success', duration: 2000 });
+              } else if (spreadsheetMenu.columnLabel != null && spreadsheetMenu.columnIndex != null) {
+                const values = [];
+                for (let r = 0; r < d.rowCount; r++) values.push([d.getCellText(r, spreadsheetMenu.columnIndex!)]);
+                gridApi.copyToClipboard(values, false);
+                try { navigator.clipboard.writeText(values.map(row => row[0]).join('\n')); } catch (_) {}
+                setToastState({ message: `تم نسخ عمود "${spreadsheetMenu.columnLabel}"`, type: 'success', duration: 2000 });
+              }
+            } else if (action === 'sortAtoZ' && spreadsheetMenu.columnIndex != null) {
+              gridApi.setSort('requests', spreadsheetMenu.columnIndex, 'asc');
+              setToastState({ message: 'ترتيب من أ إلى ي', type: 'success', duration: 1500 });
+            } else if (action === 'sortZtoA' && spreadsheetMenu.columnIndex != null) {
+              gridApi.setSort('requests', spreadsheetMenu.columnIndex, 'desc');
+              setToastState({ message: 'ترتيب من ي إلى أ', type: 'success', duration: 1500 });
+            } else if (action === 'removeFilter') {
+              setServiceSearchTerm('');
+              setToastState({ message: 'تم إزالة الفلتر', type: 'success', duration: 1500 });
+            } else if (['clearColumn', 'deleteColumn', 'insertColumnLeft', 'insertColumnRight', 'resizeColumn', 'conditionalFormatting', 'dataValidation'].includes(action)) {
+              setToastState({ message: 'متاح قريباً أو غير متاح لهذا الجدول', type: 'success', duration: 2000 });
+            }
+          }}
+          onClose={() => { setSpreadsheetMenu(m => ({ ...m, open: false })); setSpreadsheetDropdownColumn(null); }}
+          disabledActions={['insertColumnLeft', 'insertColumnRight', 'deleteColumn', 'resizeColumn']}
+        />
+      )}
+
+      {/* قائمة كليك يمين على الخلية: نسخ التحديد أو الخلية فقط */}
+      {cellContextMenu.open && createPortal(
+        <div
+          ref={cellContextMenuRef}
+          className="spreadsheet-context-menu spreadsheet-cell-context-menu"
+          style={{
+            position: 'fixed',
+            left: Math.min(cellContextMenu.x, typeof window !== 'undefined' ? window.innerWidth - 120 : cellContextMenu.x),
+            top: cellContextMenu.y,
+            zIndex: 10000,
+            minWidth: 140,
+          }}
+          role="menu"
+        >
+          <button
+            type="button"
+            className="spreadsheet-context-menu-item"
+            onClick={() => {
+              const d = requestsGridDataRef.current;
+              const sel = gridApi.selection;
+              if (sel && sel.tableId === 'requests' && sel.startRow >= 0 && sel.startCol >= 0 && d) {
+                const sr = Math.min(sel.startRow, sel.endRow);
+                const er = Math.max(sel.startRow, sel.endRow);
+                const sc = Math.min(sel.startCol, sel.endCol);
+                const ec = Math.max(sel.startCol, sel.endCol);
+                const values: string[][] = [];
+                for (let r = sr; r <= er; r++) {
+                  const row: string[] = [];
+                  for (let c = sc; c <= ec; c++) row.push(d.getCellText(r, c));
+                  values.push(row);
+                }
+                gridApi.copyToClipboard(values, false);
+                try { navigator.clipboard.writeText(values.map(row => row.join('\t')).join('\n')); } catch (_) {}
+                setToastState({ message: 'تم نسخ التحديد', type: 'success', duration: 2000 });
+              } else if (cellContextMenu.row != null && cellContextMenu.col != null && d) {
+                const text = d.getCellText(cellContextMenu.row, cellContextMenu.col);
+                gridApi.copyToClipboard([[text]], false);
+                try { navigator.clipboard.writeText(text); } catch (_) {}
+                setToastState({ message: 'تم نسخ الخلية', type: 'success', duration: 2000 });
+              }
+              setCellContextMenu(c => ({ ...c, open: false }));
+            }}
+            role="menuitem"
+          >
+            نسخ
+          </button>
+        </div>,
+        document.body
       )}
 
     </div>
