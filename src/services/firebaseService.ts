@@ -27,7 +27,8 @@ import {
   serverTimestamp,
   orderBy,
   deleteDoc,
-  documentId
+  documentId,
+  writeBatch
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { auth, db, storage, firebaseConfig } from '../config/firebase';
@@ -325,7 +326,45 @@ export const updateStudentData = async (userId: string, data: Partial<StudentDat
 
 export const deleteStudentData = async (userId: string): Promise<void> => {
   try {
-    await deleteDoc(doc(db, 'students', userId));
+    const batch = writeBatch(db);
+
+    // 1) حذف مستند الطالب الأساسي
+    batch.delete(doc(db, 'students', userId));
+
+    // 2) حذف جميع طلبات الخدمات الخاصة به من مجموعات serviceRequests_1..11
+    const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    for (const serviceId of serviceIds) {
+      const colRef = collection(db, `serviceRequests_${serviceId}`);
+      const q = query(colRef, where('studentId', '==', userId));
+      const snap = await getDocs(q);
+      snap.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+    }
+
+    // 3) حذف أكواد التحول الرقمي الخاصة به
+    {
+      const dtCol = collection(db, 'digitalTransformationCodes');
+      const q = query(dtCol, where('studentId', '==', userId));
+      const snap = await getDocs(q);
+      snap.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+    }
+
+    // 4) حذف أكواد الدفع الإلكتروني الخاصة به
+    {
+      const epCol = collection(db, 'electronicPaymentCodes');
+      const q = query(epCol, where('studentId', '==', userId));
+      const snap = await getDocs(q);
+      snap.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+    }
+
+    // ملاحظة: حذف حساب Firebase Auth نفسه يتطلب Firebase Admin / backend وليس من كود الواجهة فقط
+
+    await batch.commit();
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء حذف المشترك');
   }
@@ -1286,7 +1325,10 @@ export const subscribeToAllServiceRequests = (
       scheduleFlush();
     }, (error) => {
       logger.error(`Error in service requests subscription for ${serviceId}:`, error);
-      requestsByService.set(serviceId, []);
+      // لا نمسح البيانات عند الخطأ - نحتفظ بالبيانات السابقة لتجنب اختفاء الطلبات
+      if (!requestsByService.has(serviceId)) {
+        requestsByService.set(serviceId, []);
+      }
       scheduleFlush();
     });
 

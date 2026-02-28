@@ -212,7 +212,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     const map: Record<string, any> = {};
     dtCodes.forEach(code => {
       if (code.requestId) {
-        map[code.requestId] = code;
+        map[String(code.requestId)] = code;
       }
     });
     return map;
@@ -222,7 +222,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     const map: Record<string, any> = {};
     epCodes.forEach(code => {
       if (code.requestId) {
-        map[code.requestId] = code;
+        map[String(code.requestId)] = code;
       }
     });
     return map;
@@ -1125,8 +1125,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     const ep = data.data || {};
                     try {
                       const codeData = {
-                        studentId: ep.studentId || '',
-                        requestId: ep.requestId || '',
+                        studentId: ep.studentId || request.studentId || '',
+                        requestId: ep.requestId || requestId || '',
                         name: ep.name || '',
                         email: ep.email || '',
                         nationalID: ep.nationalID || '',
@@ -2386,7 +2386,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       id: 'dt_fawry_code',
                       label: 'رقم فوري',
                       getValue: (r: any) => {
-                        const code = dtCodesIndex[r.id];
+                        let code = r.id ? dtCodesIndex[String(r.id)] : undefined;
+                        if (!code && r.studentId) {
+                          const matches = dtCodes.filter((c: any) => c.studentId === r.studentId);
+                          code = matches.sort((a: any, b: any) => {
+                            const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                            const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                            return tb - ta;
+                          })[0];
+                        }
                         return code?.fawryCode || code?.serialNumber || '-';
                       }
                     };
@@ -2394,7 +2402,36 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       id: 'ep_order_number',
                       label: 'رقم الطلب',
                       getValue: (r: any) => {
-                        const code = epCodesIndex[r.id];
+                        const studentData = students[r.studentId];
+                        const getTs = (v: any) => {
+                          if (!v) return 0;
+                          if (v?.toDate && typeof v.toDate === 'function') return v.toDate().getTime();
+                          if (typeof v?.seconds === 'number') return v.seconds * 1000;
+                          const d = new Date(v);
+                          return isNaN(d.getTime()) ? 0 : d.getTime();
+                        };
+                        let code = r.id ? epCodesIndex[String(r.id)] : undefined;
+                        if (!code && r.studentId) {
+                          const matches = epCodes.filter((c: any) => c.studentId === r.studentId);
+                          code = matches.sort((a: any, b: any) => getTs(b.createdAt) - getTs(a.createdAt))[0];
+                        }
+                        if (!code) {
+                          const nat = String(r.data?.national_id || studentData?.nationalID || '').replace(/\D/g, '');
+                          if (nat) {
+                            const matches = epCodes.filter((c: any) => String(c.nationalID || '').replace(/\D/g, '') === nat);
+                            code = matches.sort((a: any, b: any) => getTs(b.createdAt) - getTs(a.createdAt))[0];
+                          }
+                        }
+                        if (!code) {
+                          const phone = String(r.data?.whatsapp_number || r.data?.phone_whatsapp || studentData?.whatsappNumber || '').replace(/\D/g, '');
+                          if (phone) {
+                            const matches = epCodes.filter((c: any) => {
+                              const cp = String(c.mobile || c.whatsapp || '').replace(/\D/g, '');
+                              return cp && cp === phone;
+                            });
+                            code = matches.sort((a: any, b: any) => getTs(b.createdAt) - getTs(a.createdAt))[0];
+                          }
+                        }
                         return code?.orderNumber || '-';
                       }
                     };
@@ -2532,14 +2569,27 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                     const requestsColCount = 3 + dataColumnCount + 2;
 
-                    // حساب تكرار أرقام الواتساب عبر الطلبات المعروضة
+                    // حساب تكرار أرقام الهواتف (واتساب، واتساب الليدر، إلخ) عبر الطلبات المعروضة
+                    const normPhone = (s: string) => {
+                      const d = String(s || '').replace(/\D/g, '');
+                      return d.length >= 10 ? d.slice(-10) : d;
+                    };
                     const phoneCounts = new Map<string, number>();
                     displayRequests.forEach((req) => {
                       const sData = students[req.studentId];
-                      const rawPhone = req.data.whatsapp_number || req.data.phone_whatsapp || sData?.whatsappNumber || '';
-                      const normalized = String(rawPhone || '').replace(/\D/g, '');
-                      if (!normalized) return;
-                      phoneCounts.set(normalized, (phoneCounts.get(normalized) ?? 0) + 1);
+                      const phones = new Set<string>();
+                      [
+                        req.data?.whatsapp_number,
+                        req.data?.phone_whatsapp,
+                        req.data?.leader_whatsapp,
+                        sData?.whatsappNumber
+                      ].filter(Boolean).forEach(p => {
+                        const n = normPhone(String(p));
+                        if (n.length >= 10) phones.add(n);
+                      });
+                      phones.forEach(n => {
+                        phoneCounts.set(n, (phoneCounts.get(n) ?? 0) + 1);
+                      });
                     });
                     const getRequestsCellText = (row: number, col: number): string => {
                       const request = displayRequests[row];
@@ -2762,11 +2812,47 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const colGroupLinkVal = request.data.group_link ? <a href={request.data.group_link} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>الرابط</a> : '-';
                                 const colLeaderWhatsappVal = request.data.leader_whatsapp || '-';
                                 const colDtFawryCodeVal = (() => {
-                                  const code = request.id ? dtCodesIndex[request.id] : undefined;
+                                  let code = request.id ? dtCodesIndex[String(request.id)] : undefined;
+                                  if (!code && request.studentId) {
+                                    const matches = dtCodes.filter(c => c.studentId === request.studentId);
+                                    code = matches.sort((a, b) => {
+                                      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                                      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                                      return tb - ta;
+                                    })[0];
+                                  }
                                   return code?.fawryCode || code?.serialNumber || '-';
                                 })();
                                 const colEpOrderNumberVal = (() => {
-                                  const code = request.id ? epCodesIndex[request.id] : undefined;
+                                  const getTs = (v: any) => {
+                                    if (!v) return 0;
+                                    if (v?.toDate && typeof v.toDate === 'function') return v.toDate().getTime();
+                                    if (typeof v?.seconds === 'number') return v.seconds * 1000;
+                                    const d = new Date(v);
+                                    return isNaN(d.getTime()) ? 0 : d.getTime();
+                                  };
+                                  let code = request.id ? epCodesIndex[String(request.id)] : undefined;
+                                  if (!code && request.studentId) {
+                                    const matches = epCodes.filter(c => c.studentId === request.studentId);
+                                    code = matches.sort((a, b) => getTs(b.createdAt) - getTs(a.createdAt))[0];
+                                  }
+                                  if (!code) {
+                                    const nat = String(colNationalIdVal || '').replace(/\D/g, '');
+                                    if (nat) {
+                                      const matches = epCodes.filter(c => String(c.nationalID || '').replace(/\D/g, '') === nat);
+                                      code = matches.sort((a, b) => getTs(b.createdAt) - getTs(a.createdAt))[0];
+                                    }
+                                  }
+                                  if (!code) {
+                                    const phone = String(colWhatsappVal || '').replace(/\D/g, '');
+                                    if (phone) {
+                                      const matches = epCodes.filter(c => {
+                                        const cp = String(c.mobile || c.whatsapp || '').replace(/\D/g, '');
+                                        return cp && cp === phone;
+                                      });
+                                      code = matches.sort((a, b) => getTs(b.createdAt) - getTs(a.createdAt))[0];
+                                    }
+                                  }
                                   return code?.orderNumber || '-';
                                 })();
 
@@ -2967,27 +3053,33 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                         dynamicWidthStyle.maxWidth = '200px';
                                       }
 
-                                      // تمييز تكرار رقم الواتساب داخل نفس الجدول
-                                      if (currentColumn && currentColumn.id === 'whatsapp') {
-                                        const normalizedPhone = String(colWhatsappVal || '').replace(/\D/g, '');
-                                        const phoneCount = normalizedPhone ? (phoneCounts.get(normalizedPhone) ?? 0) : 0;
-                                        if (phoneCount > 1) {
-                                          cellStyle = {
-                                            ...cellStyle,
-                                            background: '#fef2f2',
-                                            borderColor: '#fecaca'
-                                          };
-                                          dynamicWidthStyle.whiteSpace = 'normal';
-                                          dynamicWidthStyle.wordBreak = 'break-word';
-                                          val = (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                              <span>{colWhatsappVal || '-'}</span>
-                                              <span style={{ fontSize: '11px', color: '#b91c1b', fontWeight: 700 }}>
-                                                مكرر ({phoneCount})
-                                              </span>
-                                            </div>
-                                          );
-                                        }
+                                      // تمييز تكرار رقم الهاتف (واتساب، واتساب الليدر، إلخ) في أي خانة تحتوي رقم
+                                      const getPhoneForCell = () => {
+                                        if (currentColumn?.id === 'whatsapp') return colWhatsappVal;
+                                        if (currentColumn?.id === 'leader_whatsapp') return colLeaderWhatsappVal;
+                                        const k = !isFromColumns ? extraKeys[localIdx - allColumns.length] : null;
+                                        if (k === 'phone_whatsapp' || k === 'leader_whatsapp' || k === 'whatsapp_number')
+                                          return request.data?.[k] ?? '';
+                                        return null;
+                                      };
+                                      const cellPhone = getPhoneForCell();
+                                      const normalizedPhone = cellPhone ? normPhone(String(cellPhone)) : '';
+                                      const phoneCount = normalizedPhone && normalizedPhone.length >= 10 ? (phoneCounts.get(normalizedPhone) ?? 0) : 0;
+                                      if (phoneCount > 1) {
+                                        cellStyle = {
+                                          ...cellStyle,
+                                          background: '#fef2f2',
+                                          borderColor: '#fecaca'
+                                        };
+                                        dynamicWidthStyle = { ...dynamicWidthStyle, whiteSpace: 'normal', wordBreak: 'break-word' };
+                                        val = (
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <span>{val}</span>
+                                            <span style={{ fontSize: '11px', color: '#b91c1b', fontWeight: 700 }}>
+                                              مكرر ({phoneCount})
+                                            </span>
+                                          </div>
+                                        );
                                       }
                                       if (!isFromColumns) {
                                         const key = extraKeys[localIdx - allColumns.length];
