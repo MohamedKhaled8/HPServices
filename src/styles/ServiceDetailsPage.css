@@ -562,9 +562,10 @@
   list-style: none;
   padding: 0;
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  /* Two columns on large screens */
+  gap: 16px !important;
 }
 
 /* Vertical Column Layout for Required Documents */
@@ -619,8 +620,13 @@
   }
 }
 
-
-
+@media (max-width: 900px) {
+  .features-list {
+    grid-template-columns: 1fr !important;
+    /* One column on smaller screens */
+    gap: 12px !important;
+  }
+}
 
 /* Fallback: keep default styling for non-required-docs sections */
 .section-features .feature-item {
@@ -634,10 +640,12 @@
   transition: all 0.3s ease !important;
   border-right: 4px solid #667eea !important;
   border-left: none !important;
+  height: 100% !important;
+  /* Ensure equal height in grid */
 }
 
 .section-features .feature-item:hover {
-  transform: translateX(-5px) !important;
+  transform: translateY(-5px) !important;
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2) !important;
 }
 

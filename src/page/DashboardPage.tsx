@@ -11,6 +11,7 @@ import {
   Search, Star, Zap, Menu, X, CheckCircle, Shield,
   GraduationCap, ClipboardList, Package, CreditCard, CheckSquare, Award, FileCheck, Phone, Mail, MapPin, ChevronRight,
   Facebook, Linkedin, Github, MessageCircle,
+  FacebookIcon, LinkedinIcon, GithubIcon, /* Try alternatives */
   Truck, ScrollText, PenTool, MonitorSmartphone, Library, BookOpen, Crown, Wallet, ClipboardEdit, Bell, Sparkles
 } from 'lucide-react';
 
@@ -299,9 +300,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   return (
     <div className={`dashboard-page ${isMobileMenuOpen ? 'is-menu-open' : ''}`}>
-      {/* Real Geometric Shapes Throughout Body */}
+      {/* Real Geometric Shapes Throughout Body (Temporarily Commented Out)
       <div className={`body-geometric-shapes ${scrolled ? 'is-scrolled' : ''} ${isMobileMenuOpen ? 'is-menu-open' : ''}`}>
-        {/* Optimized Geometric Background */}
         <div className="geo-shape geo-circle-1"></div>
         <div className="geo-shape geo-triangle-1"></div>
         <div className="geo-shape geo-square-1"></div>
@@ -309,6 +309,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="geo-shape geo-hexagon-1"></div>
         <div className="geo-shape geo-circle-3"></div>
       </div>
+      */}
 
       {/* Navbar */}
       {/* Navbar - Fully Responsive */}
@@ -500,7 +501,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                 return rankA - rankB;
               })
               .map((service) => {
-                const isActive = serviceSettings[service.id] !== false; // Default to true if not set
+                const setting = serviceSettings[service.id];
+                const isActive = typeof setting === 'boolean' ? setting : (setting?.active !== false);
                 const isClickable = isActive;
 
                 return (
@@ -598,17 +600,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="developer-credits">
               <span className="powered-by">Powered By Eng. Mohamed Khaled</span>
               <div className="social-links">
-                <a href="https://www.facebook.com/mohamedkhaled.khalil.5/" target="_blank" rel="noopener noreferrer" className="social-link facebook">
-                  <Facebook size={18} />
+                <a href="https://www.facebook.com/mohamedkhaled.khalil.5/" target="_blank" rel="noopener noreferrer" className="social-link facebook" style={{ fontSize: '20px', fontWeight: 'bold', lineHeight: 1 }}>
+                  f
                 </a>
-                <a href="https://www.linkedin.com/in/mohamed-khaled-0341a2224" target="_blank" rel="noopener noreferrer" className="social-link linkedin">
-                  <Linkedin size={18} />
+                <a href="https://www.linkedin.com/in/mohamed-khaled-0341a2224" target="_blank" rel="noopener noreferrer" className="social-link linkedin" style={{ fontSize: '20px', fontWeight: 'bold', lineHeight: 1 }}>
+                  in
                 </a>
-                <a href="https://github.com/MohamedKhaled8" target="_blank" rel="noopener noreferrer" className="social-link github">
-                  <Github size={18} />
+                <a href="https://github.com/MohamedKhaled8" target="_blank" rel="noopener noreferrer" className="social-link github" style={{ fontSize: '18px', lineHeight: 1 }}>
+                  {'</>'}
                 </a>
-                <a href="https://wa.me/201026331866" target="_blank" rel="noopener noreferrer" className="social-link whatsapp">
-                  <MessageCircle size={18} />
+                <a href="https://wa.me/201026331866" target="_blank" rel="noopener noreferrer" className="social-link whatsapp" style={{ fontSize: '20px', lineHeight: 1 }}>
+                  ✆
                 </a>
               </div>
             </div>

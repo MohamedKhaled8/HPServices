@@ -517,9 +517,9 @@ body {
     /* Animation re-enabled per request */
   }
 
-  .service-icon-wrapper::after {
-    /* Re-enabled pulse */
-  }
+  /* .service-icon-wrapper::after {
+    Re-enabled pulse
+  } */
 
   .service-icon-svg {
     width: 18px !important;
@@ -1389,7 +1389,7 @@ lottie-player {
   border-radius: 50%;
   border: 2px solid var(--service-color, #4f46e5);
   opacity: 0;
-  animation: techPulseRing 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* animation: techPulseRing 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; */
   z-index: -1;
 }
 
@@ -2042,22 +2042,35 @@ html {
 }
 
 .social-link {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 44px;
+  height: 44px;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  text-decoration: none !important;
+}
+
+.social-link svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  stroke: #ffffff !important;
+  /* Force stroke color */
+  fill: none !important;
+  stroke-width: 2px;
+  margin: 0;
 }
 
 .social-link:hover {
-  transform: translateY(-3px) scale(1.1);
-  color: white;
-  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-5px);
+  background: var(--primary, #4f46e5) !important;
+  border-color: var(--primary, #4f46e5) !important;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
 }
 
 .social-link.facebook:hover {

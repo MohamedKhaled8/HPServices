@@ -63,6 +63,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   };
 
   const disabledFields = getDisabledFields(serviceId);
+  const setting = serviceSettings[serviceId];
+  const isActive = typeof setting === 'boolean' ? setting : (setting?.active !== false);
 
   // Scroll to top and reset state when service changes
   useEffect(() => {
@@ -136,15 +138,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
       const loadFeesConfig = async () => {
         try {
           const config = await getFeesServiceConfig();
-            if (config) {
-              if (!config.paymentMethods) {
-                config.paymentMethods = {
-                  instaPay: 'raoufpk97@instapay',
-                  cashWallet: '01050889591'
-                };
-              } else if (config.paymentMethods.instaPay) {
-                config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-              }
+          if (config) {
+            if (!config.paymentMethods) {
+              config.paymentMethods = {
+                instaPay: 'raoufpk97@instapay',
+                cashWallet: '01050889591'
+              };
+            } else if (config.paymentMethods.instaPay) {
+              config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+            }
             setFeesConfig(config);
           } else {
             // Default config
@@ -729,7 +731,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     }
   };
 
-  if (!service) {
+  if (!service || !isActive) {
     return (
       <div className="service-details-page">
         <div className="details-header">
@@ -737,8 +739,14 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             <ArrowRight size={20} />
             رجوع
           </button>
-          <h1>الخدمة غير موجودة</h1>
+          <h1>{!service ? 'الخدمة غير موجودة' : 'الخدمة غير متوفرة حالياً'}</h1>
         </div>
+        {!service ? null : (
+          <div style={{ textAlign: 'center', padding: '100px 20px', color: '#64748b' }}>
+            <AlertCircle size={48} style={{ marginBottom: '20px', opacity: 0.5 }} />
+            <p>عذراً، هذه الخدمة غير متوفرة في الوقت الحالي. يرجى مراجعة الإدارة أو المحاولة لاحقاً.</p>
+          </div>
+        )}
       </div>
     );
   }
