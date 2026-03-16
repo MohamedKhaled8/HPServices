@@ -104,6 +104,9 @@ import '../styles/AdminDashboardPage.css';
 import '../styles/AdminExpandableRows.css';
 import '../styles/AdminNewsEditor.css';
 import { motion, AnimatePresence } from 'framer-motion';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import * as XLSX from 'xlsx';
 
 
 interface AdminDashboardPageProps {
@@ -250,6 +253,22 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     setAlertConfig({ isOpen: true, title, message, type: 'warning', onConfirm });
   };
 
+  const scrollActiveCellIntoView = React.useCallback(() => {
+    if (!gridApi.selection) return;
+    const container = requestsScrollContainerRef.current;
+    if (!container) return;
+    const { endRow, endCol } = gridApi.selection;
+    const cell = container.querySelector<HTMLTableCellElement>(`td[data-row="${endRow}"][data-col="${endCol}"]`);
+    if (!cell) return;
+    const cellRect = cell.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    if (cellRect.left < containerRect.left) {
+      container.scrollLeft -= (containerRect.left - cellRect.left) + 40;
+    } else if (cellRect.right > containerRect.right) {
+      container.scrollLeft += (cellRect.right - containerRect.right) + 40;
+    }
+  }, [gridApi.selection]);
+
   /* Keyboard: arrows, Ctrl+C, Ctrl+V, Enter for spreadsheet */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -262,18 +281,24 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       const rowCount = data?.rowCount ?? 0;
       const colCount = data?.colCount ?? 0;
 
+      let moved = false;
+
       if (e.key === 'ArrowDown' && sel.endRow < rowCount - 1) {
         e.preventDefault();
         gridApi.selectCell('requests', sel.endRow + 1, sel.endCol);
+        moved = true;
       } else if (e.key === 'ArrowUp' && sel.endRow > 0) {
         e.preventDefault();
         gridApi.selectCell('requests', sel.endRow - 1, sel.endCol);
-      } else if (e.key === 'ArrowLeft' && sel.endCol > 0) {
+        moved = true;
+      } else if (e.key === 'ArrowRight' && sel.endCol > 0) {
         e.preventDefault();
         gridApi.selectCell('requests', sel.endRow, sel.endCol - 1);
-      } else if (e.key === 'ArrowRight' && sel.endCol < colCount - 1) {
+        moved = true;
+      } else if (e.key === 'ArrowLeft' && sel.endCol < colCount - 1) {
         e.preventDefault();
         gridApi.selectCell('requests', sel.endRow, sel.endCol + 1);
+        moved = true;
       } else if (e.ctrlKey && e.code === 'KeyC') {
         e.preventDefault();
         if (!data) return;
@@ -313,10 +338,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         gridApi.stopEditing();
         setSpreadsheetMenu(m => (m.open ? { ...m, open: false } : m));
       }
+
+      if (moved) {
+        setTimeout(() => {
+          scrollActiveCellIntoView();
+        }, 0);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gridApi.activeTableId, gridApi.selection, gridApi]);
+  }, [gridApi.activeTableId, gridApi.selection, gridApi, scrollActiveCellIntoView]);
 
   /* Mouse drag to select range + auto-scroll while dragging */
   useEffect(() => {
@@ -382,10 +413,60 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [gridApi]);
 
-  /* إعادة تعيين ترتيب الأعمدة عند تغيير الخدمة */
+  /* إعادة تعيين / تحميل ترتيب الأعمدة عند تغيير الخدمة */
   useEffect(() => {
+    if (!selectedServiceId) {
+      setRequestsDataColumnOrder([]);
+      return;
+    }
+    try {
+      const key = `hp_requests_col_order_${selectedServiceId}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setRequestsDataColumnOrder(parsed);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load column order', e);
+    }
     setRequestsDataColumnOrder([]);
   }, [selectedServiceId]);
+
+  /* تحميل حالة ترتيب الصفوف (الفرز) من وإلى localStorage */
+  const setRequestsSort = React.useCallback(
+    (colIndex: number, dir: 'asc' | 'desc') => {
+      gridApi.setSort('requests', colIndex, dir);
+      const key = `hp_requests_sort_${selectedServiceId || 'all'}`;
+      try {
+        localStorage.setItem(key, JSON.stringify({ colIndex, dir }));
+      } catch {
+        // ignore
+      }
+    },
+    [gridApi, selectedServiceId]
+  );
+
+  useEffect(() => {
+    const key = `hp_requests_sort_${selectedServiceId || 'all'}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed &&
+          typeof parsed.colIndex === 'number' &&
+          (parsed.dir === 'asc' || parsed.dir === 'desc')
+        ) {
+          gridApi.setSort('requests', parsed.colIndex, parsed.dir);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [gridApi, selectedServiceId]);
 
   /* إغلاق قائمة نسخ الخلية عند النقر خارجها أو Escape أو التمرير خارج القائمة */
   useEffect(() => {
@@ -1201,25 +1282,30 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       return;
     }
 
-    setToastState({ message: 'جاري بدء تحميل الصور...', type: 'loading', duration: 2000 });
+    try {
+      setToastState({ message: 'جاري تجهيز ملف الصور المضغوط...', type: 'loading', duration: 4000 });
 
-    for (const img of imagesToDownload) {
-      try {
-        const response = await fetch(img.url);
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = img.name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-      } catch (error) {
-        console.error('Download error:', error);
-        // Fallback: open in new tab if blob download fails
-        window.open(img.url, '_blank');
+      const zip = new JSZip();
+      const folder = zip.folder(`request_${request.id || 'unknown'}`) || zip;
+
+      for (const img of imagesToDownload) {
+        try {
+          const response = await fetch(img.url);
+          const blob = await response.blob();
+          folder.file(img.name, blob);
+        } catch (error) {
+          console.error('Download error (skipped in zip):', error);
+        }
       }
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const zipName = `request_${request.id || 'attachments'}.zip`;
+      saveAs(content, zipName);
+
+      setToastState({ message: 'تم تجهيز ملف الصور المضغوط للتحميل', type: 'success', duration: 3000 });
+    } catch (error: any) {
+      console.error('ZIP build error:', error);
+      setToastState({ message: 'حدث خطأ أثناء تجهيز ملف الصور', type: 'error', duration: 3000 });
     }
   };
 
@@ -2515,7 +2601,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     ]);
                     const extraKeys = Array.from(allDataKeys).filter(k => !fixedKeys.has(k));
 
-                    // عدد أعمدة البيانات (بعد إعادة الترتيب) وخريطة الترتيب الحالية
+                    // عدد أعمدة البيانات (بعد إعادة الترتيب) وخريطة الترتيب الحالية (بدون عمود التاريخ الثابت)
                     const dataColumnCount = allColumns.length + extraKeys.length;
                     const orderedDataIndices =
                       requestsDataColumnOrder.length === dataColumnCount
@@ -2557,7 +2643,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                             return va.localeCompare(vb, 'ar') * (sortState.dir === 'asc' ? 1 : -1);
                           }
 
-                          // فرز حسب التاريخ (آخر عمود)
+                          // فرز حسب التاريخ (آخر عمود ثابت)
                           if (c === 3 + dataColumnCount) {
                             const va = a.createdAt ? new Date(a.createdAt).getTime() : 0;
                             const vb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -2621,10 +2707,77 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       setCellValue: undefined
                     };
 
+                    const handleExportRequestsToExcel = () => {
+                      if (!displayRequests.length) {
+                        showAlert('تنبيه', 'لا توجد بيانات في الجدول للتصدير', 'info');
+                        return;
+                      }
+                      const rows: any[][] = [];
+
+                      const header: string[] = ['#', 'الحالة'];
+                      orderedDataIndices.forEach(localIdx => {
+                        const isFromColumns = localIdx < allColumns.length;
+                        const col = isFromColumns ? allColumns[localIdx] : null;
+                        const key = !isFromColumns ? extraKeys[localIdx - allColumns.length] : null;
+                        const label = col ? col.label : (key ? translateKey(key) : '');
+                        header.push(label);
+                      });
+                      header.push('التاريخ', 'الملفات');
+                      rows.push(header);
+
+                      displayRequests.forEach((req, rowIdx) => {
+                        const row: any[] = [];
+                        row.push(rowIdx + 1);
+                        row.push(req.status || '');
+                        orderedDataIndices.forEach(localIdx => {
+                          if (localIdx < allColumns.length) {
+                            row.push(allColumns[localIdx].getValue(req));
+                          } else if (localIdx < allColumns.length + extraKeys.length) {
+                            const key = extraKeys[localIdx - allColumns.length];
+                            row.push(req.data?.[key] ?? '');
+                          } else {
+                            row.push('');
+                          }
+                        });
+                        row.push(req.createdAt ? new Date(req.createdAt).toLocaleDateString('ar-EG') : '');
+                        const files = students[req.studentId]?.assignedFiles;
+                        const count = Array.isArray(files) ? files.length : 0;
+                        row.push(count ? `${count} ملف` : 'مافيش');
+                        rows.push(row);
+                      });
+
+                      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+                      const workbook = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(workbook, worksheet, 'الطلبات');
+                      const fileName = `طلبات_الخدمة_${selectedServiceId || 'all'}.xlsx`;
+                      XLSX.writeFile(workbook, fileName);
+                    };
+
                     return (
                       <>
-                        <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px' }}>
-                          إجمالي طلبات الخدمة: {displayRequests.length} طلب
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px' }}>
+                          <div className="pagination-info" style={{ color: '#64748b', fontSize: '14px' }}>
+                            إجمالي طلبات الخدمة: {displayRequests.length} طلب
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleExportRequestsToExcel}
+                            style={{
+                              padding: '8px 14px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              background: '#f8fafc',
+                              color: '#0f172a',
+                              fontSize: '13px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <FileText size={14} />
+                            تحميل الجدول كملف Excel
+                          </button>
                         </div>
 
                         <div
@@ -2663,8 +2816,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   onClick={() => {
                                     const current = gridApi.getSort('requests');
                                     const colIndex = 2;
-                                    const nextDir: 'asc' | 'desc' = current && current.colIndex === colIndex && current.dir === 'asc' ? 'desc' : 'asc';
-                                    gridApi.setSort('requests', colIndex, nextDir);
+                                    const nextDir: 'asc' | 'desc' =
+                                      current && current.colIndex === colIndex && current.dir === 'asc'
+                                        ? 'desc'
+                                        : 'asc';
+                                    setRequestsSort(colIndex, nextDir);
                                   }}
                                   title="اضغط للترتيب حسب الحالة"
                                 >
@@ -2701,6 +2857,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       const [removed] = newOrder.splice(draggedColDisplayPos, 1);
                                       newOrder.splice(dropTargetColDisplayPos, 0, removed);
                                       setRequestsDataColumnOrder(newOrder);
+                                      if (selectedServiceId) {
+                                        try {
+                                          localStorage.setItem(
+                                            `hp_requests_col_order_${selectedServiceId}`,
+                                            JSON.stringify(newOrder)
+                                          );
+                                        } catch (e) {
+                                          console.error('Failed to save column order', e);
+                                        }
+                                      }
                                       setDraggedColDisplayPos(null);
                                       setDropTargetColDisplayPos(null);
                                     };
@@ -2735,13 +2901,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   })}
                                 <th
                                   className="spreadsheet-header-no-menu"
-                                  data-col={3 + allColumns.length + extraKeys.length}
+                                  data-col={3 + dataColumnCount}
                                   style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9', cursor: 'pointer' }}
                                   onClick={() => {
                                     const current = gridApi.getSort('requests');
-                                    const colIndex = 3 + allColumns.length + extraKeys.length;
-                                    const nextDir: 'asc' | 'desc' = current && current.colIndex === colIndex && current.dir === 'asc' ? 'desc' : 'asc';
-                                    gridApi.setSort('requests', colIndex, nextDir);
+                                    const colIndex = 3 + dataColumnCount;
+                                    const nextDir: 'asc' | 'desc' =
+                                      current && current.colIndex === colIndex && current.dir === 'asc'
+                                        ? 'desc'
+                                        : 'asc';
+                                    setRequestsSort(colIndex, nextDir);
                                   }}
                                   title="اضغط للترتيب حسب التاريخ"
                                 >
@@ -2749,7 +2918,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 </th>
                                 <th
                                   className="spreadsheet-header-no-menu"
-                                  data-col={3 + allColumns.length + extraKeys.length + 1}
+                                  data-col={3 + dataColumnCount + 1}
                                   style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}
                                 >
                                   الملفات
@@ -3100,68 +3269,74 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                           <div style={dynamicWidthStyle}>
                                             {val}
                                           </div>
-                                        </td>
-                                      );
-                                    })}
+                                </td>
+                              );
+                            })}
 
-                                    <td
-                                      data-row={index}
-                                      data-col={3 + allColumns.length + extraKeys.length}
-                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 3 + allColumns.length + extraKeys.length) ? ' selected' : ''}`}
-                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 3 + allColumns.length + extraKeys.length }; gridApi.selectCell('requests', index, 3 + allColumns.length + extraKeys.length); }}
-                                      style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}
-                                    >
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        <span>{request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : 'بدون تاريخ'}</span>
-                                        <span style={{ fontSize: '11px', opacity: 0.8 }}>{request.createdAt ? new Date(request.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-                                      </div>
-                                    </td>
-                                    <td
-                                      data-row={index}
-                                      data-col={3 + allColumns.length + extraKeys.length + 1}
-                                      className={`spreadsheet-cell spreadsheet-cell-actions`}
-                                      onMouseDown={(e) => e.stopPropagation()}
-                                      style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', verticalAlign: 'top' }}
-                                    >
-                                      {(() => {
-                                        const files = studentData?.assignedFiles;
-                                        const count = Array.isArray(files) ? files.length : 0;
-                                        if (count === 0) {
-                                          return <span style={{ color: '#94a3b8', fontSize: '13px' }}>مافيش</span>;
-                                        }
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.preventDefault();
-                                              e.stopPropagation();
-                                              setAssignedFilesViewer({
-                                                open: true,
-                                                studentName: studentData?.fullNameArabic || request.data?.full_name_arabic || request.data?.full_name || 'طالب',
-                                                files: files || []
-                                              });
-                                            }}
-                                            title="عرض التكليفات المُرسلة للطالب"
-                                            style={{
-                                              display: 'inline-flex',
-                                              alignItems: 'center',
-                                              gap: '6px',
-                                              padding: '6px 10px',
-                                              background: '#f0f9ff',
-                                              color: '#0369a1',
-                                              border: '1px solid #bae6fd',
-                                              borderRadius: '8px',
-                                              cursor: 'pointer',
-                                              fontSize: '13px',
-                                              fontWeight: 600
-                                            }}
-                                          >
-                                            <Folder size={16} />
-                                            {count} ملف
-                                          </button>
-                                        );
-                                      })()}
-                                    </td>
+                            {/* عمود التاريخ */}
+                            <td
+                              data-row={index}
+                              data-col={3 + dataColumnCount}
+                              className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 3 + dataColumnCount) ? ' selected' : ''}`}
+                              onMouseDown={(e) => {
+                                if (e.button !== 0) return;
+                                if ((e.target as HTMLElement).closest('button, a, input')) return;
+                                e.preventDefault();
+                                dragStartRef.current = { tableId: 'requests', row: index, col: 3 + dataColumnCount };
+                                gridApi.selectCell('requests', index, 3 + dataColumnCount);
+                              }}
+                              style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}
+                            >
+                              {request.createdAt ? new Date(request.createdAt).toLocaleDateString('ar-EG') : '-'}
+                            </td>
+
+                            {/* عمود الملفات */}
+                            <td
+                              data-row={index}
+                              data-col={3 + dataColumnCount + 1}
+                              className={`spreadsheet-cell spreadsheet-cell-actions`}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              style={{ padding: '8px 10px', border: '1px solid #e2e8f0', textAlign: 'center', verticalAlign: 'top' }}
+                            >
+                              {(() => {
+                                const files = studentData?.assignedFiles;
+                                const count = Array.isArray(files) ? files.length : 0;
+                                if (count === 0) {
+                                  return <span style={{ color: '#94a3b8', fontSize: '13px' }}>مافيش</span>;
+                                }
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setAssignedFilesViewer({
+                                        open: true,
+                                        studentName: studentData?.fullNameArabic || request.data?.full_name_arabic || request.data?.full_name || 'طالب',
+                                        files: files || []
+                                      });
+                                    }}
+                                    title="عرض التكليفات المُرسلة للطالب"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      padding: '6px 10px',
+                                      background: '#f0f9ff',
+                                      color: '#0369a1',
+                                      border: '1px solid #bae6fd',
+                                      borderRadius: '8px',
+                                      cursor: 'pointer',
+                                      fontSize: '13px',
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    <Folder size={16} />
+                                    {count} ملف
+                                  </button>
+                                );
+                              })()}
+                            </td>
                                   </tr>
                                 );
                               })}
@@ -5842,10 +6017,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 setToastState({ message: `تم نسخ عمود "${spreadsheetMenu.columnLabel}"`, type: 'success', duration: 2000 });
               }
             } else if (action === 'sortAtoZ' && spreadsheetMenu.columnIndex != null) {
-              gridApi.setSort('requests', spreadsheetMenu.columnIndex, 'asc');
+              setRequestsSort(spreadsheetMenu.columnIndex, 'asc');
               setToastState({ message: 'ترتيب من أ إلى ي', type: 'success', duration: 1500 });
             } else if (action === 'sortZtoA' && spreadsheetMenu.columnIndex != null) {
-              gridApi.setSort('requests', spreadsheetMenu.columnIndex, 'desc');
+              setRequestsSort(spreadsheetMenu.columnIndex, 'desc');
               setToastState({ message: 'ترتيب من ي إلى أ', type: 'success', duration: 1500 });
             } else if (action === 'removeFilter') {
               setServiceSearchTerm('');
