@@ -812,6 +812,72 @@ export const deleteAssignmentFilesForTrack = async (
   }
 };
 
+/**
+ * حذف ملفات محددة من جميع الطلاب (assignedFiles array)
+ * يُستخدم عند حذف ملفات من المسارات أو ملفات الـ 130 الموحدة
+ * لضمان عدم بقاء روابط معطلة لدى الطلاب
+ */
+export const removeAssignedFilesFromAllStudents = async (fileIds: string[]): Promise<number> => {
+  try {
+    if (!fileIds || fileIds.length === 0) return 0;
+
+    const fileIdSet = new Set(fileIds);
+    const studentsRef = collection(db, 'students');
+    const studentsSnap = await getDocs(studentsRef);
+
+    let updatedCount = 0;
+    const batch = writeBatch(db);
+    let batchCount = 0;
+    const MAX_BATCH = 500; // Firestore batch limit
+
+    for (const studentDoc of studentsSnap.docs) {
+      const data = studentDoc.data();
+      const assignedFiles: any[] = data.assignedFiles || [];
+
+      if (assignedFiles.length === 0) continue;
+
+      // تصفية الملفات المحذوفة
+      const filteredFiles = assignedFiles.filter((f: any) => !fileIdSet.has(f.id));
+
+      // إذا تم حذف ملف أو أكثر من هذا الطالب
+      if (filteredFiles.length < assignedFiles.length) {
+        const updateData: any = {
+          assignedFiles: filteredFiles,
+          updatedAt: serverTimestamp()
+        };
+
+        // تحديث assignedFile (للتوافق القديم)
+        if (filteredFiles.length > 0) {
+          updateData.assignedFile = filteredFiles[filteredFiles.length - 1];
+        } else {
+          // لا توجد ملفات متبقية - حذف الحقل القديم
+          updateData.assignedFile = null;
+        }
+
+        batch.update(studentDoc.ref, updateData);
+        updatedCount++;
+        batchCount++;
+
+        // Firestore batch limit is 500
+        if (batchCount >= MAX_BATCH) {
+          await batch.commit();
+          batchCount = 0;
+        }
+      }
+    }
+
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+
+    logger.log(`Removed files from ${updatedCount} students`);
+    return updatedCount;
+  } catch (error: any) {
+    logger.error('Error removing assigned files from students:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء حذف الملفات من حسابات الطلاب');
+  }
+};
+
 // Get all students (for admin view)
 export const getAllStudents = async (): Promise<StudentData[]> => {
   try {

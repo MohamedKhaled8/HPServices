@@ -13,7 +13,8 @@ import {
   upload130UnifiedFile,
   get130UnifiedFiles,
   delete130UnifiedFiles,
-  distribute130UnifiedFiles
+  distribute130UnifiedFiles,
+  removeAssignedFilesFromAllStudents
 } from '../services/firebaseService';
 import { AssignmentsServiceConfig, AssignmentItem } from '../types';
 import { normalizeInstaPay } from '../utils/validation';
@@ -101,6 +102,16 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const [newAssignmentName, setNewAssignmentName] = useState<string>('');
   const [newAssignmentPrice, setNewAssignmentPrice] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Delete confirmation modal state
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    open: boolean;
+    fileIds: string[];
+    source: 'track' | 'unified130' | 'single-track';
+    track?: TrackKey;
+    singleFileId?: string;
+  }>({ open: false, fileIds: [], source: 'track' });
+  const [isRemovingFromUsers, setIsRemovingFromUsers] = useState(false);
 
   // Animation states
   const [showSnackbar, setShowSnackbar] = useState(false);
@@ -336,21 +347,10 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     }
   };
 
-  const handle130Delete = async () => {
+  const handle130Delete = () => {
     const ids = Array.from(selected130FileIds);
     if (ids.length === 0) return;
-    if (!confirm(`هل أنت متأكد من مسح ${ids.length} ملف محدد؟`)) return;
-    try {
-      setIsDeleting130(true);
-      await delete130UnifiedFiles(ids);
-      setUnified130Files(prev => prev.filter(f => !ids.includes(f.id)));
-      setSelected130FileIds(new Set());
-      showSnackbarNotification(`تم مسح ${ids.length} ملف بنجاح`, 'success');
-    } catch (error: any) {
-      showSnackbarNotification(error.message || 'حدث خطأ أثناء الحذف', 'error');
-    } finally {
-      setIsDeleting130(false);
-    }
+    setDeleteConfirmModal({ open: true, fileIds: ids, source: 'unified130' });
   };
 
   // Helper function to show snackbar
@@ -364,52 +364,100 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     }, 3000);
   };
 
-  const handleDeleteSelected = async (track: TrackKey) => {
+  const handleDeleteSelected = (track: TrackKey) => {
     const ids = Array.from(selectedFileIds[track] || []);
     if (ids.length === 0) return;
+    setDeleteConfirmModal({ open: true, fileIds: ids, source: 'track', track });
+  };
 
-    if (!confirm(`هل أنت متأكد من مسح ${ids.length} ملف محدد؟`)) return;
+  // حذف ملف واحد من track مع modal
+  const handleDeleteSingleTrackFile = (track: TrackKey, fileId: string) => {
+    setDeleteConfirmModal({ open: true, fileIds: [fileId], source: 'single-track', track, singleFileId: fileId });
+  };
+
+  /**
+   * تنفيذ الحذف الفعلي بعد التأكيد
+   * @param alsoRemoveFromUsers - هل نحذف الملفات من حسابات الطلاب أيضاً
+   */
+  const executeDelete = async (alsoRemoveFromUsers: boolean) => {
+    const { fileIds, source, track } = deleteConfirmModal;
+    setDeleteConfirmModal(prev => ({ ...prev, open: false }));
 
     try {
-      setIsDeletingAssignments(prev => ({ ...prev, [track]: true }));
-      setAssignmentsMessage(null);
+      if (source === 'unified130') {
+        // === حذف ملفات الـ 130 الموحدة ===
+        setIsDeleting130(true);
 
-      // 1. بدء أنيميشن المسح (إضافة كلاس للملفات)
-      setAnimatingDeleteIds(prev => ({
-        ...prev,
-        [track]: new Set(ids)
-      }));
+        if (alsoRemoveFromUsers) {
+          setIsRemovingFromUsers(true);
+          try {
+            const removedCount = await removeAssignedFilesFromAllStudents(fileIds);
+            showSnackbarNotification(`تم حذف الملفات من ${removedCount} طالب`, 'success');
+          } catch (err: any) {
+            showSnackbarNotification('حدث خطأ أثناء حذف الملفات من الطلاب', 'error');
+          } finally {
+            setIsRemovingFromUsers(false);
+          }
+        }
 
-      // الانتظار قليلاً لظهور الأنيميشن قبل الحذف الفعلي من الواجهة
-      await new Promise(resolve => setTimeout(resolve, 600));
+        await delete130UnifiedFiles(fileIds);
+        setUnified130Files(prev => prev.filter(f => !fileIds.includes(f.id)));
+        setSelected130FileIds(new Set());
+        showSnackbarNotification(`تم مسح ${fileIds.length} ملف بنجاح`, 'success');
+        setIsDeleting130(false);
 
-      // 2. الحذف الفوري من الواجهة (Optimistic Update)
-      // لا ننتظر السيرفر هنا لكي لا تشعر بالتعليق
-      setTrackFiles(prev => ({
-        ...prev,
-        [track]: (prev[track] || []).filter(file => !ids.includes(file.id))
-      }));
-      setSelectedFileIds(prev => ({
-        ...prev,
-        [track]: new Set()
-      }));
+      } else if (source === 'track' || source === 'single-track') {
+        // === حذف ملفات من المسار ===
+        const targetTrack = track!;
+        setIsDeletingAssignments(prev => ({ ...prev, [targetTrack]: true }));
+        setAssignmentsMessage(null);
 
-      // 3. الحذف الفعلي من السيرفر في الخلفية
-      deleteAssignmentFilesForTrack(track, ids).then(() => {
-        showSnackbarNotification(`تم مسح ${ids.length} ملف بنجاح`, 'success');
-      }).catch((error) => {
-        showSnackbarNotification('حدث خطأ أثناء الحذف من السيرفر', 'error');
-        // هنا يمكن إعادة الملفات في حال الفشل التام (اختياري)
-      }).finally(() => {
-        setIsDeletingAssignments(prev => ({ ...prev, [track]: false }));
+        if (alsoRemoveFromUsers) {
+          setIsRemovingFromUsers(true);
+          try {
+            const removedCount = await removeAssignedFilesFromAllStudents(fileIds);
+            showSnackbarNotification(`تم حذف الملفات من ${removedCount} طالب`, 'success');
+          } catch (err: any) {
+            showSnackbarNotification('حدث خطأ أثناء حذف الملفات من الطلاب', 'error');
+          } finally {
+            setIsRemovingFromUsers(false);
+          }
+        }
+
+        // أنيميشن الحذف
         setAnimatingDeleteIds(prev => ({
           ...prev,
-          [track]: new Set()
+          [targetTrack]: new Set(fileIds)
         }));
-      });
+        await new Promise(resolve => setTimeout(resolve, 600));
+
+        // حذف من الواجهة فوراً
+        setTrackFiles(prev => ({
+          ...prev,
+          [targetTrack]: (prev[targetTrack] || []).filter(file => !fileIds.includes(file.id))
+        }));
+        if (source === 'track') {
+          setSelectedFileIds(prev => ({
+            ...prev,
+            [targetTrack]: new Set()
+          }));
+        }
+
+        // حذف من السيرفر
+        deleteAssignmentFilesForTrack(targetTrack, fileIds).then(() => {
+          showSnackbarNotification(`تم مسح ${fileIds.length} ملف بنجاح`, 'success');
+        }).catch(() => {
+          showSnackbarNotification('حدث خطأ أثناء الحذف من السيرفر', 'error');
+        }).finally(() => {
+          setIsDeletingAssignments(prev => ({ ...prev, [targetTrack]: false }));
+          setAnimatingDeleteIds(prev => ({
+            ...prev,
+            [targetTrack]: new Set()
+          }));
+        });
+      }
     } catch (error: any) {
       showSnackbarNotification('حدث خطأ غير متوقع', 'error');
-      setIsDeletingAssignments(prev => ({ ...prev, [track]: false }));
     }
   };
 
@@ -874,35 +922,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                                   <button
                                     className="icon-button delete"
                                     disabled={isDeletingAssignments[openedTrack]}
-                                    onClick={async () => {
-                                      if (confirm('هل أنت متأكد من حذف هذا الملف؟')) {
-                                        try {
-                                          // إضافة أنيميشن لهذا الملف فقط
-                                          setAnimatingDeleteIds(prev => ({
-                                            ...prev,
-                                            [openedTrack]: new Set([...Array.from(prev[openedTrack]), file.id])
-                                          }));
-
-                                          await new Promise(res => setTimeout(res, 600));
-
-                                          await deleteAssignmentFilesForTrack(openedTrack, [file.id]);
-
-                                          setTrackFiles(prev => ({
-                                            ...prev,
-                                            [openedTrack]: (prev[openedTrack] || []).filter(f => f.id !== file.id)
-                                          }));
-
-                                          showSnackbarNotification('تم حذف الملف بنجاح', 'success');
-                                        } catch (err: any) {
-                                          showSnackbarNotification('فشل حذف الملف', 'error');
-                                        } finally {
-                                          setAnimatingDeleteIds(prev => ({
-                                            ...prev,
-                                            [openedTrack]: new Set(Array.from(prev[openedTrack]).filter(id => id !== file.id))
-                                          }));
-                                        }
-                                      }
-                                    }}
+                                    onClick={() => handleDeleteSingleTrackFile(openedTrack, file.id)}
                                     title="حذف الملف"
                                   >
                                     {animatingDeleteIds[openedTrack]?.has(file.id) ? (
@@ -1047,16 +1067,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                             <td>
                               <button
                                 className="icon-button delete"
-                                onClick={async () => {
-                                  if (confirm('هل أنت متأكد من حذف هذا الملف؟')) {
-                                    try {
-                                      await delete130UnifiedFiles([file.id]);
-                                      setUnified130Files(prev => prev.filter(f => f.id !== file.id));
-                                      showSnackbarNotification('تم حذف الملف بنجاح', 'success');
-                                    } catch (err: any) {
-                                      showSnackbarNotification('فشل حذف الملف', 'error');
-                                    }
-                                  }
+                                onClick={() => {
+                                  setDeleteConfirmModal({ open: true, fileIds: [file.id], source: 'unified130' });
                                 }}
                                 title="حذف الملف"
                               >
@@ -1117,6 +1129,68 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
             <button className="tier-cancel" onClick={() => setShowTierModal(false)}>
               إلغاء
             </button>
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmModal.open && (
+        <div className="delete-confirm-overlay" onClick={() => setDeleteConfirmModal(prev => ({ ...prev, open: false }))}>
+          <div className="delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-confirm-icon">
+              <Trash2 size={32} />
+            </div>
+            <h3>تأكيد الحذف</h3>
+            <p className="delete-confirm-count">
+              سيتم حذف <strong>{deleteConfirmModal.fileIds.length}</strong> ملف
+              {deleteConfirmModal.source === 'unified130' ? ' من ملفات الـ 130 الموحدة' : ' من ملفات المسار'}
+            </p>
+            <p className="delete-confirm-question">
+              هل تريد أيضاً حذف هذه الملفات من حسابات جميع الطلاب؟
+            </p>
+
+            <div className="delete-confirm-buttons">
+              <button
+                className="delete-btn-both"
+                onClick={() => executeDelete(true)}
+                disabled={isRemovingFromUsers}
+              >
+                <Trash2 size={18} />
+                <div>
+                  <strong>حذف من الكل</strong>
+                  <span>حذف الملفات + إزالتها من حسابات الطلاب</span>
+                </div>
+              </button>
+
+              <button
+                className="delete-btn-server-only"
+                onClick={() => executeDelete(false)}
+                disabled={isRemovingFromUsers}
+              >
+                <X size={18} />
+                <div>
+                  <strong>حذف من السيرفر فقط</strong>
+                  <span>حذف الملفات بدون إزالتها من حسابات الطلاب</span>
+                </div>
+              </button>
+            </div>
+
+            <button
+              className="delete-btn-cancel"
+              onClick={() => setDeleteConfirmModal(prev => ({ ...prev, open: false }))}
+            >
+              إلغاء
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Removing from users loading overlay */}
+      {isRemovingFromUsers && (
+        <div className="removing-users-overlay">
+          <div className="removing-users-content">
+            <Loader2 size={40} className="spinning-loader-large" />
+            <p>جاري حذف الملفات من حسابات الطلاب...</p>
+            <span>يرجى الانتظار وعدم إغلاق الصفحة</span>
           </div>
         </div>
       )}
