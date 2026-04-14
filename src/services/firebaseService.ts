@@ -245,6 +245,37 @@ export const getStudentData = async (userId: string): Promise<StudentData | null
   }
 };
 
+/**
+ * Realtime subscription to a single student doc.
+ * This is needed so assignedFiles updates (from admin distribution) appear immediately for students.
+ */
+export const subscribeToStudentData = (
+  userId: string,
+  onUpdate: (student: StudentData | null) => void,
+  onError?: (error: any) => void
+): (() => void) => {
+  const docRef = doc(db, 'students', userId);
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (!docSnap.exists()) {
+        onUpdate(null);
+        return;
+      }
+      const data = docSnap.data() as any;
+      onUpdate({
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+      } as StudentData);
+    },
+    (error) => {
+      logger.error('Error subscribing to student data:', error);
+      if (onError) onError(error);
+    }
+  );
+};
+
 /** جلب عدة طلاب دفعة واحدة (أسرع من استدعاء getStudentData لكل واحد) */
 const FIRESTORE_IN_LIMIT = 10;
 export const getStudentsByIds = async (userIds: string[]): Promise<Record<string, StudentData>> => {

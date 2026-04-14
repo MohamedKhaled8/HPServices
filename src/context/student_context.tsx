@@ -2,11 +2,11 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { StudentData, ServiceRequest } from '../types';
 import {
   onAuthStateChange,
-  getStudentData,
   logoutUser,
   subscribeToServiceRequests,
   addServiceRequest as addServiceRequestToFirebase,
-  checkIsAdmin
+  checkIsAdmin,
+  subscribeToStudentData
 } from '../services/firebaseService';
 
 interface StudentContextType {
@@ -29,12 +29,18 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // Listen to auth state changes
   useEffect(() => {
+    let unsubscribeStudentDoc: (() => void) | null = null;
     const unsubscribe = onAuthStateChange(async (user) => {
       if (user) {
         try {
           // Check if user is admin
           const isAdmin = await checkIsAdmin(user.uid);
           if (isAdmin) {
+            // Cleanup any previous student subscription (switching accounts)
+            if (unsubscribeStudentDoc) {
+              unsubscribeStudentDoc();
+              unsubscribeStudentDoc = null;
+            }
             // Create temporary admin student data
             const adminStudentData: StudentData = {
               id: user.uid,
@@ -57,21 +63,51 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
             };
             setStudent(adminStudentData);
           } else {
-            const studentData = await getStudentData(user.uid);
-            setStudent(studentData);
+            // Realtime subscribe to student document so assignedFiles updates show immediately
+            if (unsubscribeStudentDoc) {
+              unsubscribeStudentDoc();
+              unsubscribeStudentDoc = null;
+            }
+
+            let firstSnap = true;
+            unsubscribeStudentDoc = subscribeToStudentData(
+              user.uid,
+              (studentData) => {
+                setStudent(studentData);
+                if (firstSnap) {
+                  firstSnap = false;
+                  setIsLoading(false);
+                }
+              },
+              (error) => {
+                console.error('Error subscribing to student data:', error);
+                setStudent(null);
+                setIsLoading(false);
+              }
+            );
+
+            // Return early; loading will be cleared on first snapshot
+            return;
           }
         } catch (error) {
           console.error('Error fetching student data:', error);
           setStudent(null);
-        }
+        } 
       } else {
+        if (unsubscribeStudentDoc) {
+          unsubscribeStudentDoc();
+          unsubscribeStudentDoc = null;
+        }
         setStudent(null);
         setServiceRequests([]);
       }
       setIsLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribeStudentDoc) unsubscribeStudentDoc();
+      unsubscribe();
+    };
   }, []);
 
   // Subscribe to service requests in real-time
