@@ -1,10 +1,44 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Service } from '../types';
 import {
   Headphones, Package, Book, CreditCard, CheckCircle, Award, Zap,
   BookOpen, Search, Target, FileText, User, ClipboardList, FileCheck
 } from 'lucide-react';
 import '../styles/ServiceCard.css';
+
+const LOTTIE_PLAYER_SCRIPT_SRC =
+  'https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js';
+
+let lottiePlayerLoadPromise: Promise<void> | null = null;
+
+function ensureLottiePlayerLoaded(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if (customElements?.get?.('lottie-player')) return Promise.resolve();
+
+  if (lottiePlayerLoadPromise) return lottiePlayerLoadPromise;
+
+  lottiePlayerLoadPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[data-lottie-player="true"]`
+    );
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('Failed to load lottie-player')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = LOTTIE_PLAYER_SCRIPT_SRC;
+    script.async = true;
+    script.defer = true;
+    script.dataset.lottiePlayer = 'true';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load lottie-player'));
+    document.head.appendChild(script);
+  });
+
+  return lottiePlayerLoadPromise;
+}
 
 interface ServiceCardProps {
   service: Service;
@@ -33,6 +67,15 @@ const getServiceIcon = (iconName: string) => {
 };
 
 const ServiceCard: React.FC<ServiceCardProps> = ({ service, onClick }) => {
+  useEffect(() => {
+    if (service.icon && service.icon.toLowerCase().endsWith('.json')) {
+      // Load the web component only when needed.
+      ensureLottiePlayerLoaded().catch(() => {
+        // If it fails, we simply keep rendering; card will still show layout.
+      });
+    }
+  }, [service.icon]);
+
   // دالة للحصول على السنة الحالية (تبدأ من 2026 وتتغير تلقائياً)
   const getCurrentYear = (): number => {
     const currentDate = new Date();

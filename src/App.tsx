@@ -101,9 +101,6 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         const checkAuthAndRole = async () => {
             try {
-                // تأخير بسيط لمحاكاة/انتظار تحميل الحالة
-                await new Promise(resolve => setTimeout(resolve, 800));
-
                 const user = getCurrentUser();
                 if (user) {
                     const adminStatus = await checkIsAdmin(user.uid);
