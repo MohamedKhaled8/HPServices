@@ -443,18 +443,19 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
           }));
         }
 
-        // حذف من السيرفر
-        deleteAssignmentFilesForTrack(targetTrack, fileIds).then(() => {
+        // حذف من السيرفر (نضمن إيقاف حالة التحميل دائماً)
+        try {
+          await deleteAssignmentFilesForTrack(targetTrack, fileIds);
           showSnackbarNotification(`تم مسح ${fileIds.length} ملف بنجاح`, 'success');
-        }).catch(() => {
+        } catch (err) {
           showSnackbarNotification('حدث خطأ أثناء الحذف من السيرفر', 'error');
-        }).finally(() => {
+        } finally {
           setIsDeletingAssignments(prev => ({ ...prev, [targetTrack]: false }));
           setAnimatingDeleteIds(prev => ({
             ...prev,
             [targetTrack]: new Set()
           }));
-        });
+        }
       }
     } catch (error: any) {
       showSnackbarNotification('حدث خطأ غير متوقع', 'error');
