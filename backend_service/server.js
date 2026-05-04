@@ -394,7 +394,11 @@ app.post('/api/digital-transformation/register', async (req, res) => {
 
             if (lastFawry) {
                 console.log('✅ Automation success (كود فوري):', lastFawry);
-                return res.json({ success: true, data: { ...lastResult, fawryCode: lastFawry } });
+                return res.json({
+                    success: true,
+                    data: { ...lastResult, fawryCode: String(lastFawry) },
+                    serverMeta: { dtApi: '2.1', hasFawry: true, attempt: attempt }
+                });
             }
 
             console.warn(`⚠️ المحاولة ${attempt}: لم يُستخرج كود فوري — إعادة تشغيل كاملة بعد ${RETRY_GAP_MS / 1000} ث...`);

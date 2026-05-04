@@ -1168,7 +1168,25 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   fawryCode = String(row.allData[2]).trim();
                 }
                 if (!fawryCode || fawryCode === 'undefined' || fawryCode === 'null') {
-                  setToastState({ message: 'رد السيرفر لا يحتوي على كود فوري صالح. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
+                  const blob = [
+                    typeof row.pageText === 'string' ? row.pageText : '',
+                    typeof row.pageContent === 'string' ? row.pageContent.replace(/<[^>]+>/g, ' ') : ''
+                  ].join('\n');
+                  const candidates = blob.match(/\b\d{9,12}\b/g) ?? [];
+                  for (const c of candidates) {
+                    if (!/^01\d{8,10}$/.test(c)) {
+                      fawryCode = c.trim();
+                      break;
+                    }
+                  }
+                }
+                if (!fawryCode || fawryCode === 'undefined' || fawryCode === 'null') {
+                  const meta = (data as { serverMeta?: { dtApi?: string } }).serverMeta;
+                  const hint = meta?.dtApi
+                    ? ` (السيرفر يقرأ dtApi=${meta.dtApi} — إن استمر الخطأ بعد النشر، المشكلة استخراج من موقع الجامعة وليس الواجهة.)`
+                    : ' غالبًا Hugging Face يشغّل نسخة قديمة من server.js (لا يوجد serverMeta.dtApi في الرد) — أعد بناء الـ Space من آخر كود.';
+                  logger.error('DT: success لكن بدون fawryCode', { rowKeys: Object.keys(row), serverMeta: meta });
+                  setToastState({ message: `رد السيرفر لا يحتوي على كود فوري صالح.${hint}`, type: 'error', duration: 14000 });
                   return;
                 }
 
