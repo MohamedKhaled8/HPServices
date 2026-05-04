@@ -1184,8 +1184,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   const meta = (data as { serverMeta?: { dtApi?: string } }).serverMeta;
                   logger.error('DT: success لكن بدون fawryCode', { rowKeys: Object.keys(row), serverMeta: meta });
                   const msg = meta?.dtApi
-                    ? 'لم يُستخرج كود فوري من صفحة الجامعة رغم اتصال السيرفر (قد يكون الموقع بطيئًا أو البيانات مختلفة). أعد المحاولة بعد قليل أو راجع البيانات.'
-                    : 'لم يُستخرج كود فوري. الحل: (1) في إعدادات النشر — تأكد أن عنوان خادم الأتمتة صحيح (متغير VITE_API_URL يشير لرابط Hugging Face وليس صفحة الواجهة فقط). (2) على Hugging Face — ارفع آخر ملفات المشروع أو اضغط Restart للـ Space بعد التحديث.';
+                    ? 'لم يُستخرج كود فوري من صفحة الجامعة رغم اتصال السيرفر. جرّب لاحقًا، وراجع بيانات الطالب (البريد والرقم القومي). إن تكرر الأمر، انظر سجلات خادم الأتمتة.'
+                    : 'لم يُستخرج كود فوري في الرد. راجع بيانات الطالب (مثل صحة البريد دون أخطاء إملائية)، ثم أعد المحاولة. إن استمر الخطأ، تأكد من تحديث نشر خادم الأتمتة والواجهة ومراجعة السجلات.';
                   setToastState({ message: msg, type: 'error', duration: 16000 });
                   return;
                 }
