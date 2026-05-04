@@ -1096,8 +1096,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           const rd = request.data || {};
           const sd = studentData;
           if (sd || (rd && Object.keys(rd).length > 0)) {
-            // الأتمتة قد تستغرق دقائق على HF — لا تغلق التوست بعد 3 ث (كان يبدو وكأن «مفيش حاجة حصلت»)
-            setToastState({ message: 'جاري الحصول على كود التحول الرقمي… قد يستغرق دقيقة أو أكثر.', type: 'loading', duration: 600000 });
+            // توست قصير (3 ث) ثم يختفي؛ عند نجاح الأتمتة يظهر توست «تم الحفظ — كود فوري»
+            setToastState({ message: 'جاري الحصول على كود التحول الرقمي… قد يستغرق دقيقة أو أكثر.', type: 'loading', duration: 3000 });
 
             // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
             const payload = {
@@ -1257,7 +1257,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           const rdEp = request.data || {};
           const sdEp = studentData;
           if (sdEp || (rdEp && Object.keys(rdEp).length > 0)) {
-            setToastState({ message: 'جاري الحصول على رقم الطلب… قد يستغرق دقيقة أو أكثر.', type: 'loading', duration: 600000 });
+            setToastState({ message: 'جاري الحصول على رقم الطلب… قد يستغرق دقيقة أو أكثر.', type: 'loading', duration: 3000 });
 
             // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
             const payload = {

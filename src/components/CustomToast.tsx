@@ -22,8 +22,7 @@ const CustomToast: React.FC<CustomToastProps> = ({
 
     useEffect(() => {
         if (!autoClose) return;
-        /* تحميل: لا مهلة افتراضية 3 ث — كانت تُغلق رسالة «جاري الحصول على الكود…» بسرعة.
-           إما duration صريح (طويل) من الأب، أو لا إغلاق تلقائي حتى يُمرَّر success/error من الأب */
+        /* تحميل: إما duration صريح من الأب (مثل 3000)، أو بدون duration = لا إغلاق تلقائي حتى يُمرَّر success/error */
         const ms =
             duration != null && duration >= 0
                 ? duration
