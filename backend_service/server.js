@@ -29,6 +29,9 @@ const NEW_PORTAL_ACCOUNT_PASSWORD = 'StudentPass123!';
 /** يُرسل مع كل رد من مسار التحول الرقمي حتى يعرف العميل إصدار السيرفر حتى عند الفشل */
 const DT_SERVER_META_BASE = { dtApi: '2.1' };
 
+/** يُسجَّل عند التشغيل — للتأكد أن HF يشغّل آخر ملف server.js وليس صورة Docker قديمة */
+const DT_BUILD_TAG = 'fdtc-login-guard-2026-05';
+
 /** خطأ شائع يمنع الدخول والجلسة: gmail.coms بدل gmail.com */
 function fixCommonEmailTypos(email) {
     const e = (email || '').trim();
@@ -1808,8 +1811,20 @@ async function runElectronicPaymentAutomation(data) {
     }
 }
 
+app.get('/api/automation-health', (req, res) => {
+    res.json({
+        ok: true,
+        dtApi: DT_SERVER_META_BASE.dtApi,
+        buildTag: DT_BUILD_TAG,
+        hint: 'إذا لم يتطابق buildTag مع آخر نشر، حدّث الـ Space وأعد البناء (Rebuild) وليس Restart فقط.'
+    });
+});
+
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 app.listen(PORT, HOST, () => {
     console.log(`🤖 AI Automation Service running on http://${HOST}:${PORT}`);
+    console.log(
+        `📌 التحول الرقمي — dtApi=${DT_SERVER_META_BASE.dtApi} build=${DT_BUILD_TAG} | تحقق: GET /api/automation-health — إن لم يظهر هذا السطر فالخادم نسخة قديمة.`
+    );
 });
