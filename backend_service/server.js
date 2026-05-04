@@ -1630,7 +1630,8 @@ async function runElectronicPaymentAutomation(data) {
     }
 }
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`🤖 AI Automation Service running on port ${PORT}`);
+const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () => {
+    console.log(`🤖 AI Automation Service running on http://${HOST}:${PORT}`);
 });

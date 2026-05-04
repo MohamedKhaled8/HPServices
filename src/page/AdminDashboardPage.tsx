@@ -1163,9 +1163,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 }
 
                 const row = data.data && typeof data.data === 'object' ? data.data : {};
-                const fawryCode = String(row.fawryCode ?? '').trim();
-                if (!fawryCode) {
-                  setToastState({ message: 'رد السيرفر لا يحتوي على كود فوري. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
+                let fawryCode = String(row.fawryCode ?? '').trim();
+                if ((!fawryCode || fawryCode === 'undefined' || fawryCode === 'null') && Array.isArray(row.allData) && row.allData[2]) {
+                  fawryCode = String(row.allData[2]).trim();
+                }
+                if (!fawryCode || fawryCode === 'undefined' || fawryCode === 'null') {
+                  setToastState({ message: 'رد السيرفر لا يحتوي على كود فوري صالح. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
                   return;
                 }
 
@@ -1193,7 +1196,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     };
 
                     await saveDigitalTransformationCode(codeData);
-                    setToastState({ message: `تم الانتهاء. كود فوري: ${fawryCode}`, type: 'success', duration: 5000 });
+                    setToastState({
+                      message: `تم الحفظ — كود فوري: ${fawryCode || '—'} [واجهة v2]`,
+                      type: 'success',
+                      duration: 7000
+                    });
                   } catch (saveError) {
                     logger.error('Save Error:', saveError);
                     setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ في قاعدة البيانات', type: 'error', duration: 5000 });
@@ -1296,9 +1303,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 }
 
                 const ep = data.data && typeof data.data === 'object' ? data.data : {};
-                const orderNumber = String(ep.orderNumber ?? '').trim();
-                if (!orderNumber) {
-                  setToastState({ message: 'رد السيرفر لا يحتوي على رقم طلب. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
+                let orderNumber = String(ep.orderNumber ?? '').trim();
+                if ((!orderNumber || orderNumber === 'undefined' || orderNumber === 'null') && typeof ep.rawText === 'string') {
+                  const m =
+                    ep.rawText.match(/رقم الطلب\s*[:\-]?\s*([0-9]+)/) ||
+                    ep.rawText.match(/رقم المرجعي\s*[:\-]?\s*([0-9]+)/);
+                  if (m?.[1]) orderNumber = m[1].trim();
+                }
+                if (!orderNumber || orderNumber === 'undefined' || orderNumber === 'null') {
+                  setToastState({ message: 'رد السيرفر لا يحتوي على رقم طلب صالح. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
                   return;
                 }
 
@@ -1322,7 +1335,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     };
 
                     await saveElectronicPaymentCode(codeData);
-                    setToastState({ message: `تم الانتهاء. رقم الطلب: ${orderNumber}`, type: 'success', duration: 5000 });
+                    setToastState({
+                      message: `تم الحفظ — رقم الطلب: ${orderNumber || '—'} [واجهة v2]`,
+                      type: 'success',
+                      duration: 7000
+                    });
                   } catch (saveError) {
                     logger.error('[EP] Save Error:', saveError);
                     setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ', type: 'error', duration: 5000 });
