@@ -394,7 +394,7 @@ app.post('/api/digital-transformation/register', async (req, res) => {
 
             if (lastFawry) {
                 console.log('✅ Automation success (كود فوري):', lastFawry);
-                return res.json({ success: true, data: { ...lastResult, fawryCode: lastFawry, _attempt: attempt } });
+                return res.json({ success: true, data: { ...lastResult, fawryCode: lastFawry } });
             }
 
             console.warn(`⚠️ المحاولة ${attempt}: لم يُستخرج كود فوري — إعادة تشغيل كاملة بعد ${RETRY_GAP_MS / 1000} ث...`);
@@ -506,9 +506,9 @@ async function runAutomation(data) {
     });
     const page = await context.newPage();
 
-    // Set longer timeout for all operations
-    page.setDefaultTimeout(30000);
-    page.setDefaultNavigationTimeout(30000);
+    const slowMs = parseInt(process.env.PLAYWRIGHT_SLOW_MS || '90000', 10) || 90000;
+    page.setDefaultTimeout(slowMs);
+    page.setDefaultNavigationTimeout(slowMs);
 
     try {
         // 1. Navigate directly to registration page
@@ -1390,6 +1390,25 @@ async function runAutomation(data) {
                 const copy = [...result.allData];
                 copy[2] = patchedFawry;
                 result.allData = copy;
+            }
+        }
+
+        if (!getFinalFawryCodeFromDtResult(result, bodyForFawry)) {
+            try {
+                console.log('🔄 احتياط جذري: فتح قائمة الأكواد /fdtc وقراءة نص أوسع (سيرفرات بعيدة عن مصر)...');
+                await page.goto('https://eksc.usc.edu.eg/fdtc', { waitUntil: 'domcontentloaded', timeout: 90000 });
+                await page.waitForTimeout(6000);
+                await page.waitForSelector('table tbody', { timeout: 25000 }).catch(() => { });
+                const bodyWide = await page.locator('body').innerText().catch(() => '');
+                result.pageText = (result.pageText || '') + '\n' + bodyWide.substring(0, 12000);
+                result.note = (result.note || '') + ' | fdtc-list-fallback';
+                const lateCode = extractLikelyFawryCodeFromDtResult(result, bodyWide);
+                if (lateCode && isBadFawryCell(result.fawryCode)) {
+                    console.log('🔧 كود فوري من صفحة القائمة:', lateCode);
+                    result.fawryCode = lateCode;
+                }
+            } catch (fbErr) {
+                console.log('⚠️ احتياط /fdtc:', fbErr.message);
             }
         }
 
