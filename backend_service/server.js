@@ -44,6 +44,43 @@ function normalizeArabic(text = '') {
         .toLowerCase();
 }
 
+/** هل نص خيار القائمة يعادل "لم يُختر بعد" (تجنب إيجاب خاطئ لـ «إختر») */
+function isSelectUnsetLabel(text) {
+    const raw = (text || '').trim();
+    if (!raw) return true;
+    const t = normalizeArabic(raw);
+    if (!t) return true;
+    if (t.includes('اختر')) return true;
+    if (/^select\b/i.test(raw) || /\bchoose\b/i.test(raw) || /\bpick\b/i.test(raw)) return true;
+    return false;
+}
+
+/**
+ * انتظار جاهزية نموذج fdtc/create (يقلل "Form elements not found" وسباق التحميل).
+ */
+async function waitForFdtcCreateFormReady(page, { maxMs = 28000 } = {}) {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+        const ready = await page.evaluate(() => {
+            const sels = document.querySelectorAll('select:not([disabled])');
+            const ins = document.querySelectorAll(
+                'input:not([type="hidden"]):not([type="password"]):not([type="submit"])'
+            );
+            return sels.length >= 1 && ins.length >= 2;
+        }).catch(() => false);
+        if (ready) {
+            await page.waitForTimeout(200);
+            return true;
+        }
+        await page.waitForTimeout(250);
+    }
+    console.log('⚠️ waitForFdtcCreateFormReady: مهلة ناعمة — إعادة تحميل fdtc/create مرة واحدة');
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => { });
+    await page.waitForTimeout(600);
+    await page.waitForSelector('select', { state: 'attached', timeout: 12000 }).catch(() => { });
+    return false;
+}
+
 /**
  * استخراج البريد وكلمة المرور من نص صفحة الاستعادة (Email: / Pass :)
  */
@@ -106,8 +143,9 @@ async function clickPortalLoginButton(page, passwordInput) {
  */
 async function submitPortalLogin(page, email, password) {
     await page.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { });
-    await page.waitForTimeout(600);
+    await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => { });
+    await page.locator('input[type="password"]').first().waitFor({ state: 'visible', timeout: 12000 }).catch(() => { });
+    await page.waitForTimeout(350);
 
     const emailInput = page.locator('input[type="email"], input[type="text"]').first();
     if (!await emailInput.isVisible({ timeout: 10000 }).catch(() => false)) {
@@ -158,8 +196,8 @@ async function runPortalPasswordRecovery(page, nationalIDDigits) {
 
     console.log('🔄 فتح صفحة استعادة كلمة المرور...');
     await page.goto(PORTAL_FORGET_PASSWORD_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { });
-    await page.waitForTimeout(1000);
+    await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => { });
+    await page.waitForTimeout(500);
 
     let filled = false;
     const candidates = page.locator('input:not([type="password"]):not([type="hidden"]):not([type="submit"]):not([type="email"])');
@@ -193,7 +231,14 @@ async function runPortalPasswordRecovery(page, nationalIDDigits) {
         await page.keyboard.press('Enter');
     }
 
-    await page.waitForTimeout(4000);
+    await Promise.race([
+        page.waitForFunction(
+            () => /Email\s*:/i.test(document.body?.innerText || '') ||
+                /@[\w.-]+\.[A-Za-z]{2,}/.test(document.body?.innerText || ''),
+            { timeout: 8000 }
+        ).catch(() => { }),
+        page.waitForTimeout(3500)
+    ]);
     const body = await page.locator('body').innerText().catch(() => '');
     console.log('📄 Recovery (أول 600 حرف):', body.substring(0, 600));
 
@@ -371,8 +416,9 @@ async function runAutomation(data) {
         console.log('🌍 Step 1: Navigating to registration page...');
         await page.goto(PORTAL_REGISTER_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
         console.log('✅ Page loaded, URL:', page.url());
-        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => { });
-        await page.waitForTimeout(2000);
+        await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => { });
+        await page.locator('input[type="password"]').first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => { });
+        await page.waitForTimeout(500);
 
         console.log('📝 Step 2: Attempting registration...');
         let needsLogin = false;
@@ -542,8 +588,10 @@ async function runAutomation(data) {
         // Wait for response and check for error messages
         console.log('⏳ Step 4: Waiting for registration response...');
 
-        // Wait a bit for the page to process the form
-        await page.waitForTimeout(3000);
+        await Promise.race([
+            page.waitForURL((u) => !String(u).includes('/register'), { timeout: 7000 }).catch(() => { }),
+            page.waitForTimeout(1600)
+        ]);
 
         // Check multiple times for error messages (they might appear with delay)
         let hasError = false;
@@ -602,7 +650,7 @@ async function runAutomation(data) {
 
             // Wait a bit before next check
             if (checkAttempts < maxChecks) {
-                await page.waitForTimeout(2000);
+                await page.waitForTimeout(1200);
             }
         }
 
@@ -655,14 +703,11 @@ async function runAutomation(data) {
         console.log('📚 Step 7: Navigating to form page (fdtc/create)...');
         await page.goto('https://eksc.usc.edu.eg/fdtc/create', { waitUntil: 'domcontentloaded', timeout: 30000 });
         console.log('✅ Form page loaded, URL:', page.url());
-        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => { });
-        await page.waitForTimeout(2000);
-
-        // Wait for form to be ready
-        console.log('Waiting for form elements...');
-        await page.waitForSelector('input, select', { timeout: 10000 }).catch(() => {
-            console.log('⚠️ Form elements not found');
-        });
+        console.log('⏳ Waiting for form elements (stable)...');
+        const formReady = await waitForFdtcCreateFormReady(page);
+        if (!formReady) {
+            console.log('⚠️ النموذج قد لا يكون كاملًا بعد إعادة التحميل — المتابعة مع محاولة التعبئة');
+        }
 
         // 4. Check if fields are already filled (مسجلين قبل كده)
         console.log('🔍 Step 8: Checking if form fields are already filled...');
@@ -686,8 +731,7 @@ async function runAutomation(data) {
                     const selectedOption = el.options[el.selectedIndex];
                     return selectedOption ? selectedOption.text.trim() : '';
                 });
-                // Check if any select has a value (not "اختر" or empty)
-                if (selectedValue && selectedValue !== 'اختر' && selectedValue !== '' && !selectedValue.includes('Select')) {
+                if (selectedValue && !isSelectUnsetLabel(selectedValue)) {
                     console.log(`⚠️ Select field is already filled: ${selectedValue}`);
                     fieldsAlreadyFilled = true;
                     break;
@@ -715,8 +759,7 @@ async function runAutomation(data) {
                     await page.goto('https://eksc.usc.edu.eg/fdtc', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
                     await page.waitForTimeout(1000);
                     await page.goto('https://eksc.usc.edu.eg/fdtc/create', { waitUntil: 'domcontentloaded', timeout: 15000 });
-                    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
-                    await page.waitForSelector('input, select', { timeout: 5000 }).catch(() => { });
+                    await waitForFdtcCreateFormReady(page, { maxMs: 22000 });
                 }
             } catch (e) {
                 console.log('⚠️ Error creating new registration, trying to clear and refill...', e.message);
@@ -753,10 +796,12 @@ async function runAutomation(data) {
 
         // Fill Arabic name - FAST
         const arabicSelectors = [
+            'input[name="Name_Ar"]',
+            'input[name="name_ar"]',
             'input[placeholder*="العربية"]',
             'input[placeholder*="عربي"]',
             'input[name*="arabic"]',
-            'input[name*="ar"]'
+            'input[name*="ar_name"]'
         ];
 
         for (const selector of arabicSelectors) {
@@ -778,11 +823,13 @@ async function runAutomation(data) {
 
         // Fill English name - FAST
         const englishSelectors = [
+            'input[name="Name_En"]',
+            'input[name="name_en"]',
             'input[placeholder*="الإنجليزية"]',
             'input[placeholder*="إنجليزي"]',
             'input[placeholder*="English"]',
             'input[name*="english"]',
-            'input[name*="en"]'
+            'input[name*="en_name"]'
         ];
 
         for (const selector of englishSelectors) {
@@ -810,7 +857,7 @@ async function runAutomation(data) {
         // SIMPLE STRATEGY: Fill ALL visible inputs and selects in order
         // ------------------------------------------------------------------
         console.log('📝 Step 10: Simple Sequential Filling (No Label Matching)...');
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(400);
 
         // 1. Fill ALL text/tel inputs (Names + Phone)
         console.log('📝 Filling all text inputs...');
@@ -847,7 +894,8 @@ async function runAutomation(data) {
                     placeholder.toLowerCase().includes('mobile') ||
                     name.toLowerCase().includes('phone') ||
                     name.toLowerCase().includes('mobile') ||
-                    name.toLowerCase().includes('tel')) {
+                    name.toLowerCase().includes('tel') ||
+                    /^mobile$/i.test(name.trim())) {
                     valueToFill = data.phone;
                     fieldType = 'PHONE';
                 }
@@ -856,7 +904,8 @@ async function runAutomation(data) {
                     placeholder.includes('العربية') ||
                     placeholder.includes('عربى') ||
                     name.toLowerCase().includes('arabic') ||
-                    name.toLowerCase().includes('ar_name')) {
+                    name.toLowerCase().includes('ar_name') ||
+                    /^name_ar$/i.test(name.trim())) {
                     valueToFill = data.fullNameArabic;
                     fieldType = 'ARABIC NAME';
                 }
@@ -866,7 +915,8 @@ async function runAutomation(data) {
                     placeholder.includes('انجليزي') ||
                     placeholder.toLowerCase().includes('english') ||
                     name.toLowerCase().includes('english') ||
-                    name.toLowerCase().includes('en_name')) {
+                    name.toLowerCase().includes('en_name') ||
+                    /^name_en$/i.test(name.trim())) {
                     valueToFill = data.fullNameEnglish;
                     fieldType = 'ENGLISH NAME';
                 }
@@ -1024,11 +1074,11 @@ async function runAutomation(data) {
         }
 
 
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(450);
 
-        // Skip all verification - just wait a bit and save
-        console.log('⏳ Waiting 2 seconds before clicking Save...');
-        await page.waitForTimeout(2000);
+        // انتظار قصير أو استقرار الجدول بعد الحفظ (أيهما أسرع)
+        console.log('⏳ جاهزية الحفظ...');
+        await page.waitForTimeout(900);
 
         console.log('✅ All fields filled, proceeding to Save NOW');
 
@@ -1096,19 +1146,17 @@ async function runAutomation(data) {
             console.log('⚠️ Could not find save button - will check result anyway');
         }
 
-        // Wait for navigation or table to appear - LONGER WAIT
-        console.log('⏳ Waiting for page to navigate after save...');
-        await page.waitForTimeout(3000); // Wait 3 seconds for navigation
-
+        console.log('⏳ انتظار التنقل أو ظهور الجدول بعد الحفظ...');
         await Promise.race([
-            page.waitForURL('**/fdtc/**', { timeout: 10000 }).catch(() => { }),
-            page.waitForSelector('table tbody tr', { timeout: 10000 }).catch(() => { }),
-            page.waitForTimeout(5000) // Longer fallback
+            page.waitForURL('**/fdtc/**', { timeout: 12000 }).catch(() => { }),
+            page.waitForSelector('table tbody tr', { timeout: 12000 }).catch(() => { }),
+            page.waitForTimeout(4500)
         ]);
-
-        // Additional wait for table to fully load
-        console.log('⏳ Waiting for table to fully load...');
-        await page.waitForTimeout(3000);
+        await page.waitForTimeout(500);
+        await Promise.race([
+            page.waitForSelector('table tbody tr', { state: 'visible', timeout: 8000 }).catch(() => { }),
+            page.waitForTimeout(1500)
+        ]);
 
         // 6. Extract Data from Table (أكواد التحول الرقمي)
         console.log('🔍 Step 12: Extracting data from digital transformation codes page...');
