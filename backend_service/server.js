@@ -21,6 +21,10 @@ app.get('/', (req, res) => {
 
 // Constants
 const TARGET_URL = 'https://eksc.usc.edu.eg/login';
+const PORTAL_LOGIN_URL = 'https://eksc.usc.edu.eg/login';
+const PORTAL_REGISTER_URL = 'https://eksc.usc.edu.eg/register';
+const PORTAL_FORGET_PASSWORD_URL = 'https://eksc.usc.edu.eg/forget-password';
+const NEW_PORTAL_ACCOUNT_PASSWORD = 'StudentPass123!';
 
 // ============================================
 // Helper: normalize Arabic text for fuzzy match
@@ -38,6 +42,203 @@ function normalizeArabic(text = '') {
         .replace(/[^\u0621-\u064A0-9\s]/g, '')
         .replace(/\s+/g, ' ')
         .toLowerCase();
+}
+
+/**
+ * استخراج البريد وكلمة المرور من نص صفحة الاستعادة (Email: / Pass :)
+ */
+function parseRecoveryCredentialsFromText(text, nationalIDDigits) {
+    if (!text) return null;
+    let email = null;
+    const emailLine = text.match(/Email\s*:\s*(\S+)/i);
+    if (emailLine) email = emailLine[1].trim();
+    if (!email) {
+        const any = text.match(/([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/);
+        if (any) email = any[1].trim();
+    }
+    let password = null;
+    const passLine = text.match(/Pass\s*:\s*(\S+)/i) || text.match(/Password\s*:\s*(\S+)/i);
+    if (passLine) password = passLine[1].trim();
+
+    if (email && email.includes('@')) {
+        return { email, password: password || nationalIDDigits || '' };
+    }
+    return null;
+}
+
+async function clickPortalLoginButton(page, passwordInput) {
+    const loginSelectors = [
+        'button:has-text("تسجيل الدخول")',
+        'button[type="submit"]',
+        'input[type="submit"]',
+        'button:has-text("تسجيل")',
+        'button:has-text("دخول")',
+        'form button',
+        'button.btn-primary'
+    ];
+    for (const selector of loginSelectors) {
+        try {
+            const btn = page.locator(selector).first();
+            if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+                await btn.click();
+                return true;
+            }
+        } catch { /* next */ }
+    }
+    try {
+        const textBtn = page.locator('button, input').filter({ hasText: /تسجيل الدخول|تسجيل|دخول|login/i }).first();
+        if (await textBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+            await textBtn.click();
+            return true;
+        }
+    } catch { /* */ }
+    try {
+        await passwordInput.focus();
+        await page.keyboard.press('Enter');
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * محاولة تسجيل دخول واحدة على بوابة eksc؛ تُرجع true عند مغادرة صفحة الدخول بنجاح.
+ */
+async function submitPortalLogin(page, email, password) {
+    await page.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { });
+    await page.waitForTimeout(600);
+
+    const emailInput = page.locator('input[type="email"], input[type="text"]').first();
+    if (!await emailInput.isVisible({ timeout: 10000 }).catch(() => false)) {
+        console.log('⚠️ submitPortalLogin: حقل البريد غير ظاهر');
+        return false;
+    }
+    await emailInput.click({ timeout: 2000 }).catch(() => { });
+    await emailInput.fill('');
+    await emailInput.fill(email);
+
+    const passwordInput = page.locator('input[type="password"]').first();
+    if (!await passwordInput.isVisible({ timeout: 5000 }).catch(() => false)) return false;
+    await passwordInput.fill('');
+    await passwordInput.fill(password);
+
+    const clicked = await clickPortalLoginButton(page, passwordInput);
+    if (!clicked) return false;
+
+    try {
+        await page.waitForURL((u) => {
+            const s = typeof u === 'string' ? u : u.toString();
+            return s.includes('/fdtc') || s.includes('/dashboard') || s.includes('/home') ||
+                (s.includes('eksc.usc.edu.eg') && !s.includes('/login') && !s.includes('/register') && !s.includes('forget-password'));
+        }, { timeout: 16000 });
+        return true;
+    } catch {
+        await page.waitForTimeout(1500);
+        const url = page.url();
+        if (url.includes('/fdtc') || url.includes('/dashboard') || url.includes('/home')) return true;
+        if (!url.includes('/login') && !url.includes('forget-password') && url.includes('eksc.usc.edu.eg')) return true;
+
+        const body = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+        const failHints = ['غير صحيحة', 'غير صحيح', 'خطأ فى', 'خطأ في', 'credentials', 'incorrect', 'invalid', 'does not match', 'these credentials'];
+        if (failHints.some((h) => body.includes(h.toLowerCase()))) return false;
+        return false;
+    }
+}
+
+/**
+ * استعادة كلمة المرور بالرقم القومي ثم قراءة البريد المعروض (كلمة المرور غالبًا الرقم القومي).
+ */
+async function runPortalPasswordRecovery(page, nationalIDDigits) {
+    const nid = (nationalIDDigits || '').replace(/\D/g, '');
+    if (nid.length !== 14) {
+        console.log('⚠️ Recovery: رقم قومي غير صالح');
+        return null;
+    }
+
+    console.log('🔄 فتح صفحة استعادة كلمة المرور...');
+    await page.goto(PORTAL_FORGET_PASSWORD_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { });
+    await page.waitForTimeout(1000);
+
+    let filled = false;
+    const candidates = page.locator('input:not([type="password"]):not([type="hidden"]):not([type="submit"]):not([type="email"])');
+    const n = await candidates.count();
+    for (let i = 0; i < n; i++) {
+        const inp = candidates.nth(i);
+        if (!await inp.isVisible({ timeout: 500 }).catch(() => false)) continue;
+        await inp.fill(nid);
+        filled = true;
+        console.log('✅ تم إدخال الرقم القومي في نموذج الاستعادة');
+        break;
+    }
+    if (!filled) {
+        const first = page.locator('input[type="text"], input[type="tel"]').first();
+        if (await first.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await first.fill(nid);
+            filled = true;
+        }
+    }
+    if (!filled) {
+        console.log('❌ Recovery: لم يُعثر على حقل الرقم القومي');
+        return null;
+    }
+
+    const recoverBtn = page.locator('button, input[type="submit"]').filter({
+        hasText: /إستعادة|استعادة|استرجاع|إرسال|submit/i
+    }).first();
+    if (await recoverBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
+        await recoverBtn.click();
+    } else {
+        await page.keyboard.press('Enter');
+    }
+
+    await page.waitForTimeout(4000);
+    const body = await page.locator('body').innerText().catch(() => '');
+    console.log('📄 Recovery (أول 600 حرف):', body.substring(0, 600));
+
+    const parsed = parseRecoveryCredentialsFromText(body, nid);
+    if (parsed) {
+        console.log('✅ تم استخراج بيانات من صفحة الاستعادة، البريد:', parsed.email);
+    } else {
+        console.log('⚠️ لم يُستخرج بريد من صفحة الاستعادة (قد تكون الرسالة مختلفة)');
+    }
+    return parsed;
+}
+
+/**
+ * سلسلة ذكية: حساب جديد → كلمة التسجيل | حساب موجود → بريد النظام + الرقم القومي → استعادة → دخول بالبريد المعروض.
+ */
+async function runSmartPortalLogin(page, data, registrationHadConflict) {
+    const emailKnown = (data.email || '').trim();
+    const nid = (data.nationalID || '').replace(/\D/g, '');
+
+    async function attempt(label, email, password) {
+        console.log(`🔐 محاولة دخول [${label}] بريد=${email}`);
+        const ok = await submitPortalLogin(page, email, password);
+        if (ok) console.log(`✅ نجح تسجيل الدخول: ${label}`);
+        return ok;
+    }
+
+    if (registrationHadConflict) {
+        if (await attempt('بريد الطالب + الرقم القومي ككلمة مرور', emailKnown, nid)) return;
+        if (await attempt('بريد الطالب + كلمة التسجيل الافتراضية', emailKnown, NEW_PORTAL_ACCOUNT_PASSWORD)) return;
+        const recovered = await runPortalPasswordRecovery(page, nid);
+        if (recovered && recovered.email) {
+            const pw = recovered.password || nid;
+            if (await attempt('بعد الاستعادة (بريد البوابة)', recovered.email, pw)) return;
+        }
+    } else {
+        if (await attempt('حساب جديد: كلمة التسجيل', emailKnown, NEW_PORTAL_ACCOUNT_PASSWORD)) return;
+        if (await attempt('بريد الطالب + الرقم القومي', emailKnown, nid)) return;
+        const recovered = await runPortalPasswordRecovery(page, nid);
+        if (recovered && recovered.email) {
+            const pw = recovered.password || nid;
+            if (await attempt('بعد الاستعادة (بريد البوابة)', recovered.email, pw)) return;
+        }
+    }
+
+    throw new Error('فشل تسجيل الدخول في بوابة التحول الرقمي بعد كل المحاولات (دخول + استعادة). تحقق من البريد والرقم القومي.');
 }
 
 app.post('/api/digital-transformation/register', async (req, res) => {
@@ -168,7 +369,7 @@ async function runAutomation(data) {
     try {
         // 1. Navigate directly to registration page
         console.log('🌍 Step 1: Navigating to registration page...');
-        await page.goto('http://eksc.usc.edu.eg/register', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(PORTAL_REGISTER_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
         console.log('✅ Page loaded, URL:', page.url());
         await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => { });
         await page.waitForTimeout(2000);
@@ -415,23 +616,13 @@ async function runAutomation(data) {
         console.log('  - Still on register page:', stillOnRegisterPage);
         console.log('  - Password inputs count:', passwordInputsCount);
 
-        // If error found or still on register page, go to login
-        if (hasError || stillOnRegisterPage) {
-            console.log('⚠️ Registration failed - Field value already in use');
-            console.log('🔄 Step 5: Navigating to login page...');
-            needsLogin = true;
+        const registrationHadConflict = hasError || stillOnRegisterPage;
 
-            // Navigate directly to login page
-            try {
-                await page.goto('https://eksc.usc.edu.eg/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
-                console.log('✅ Navigated to login page, URL:', page.url());
-                await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
-                await page.waitForTimeout(1000);
-            } catch (navError) {
-                console.log('❌ Error navigating to login:', navError.message);
-                // Try again
-                await page.goto('https://eksc.usc.edu.eg/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
-            }
+        // If error found or still on register page → نفترض حسابًا موجودًا على البوابة
+        if (hasError || stillOnRegisterPage) {
+            console.log('⚠️ Registration failed - Field value already in use (or still on register)');
+            console.log('🔄 Step 5: سيتم تسجيل الدخول بسلسلة ذكية (بريد/رقم قومي → استعادة إن لزم)...');
+            needsLogin = true;
         } else {
             // Check if we successfully registered (URL changed to login or dashboard)
             if (currentURL.includes('/login') || currentURL.includes('/dashboard') || currentURL.includes('/home')) {
@@ -451,120 +642,11 @@ async function runAutomation(data) {
             }
         }
 
-        // 2. Login - Navigate to /login and login
+        // 2. Login — سلسلة ذكية (حساب جديد / قديم + استعادة)
         if (needsLogin) {
-            console.log('🔐 Step 6: Logging in...');
-
-            // Make sure we're on login page (navigate directly to /login)
-            if (!page.url().includes('/login')) {
-                console.log('Navigating to login page...');
-                await page.goto('https://eksc.usc.edu.eg/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
-                await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
-                await page.waitForTimeout(1000);
-            }
-
-            // Wait for login form
-            console.log('Waiting for login form...');
-            await page.waitForSelector('input[type="email"], input[type="text"]', { timeout: 10000 }).catch(() => {
-                console.log('⚠️ Email input not found');
-            });
-            await page.waitForTimeout(1000);
-
-            const emailInput = page.locator('input[type="email"], input[type="text"]').first();
-            const emailVisible = await emailInput.isVisible({ timeout: 5000 }).catch(() => false);
-            console.log('Email input visible:', emailVisible);
-
-            if (emailVisible) {
-                await emailInput.clear();
-                await emailInput.fill(data.email);
-                console.log('✅ Filled email:', data.email);
-
-                const passwordInput = page.locator('input[type="password"]').first();
-                const passwordVisible = await passwordInput.isVisible({ timeout: 3000 }).catch(() => false);
-                console.log('Password input visible:', passwordVisible);
-
-                if (passwordVisible) {
-                    await passwordInput.clear();
-                    await passwordInput.fill('StudentPass123!');
-                    console.log('✅ Filled password');
-
-                    // Find and click "تسجيل الدخول" button - try multiple methods
-                    console.log('Looking for login button...');
-                    let loginClicked = false;
-
-                    // Try multiple selectors
-                    const loginSelectors = [
-                        'button:has-text("تسجيل الدخول")',
-                        'button[type="submit"]',
-                        'input[type="submit"]',
-                        'button:has-text("تسجيل")',
-                        'button:has-text("دخول")',
-                        'form button',
-                        'button.btn-primary'
-                    ];
-
-                    for (const selector of loginSelectors) {
-                        try {
-                            const btn = page.locator(selector).first();
-                            const isVisible = await btn.isVisible({ timeout: 2000 }).catch(() => false);
-                            if (isVisible) {
-                                console.log(`✅ Found login button with selector: ${selector}`);
-                                await btn.click();
-                                loginClicked = true;
-                                console.log('✅ Clicked login button');
-                                break;
-                            }
-                        } catch (e) {
-                            // Continue to next selector
-                        }
-                    }
-
-                    // Try text-based search
-                    if (!loginClicked) {
-                        try {
-                            const textBtn = page.locator('button, input').filter({ hasText: /تسجيل الدخول|تسجيل|دخول|login|Login/i }).first();
-                            const isVisible = await textBtn.isVisible({ timeout: 2000 }).catch(() => false);
-                            if (isVisible) {
-                                await textBtn.click();
-                                loginClicked = true;
-                                console.log('✅ Clicked login button (text-based)');
-                            }
-                        } catch (e) {
-                            console.log('⚠️ Text-based login button search failed');
-                        }
-                    }
-
-                    // Last resort: Press Enter
-                    if (!loginClicked) {
-                        console.log('⚠️ Login button not found, trying Enter key...');
-                        try {
-                            await passwordInput.focus();
-                            await page.keyboard.press('Enter');
-                            loginClicked = true;
-                            console.log('✅ Pressed Enter to login');
-                        } catch (e) {
-                            console.log('❌ Error pressing Enter:', e.message);
-                        }
-                    }
-
-                    // Wait for navigation
-                    if (loginClicked) {
-                        await page.waitForTimeout(2000);
-                        await Promise.race([
-                            page.waitForURL('**/dashboard**', { timeout: 10000 }).catch(() => { }),
-                            page.waitForURL('**/home**', { timeout: 10000 }).catch(() => { }),
-                            page.waitForURL('**/fdtc**', { timeout: 10000 }).catch(() => { }),
-                            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => { }),
-                            page.waitForTimeout(5000)
-                        ]);
-                        console.log('✅ Login completed, current URL:', page.url());
-                    }
-                } else {
-                    console.log('❌ Password input not found');
-                }
-            } else {
-                console.log('⚠️ Login form not found, assuming already logged in');
-            }
+            console.log('🔐 Step 6: تسجيل الدخول (ذكي)...');
+            await runSmartPortalLogin(page, data, registrationHadConflict);
+            console.log('✅ Step 6 انتهى، URL:', page.url());
         } else {
             console.log('ℹ️ Login not needed, already logged in');
         }
