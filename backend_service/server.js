@@ -29,6 +29,18 @@ const NEW_PORTAL_ACCOUNT_PASSWORD = 'StudentPass123!';
 /** يُرسل مع كل رد من مسار التحول الرقمي حتى يعرف العميل إصدار السيرفر حتى عند الفشل */
 const DT_SERVER_META_BASE = { dtApi: '2.1' };
 
+/** خطأ شائع يمنع الدخول والجلسة: gmail.coms بدل gmail.com */
+function fixCommonEmailTypos(email) {
+    const e = (email || '').trim();
+    if (!e) return e;
+    if (/\.coms$/i.test(e)) {
+        const fixed = e.replace(/\.coms$/i, '.com');
+        console.log('✉️ تصحيح بريد (.coms→.com):', e, '→', fixed);
+        return fixed;
+    }
+    return e;
+}
+
 // ============================================
 // Helper: normalize Arabic text for fuzzy match
 // ============================================
@@ -172,10 +184,12 @@ async function submitPortalLogin(page, email, password) {
             const s = typeof u === 'string' ? u : u.toString();
             return s.includes('/fdtc') || s.includes('/dashboard') || s.includes('/home') ||
                 (s.includes('eksc.usc.edu.eg') && !s.includes('/login') && !s.includes('/register') && !s.includes('forget-password'));
-        }, { timeout: 16000 });
+        }, { timeout: 24000 });
+        await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => { });
+        await page.waitForTimeout(400);
         return true;
     } catch {
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(1800);
         const url = page.url();
         if (url.includes('/fdtc') || url.includes('/dashboard') || url.includes('/home')) return true;
         if (!url.includes('/login') && !url.includes('forget-password') && url.includes('eksc.usc.edu.eg')) return true;
@@ -356,8 +370,13 @@ app.post('/api/digital-transformation/register', async (req, res) => {
         fullNameEnglish, phone, examLanguage, nationalID
     } = req.body;
 
+    const automationPayload = {
+        email: fixCommonEmailTypos(email),
+        fullNameArabic, fullNameEnglish, phone, examLanguage, nationalID
+    };
+
     console.log('📋 Extracted Data:');
-    console.log('  - Email:', email);
+    console.log('  - Email:', automationPayload.email);
     console.log('  - Arabic Name:', fullNameArabic);
     console.log('  - English Name:', fullNameEnglish);
     console.log('  - National ID:', nationalID);
@@ -365,11 +384,7 @@ app.post('/api/digital-transformation/register', async (req, res) => {
     console.log('  - Exam Language:', examLanguage);
     console.log('🔔 ==========================================\n');
 
-    console.log(`🚀 Starting automation for: ${email}`);
-
-    const automationPayload = {
-        email, fullNameArabic, fullNameEnglish, phone, examLanguage, nationalID
-    };
+    console.log(`🚀 Starting automation for: ${automationPayload.email}`);
 
     const MAX_FULL_RETRIES = parseInt(process.env.DT_AUTOMATION_RETRIES || '3', 10) || 3;
     const RETRY_GAP_MS = parseInt(process.env.DT_RETRY_GAP_MS || '12000', 10) || 12000;
@@ -806,10 +821,33 @@ async function runAutomation(data) {
             console.log('ℹ️ Login not needed, already logged in');
         }
 
-        // 3. Navigate directly to registration form
+        await page.waitForTimeout(500);
+        if (page.url().includes('/login')) {
+            throw new Error(
+                'ما زال المتصفح على صفحة تسجيل الدخول بعد المحاولات. تحقق من البريد الإلكتروني (مثل عدم كتابة gmail.coms بدلاً من gmail.com) وأن الرقم القومي أو كلمة المرور صحيحة.'
+            );
+        }
+
+        // 3. Navigate directly to registration form — إذا أعاد الموقع توجيهًا للّوجين فالجلسة غير صالحة
         console.log('📚 Step 7: Navigating to form page (fdtc/create)...');
-        await page.goto('https://eksc.usc.edu.eg/fdtc/create', { waitUntil: 'domcontentloaded', timeout: 30000 });
-        console.log('✅ Form page loaded, URL:', page.url());
+        const fdtcCreateUrl = 'https://eksc.usc.edu.eg/fdtc/create';
+        await page.goto(fdtcCreateUrl, { waitUntil: 'domcontentloaded', timeout: slowMs });
+        await page.waitForTimeout(1200);
+        let formPageUrl = page.url();
+        if (formPageUrl.includes('/login')) {
+            console.warn('⚠️ fdtc/create أعاد التوجيه لصفحة الدخول — إعادة محاولة الدخول ثم فتح النموذج');
+            await runSmartPortalLogin(page, data, registrationHadConflict);
+            await page.waitForTimeout(600);
+            await page.goto(fdtcCreateUrl, { waitUntil: 'domcontentloaded', timeout: slowMs });
+            await page.waitForTimeout(1200);
+            formPageUrl = page.url();
+        }
+        if (formPageUrl.includes('/login')) {
+            throw new Error(
+                'لا يمكن فتح نموذج التحول الرقمي: الموقع يعيدك لتسجيل الدخول بلا جلسة صالحة. تحقق من البريد المطابق لحسابك على البوابة، والرقم القومي ككلمة مرور، وتصحيح أخطاء البريد (مثل gmail.com وليس gmail.coms).'
+            );
+        }
+        console.log('✅ Form page loaded, URL:', formPageUrl);
         console.log('⏳ Waiting for form elements (stable)...');
         const formReady = await waitForFdtcCreateFormReady(page);
         if (!formReady) {
