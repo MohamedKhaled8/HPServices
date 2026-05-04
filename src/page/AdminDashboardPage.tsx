@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
 import {
   subscribeToAllServiceRequests,
+  fetchAllServiceRequestsOnce,
   updateServiceRequestStatus,
   updateServiceRequestData,
   deleteServiceRequest,
@@ -231,6 +232,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     });
     return map;
   }, [epCodes]);
+
+  /** بطاقات الخدمات: حساب واحد O(n) بدل 11× filter على كل رسم */
+  const requestStatsByServiceId = useMemo(() => {
+    const m: Record<string, { pending: number; total: number }> = {};
+    for (const r of serviceRequests) {
+      const sid = String(r.serviceId ?? '');
+      if (!sid) continue;
+      if (!m[sid]) m[sid] = { pending: 0, total: 0 };
+      m[sid].total += 1;
+      if (r.status === 'pending') m[sid].pending += 1;
+    }
+    return m;
+  }, [serviceRequests]);
 
   // Custom Alert Modal State
   const [alertConfig, setAlertConfig] = useState<{
@@ -677,7 +691,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     if (isLoading) return;
 
-    // Subscribe to all service requests
+    let cancelled = false;
+
+    // لقطة أولية متوازية من Firestore — الأرقام تظهر أسرع من انتظار سلسلة onSnapshot
+    (async () => {
+      try {
+        const initial = await fetchAllServiceRequestsOnce();
+        if (!cancelled) {
+          setServiceRequests(initial);
+          setDataReady(true);
+        }
+      } catch (e) {
+        logger.error('Admin: fetchAllServiceRequestsOnce failed', e);
+      }
+    })();
+
     const unsubscribe = subscribeToAllServiceRequests((requests) => {
       setServiceRequests(requests);
       setDataReady(true);
@@ -698,7 +726,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       fetchStudents();
     });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [isLoading]);
 
   // تحميل إعدادات الخدمات والأكواد بعد ظهور الطلبات (حتى لا نبطئ أول رسم للجدول)
@@ -2407,9 +2438,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             {/* Services Files Grid */}
             <div className="services-files-grid">
               {SERVICES.map(service => {
-                const serviceRequestsForService = serviceRequests.filter(r => r.serviceId === service.id);
-                const newRequests = serviceRequestsForService.filter(r => r.status === 'pending').length;
-                const totalRequests = serviceRequestsForService.length;
+                const q = requestStatsByServiceId[service.id];
+                const newRequests = q?.pending ?? 0;
+                const totalRequests = q?.total ?? 0;
                 const isSelected = selectedServiceId === service.id;
                 let serviceName = service.nameAr;
                 if (service.id === '3' && bookConfig) {

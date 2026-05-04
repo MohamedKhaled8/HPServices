@@ -1386,6 +1386,26 @@ export const getAllServiceRequests = async (): Promise<ServiceRequest[]> => {
   }
 };
 
+/** جلب لقطة واحدة من كل مجموعات الطلبات بالتوازي — أسرع ظهورًا للبطاقات من انتظار أول دفعة من عدة onSnapshot */
+export const fetchAllServiceRequestsOnce = async (): Promise<ServiceRequest[]> => {
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+  const snapshots = await Promise.all(
+    serviceIds.map((serviceId) => getDocs(query(collection(db, `serviceRequests_${serviceId}`))))
+  );
+  const merged: ServiceRequest[] = [];
+  snapshots.forEach((snap) => {
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      merged.push({
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+      } as ServiceRequest);
+    });
+  });
+  return merged;
+};
+
 export const subscribeToAllServiceRequests = (
   callback: (requests: ServiceRequest[]) => void
 ): (() => void) => {
@@ -1402,7 +1422,7 @@ export const subscribeToAllServiceRequests = (
 
   const scheduleFlush = () => {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(flushCallback, 40);
+    debounceTimer = setTimeout(flushCallback, 16);
   };
 
   serviceIds.forEach(serviceId => {
