@@ -1,0 +1,103 @@
+[33m7274a9a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m new 5 /  4 / 2026
+[33mc132eb9[m new 5 /  4 / 2026
+[33m82aa592[m[33m ([m[1;31morigin/master[m[33m)[m performance
+[33m16df3b5[m Solve Send File to User2
+[33mb55ae01[m Solve Send File to User
+[33mb6d1fc8[m Delete File User After Resent
+[33m5a75ae1[m update180
+[33m75cc9ae[m tart Stop Servuces
+[33m7883205[m finalyYaRab2
+[33m6ce4bd8[m finalyYaRab
+[33md8dcbf2[m finaly10000
+[33m85280ab[m finaly200
+[33mc884511[m finaly100
+[33mbd0807b[m new4
+[33m5ba52aa[m new3
+[33m18087d9[m new2
+[33mf46def9[m new
+[33m1ccc936[m finish
+[33m7b108b7[m updateNewAlfager23695858
+[33ma5c96db[m updateNewAlfager2369
+[33m6b48c55[m updateNewAlfager2
+[33mbe9eb88[m feat: complete premium Login/Register redesign - split screen, wizard, bigger spacious layout
+[33mf83d855[m feat: add Google AdSense verification code to index.html
+[33m2ba4a23[m feat: solid and rotating drop/drag animation clone element added to service cards
+[33mb4d6851[m security: remove plaintext password storage from Firestore student documents
+[33m1e5c918[m feat: highlight required unselected/filled fields with red error borders on submission attempt
+[33m6692536[m fix: resolve React hydrate/insertBefore Error during loading modal conditional rendering
+[33mc2f1f5e[m style: updated file upload labels and types for user consistency
+[33m8481835[m fix: include service 11 in fetch queries and admin mappings
+[33m4149bac[m feat: add service 11 - receive and ship digital transformation
+[33mdeeb72e[m fix: use firebase-admin v13 modular imports
+[33me6f5cbc[m fix: use full service account JSON and show detailed errors
+[33m2da0265[m fix API crash tracing and frontend JSON parsing
+[33m9a612fd[m fix vercel rewrite rules to support api directory
+[33m41ab64c[m update api script
+[33ma3c004c[m updateNew
+[33m61b83f2[m Hardcode all api keys to bypass user config error on vercel
+[33m0e2b87d[m revert debug stop
+[33m2958537[m Add global error catcher to debug Vercel white screen
+[33m2cf8fdc[m Alhamd llahcc23dsccsdchssxsx
+[33m94b5947[m Alhamd llahcc23dsccsdch
+[33mfb54802[m Alhamd llahcc23h
+[33m68302d3[m Alhamd llah23h
+[33me24017f[m Alhamd llah2h
+[33m2dab111[m Alhamd llah
+[33m1797770[m Fix: Stable project structure and Lottie integration
+[33m3eb4c15[m Update: Lottie Icons, Dashboard Performance, and Image optimization
+[33m3df26f4[m final
+[33m50eb47b[m final
+[33ma533487[m Enhance: auto-fill data and fix diploma years Update New For
+[33m036d5d6[m Enhance: auto-fill data and fix diploma years Update New Three
+[33m8efd2ba[m Enhance: auto-fill data and fix diploma years Update New Two
+[33mdaf9289[m Enhance: auto-fill data and fix diploma years Update New
+[33m5d57652[m Enhance: auto-fill data and fix diploma years
+[33me9cad60[m Enhance: auto-fill data and fix diploma years
+[33m59baf7e[m Enhance: auto-fill data and fix diploma years
+[33md3b2ab2[m Enhance: auto-fill data and fix diploma years
+[33m31c3a11[m Fix: ignore dist folder and force rebuild on Vercel
+[33m1a93bb4[m  last
+[33mabe27fa[m Fix Admin Dashboard responsiveness on mobile
+[33m9e2eb5c[m Fix Admin Dashboard responsiveness on mobile
+[33mbd4a203[m Fix Admin Dashboard responsiveness on mobile
+[33mf909c3a[m Fix Admin Dashboard responsiveness on mobile
+[33m3774f9d[m Fix Admin Dashboard responsiveness on mobile
+[33m06701d1[m Fix Admin Dashboard responsiveness on mobile
+[33md476030[m Fix specific Admin Dashboard sections layout on mobile (Certificates, Fees, Assignments)
+[33m93c4e9a[m Complete refactor of Admin Dashboard CSS for full mobile responsiveness
+[33mfe3c60f[m Fix Admin Dashboard responsiveness on mobile
+[33m34ccbbc[m Fix mobile menu positioning (fixed overlay) and styling
+[33m5c3149a[m Fix promo banner responsiveness on mobile
+[33m15dafd3[m Fix homepage slider animation to be smooth fade
+[33m1be326e[m Configure cache busting strategies and build hashing
+[33mfd7dda4[m Use image/* wildcard for better mobile gallery support
+[33m6fd6cb5[m Allow all image formats in Service details and Assignments pages
+[33m5b70716[m Remove MIME type validation for mobile compatibility
+[33m2d871f8[m Force rebuild for cache clear
+[33me452566[m Fix vercel routing with routes config
+[33m2010642[m Fix 404 errors with vercel.json SPA config
+[33m4f290f6[m Support all image formats (JPEG, PNG, WEBP, HEIC, etc)
+[33mb5f6b5e[m Final Deploy to Main
+[33meb12e25[m Final fix for TS build errors
+[33m118085e[m Bypass tsc check for deployment
+[33mc9343ff[m Fix build errors for Vercel
+[33m5cbfcb9[m Deploy to HF
+[33m776563c[m updat
+[33m2483979[m updat
+[33maa05b6c[m updat
+[33m5655a69[m updat 11
+[33m384a8bd[m updat 10
+[33m8d61583[m updat 9
+[33m89899f4[m updat 9
+[33m9a727b1[m updat 9
+[33ma314701[m updat 9
+[33mca4cbd3[m updat 8 7
+[33me409a3e[m update 7
+[33m4418bdf[m update 6
+[33m2c2b958[m update 5
+[33me2ef50f[m update 4
+[33ma52f69c[m update 4
+[33md640dc8[m update 3
+[33m43b2c3e[m update 3
+[33m4b7d948[m update 2
+[33m126396b[m initial clean commit
