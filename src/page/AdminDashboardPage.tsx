@@ -1880,6 +1880,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       showAlert('خطأ', error.message || 'حدث خطأ أثناء تحديث البيانات', 'error');
     } finally {
       setIsSaving(null);
+      setToastState(null);
     }
   };
 

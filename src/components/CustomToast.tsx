@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { CheckCircle, X, Loader2 } from 'lucide-react';
 import '../styles/CustomToast.css';
 
@@ -15,14 +15,25 @@ const CustomToast: React.FC<CustomToastProps> = ({
     type,
     onClose,
     autoClose = true,
-    duration = 3000
+    duration
 }) => {
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
+
     useEffect(() => {
-        if (autoClose) {
-            const timer = setTimeout(onClose, duration);
-            return () => clearTimeout(timer);
-        }
-    }, [autoClose, duration, onClose, type]);
+        if (!autoClose) return;
+        /* تحميل: لا مهلة افتراضية 3 ث — كانت تُغلق رسالة «جاري الحصول على الكود…» بسرعة.
+           إما duration صريح (طويل) من الأب، أو لا إغلاق تلقائي حتى يُمرَّر success/error من الأب */
+        const ms =
+            duration != null && duration >= 0
+                ? duration
+                : type === 'loading'
+                  ? null
+                  : 3000;
+        if (ms === null) return;
+        const timer = setTimeout(() => onCloseRef.current(), ms);
+        return () => clearTimeout(timer);
+    }, [autoClose, duration, type]);
 
     return (
         <div className={`custom-toast custom-toast-${type}`}>
