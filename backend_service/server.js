@@ -286,6 +286,43 @@ async function runSmartPortalLogin(page, data, registrationHadConflict) {
     throw new Error('فشل تسجيل الدخول في بوابة التحول الرقمي بعد كل المحاولات (دخول + استعادة). تحقق من البريد والرقم القومي.');
 }
 
+function isBadFawryCell(s) {
+    const t = (s == null ? '' : String(s)).trim();
+    return !t || t === 'undefined' || t === 'null' || t === '-';
+}
+
+/**
+ * استنتاج كود فوري من صف الجدول أو من كل الخلايا ثم من نص الصفحة (مهم على Linux / Hugging Face).
+ */
+function extractLikelyFawryCodeFromDtResult(result, bodyText = '') {
+    const tryPick = (s) => {
+        const t = (s == null ? '' : String(s)).trim();
+        if (isBadFawryCell(t)) return '';
+        if (/^\d{9,14}$/.test(t)) return t;
+        return '';
+    };
+
+    let x = tryPick(result.fawryCode);
+    if (x) return x;
+
+    if (Array.isArray(result.allData)) {
+        for (const cell of result.allData) {
+            x = tryPick(cell);
+            if (x) return x;
+        }
+    }
+
+    const rawHtml = typeof result.pageContent === 'string' ? result.pageContent.replace(/<[^>]+>/g, ' ') : '';
+    const blob = `${bodyText}\n${result.pageText || ''}\n${rawHtml}`;
+    const nums = blob.match(/\b\d{9,14}\b/g) || [];
+    const uniq = [...new Set(nums.map((n) => n.trim()))];
+    for (const n of uniq) {
+        if (/^01\d{8,10}$/.test(n)) continue;
+        if (n.length >= 9 && n.length <= 14) return n;
+    }
+    return '';
+}
+
 app.post('/api/digital-transformation/register', async (req, res) => {
     console.log('\n🔔 ========== NEW REQUEST RECEIVED ==========');
     console.log('📥 Request Body:', JSON.stringify(req.body, null, 2));
@@ -1277,6 +1314,19 @@ async function runAutomation(data) {
                     error: e.message,
                     note: 'Could not extract data'
                 };
+            }
+        }
+
+        await page.waitForTimeout(1200);
+        const bodyForFawry = await page.locator('body').innerText().catch(() => '');
+        const patchedFawry = extractLikelyFawryCodeFromDtResult(result, bodyForFawry);
+        if (patchedFawry && (isBadFawryCell(result.fawryCode) || String(result.fawryCode).trim() !== patchedFawry)) {
+            console.log('🔧 استكمال كود فوري من احتياط (جدول/نص):', patchedFawry);
+            result.fawryCode = patchedFawry;
+            if (Array.isArray(result.allData) && result.allData.length > 2) {
+                const copy = [...result.allData];
+                copy[2] = patchedFawry;
+                result.allData = copy;
             }
         }
 
