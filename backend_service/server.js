@@ -331,6 +331,19 @@ function extractLikelyFawryCodeFromDtResult(result, bodyText = '') {
     return '';
 }
 
+/** كود فوري نهائي بعد دمج الجدول + الاحتياط النصي */
+function getFinalFawryCodeFromDtResult(result, bodyText = '') {
+    let fawryCode = (result.fawryCode || '').toString().trim();
+    if ((isBadFawryCell(fawryCode) || fawryCode === 'undefined') && Array.isArray(result.allData) && result.allData[2]) {
+        fawryCode = String(result.allData[2]).trim();
+    }
+    if (isBadFawryCell(fawryCode) || fawryCode === 'undefined') {
+        fawryCode = extractLikelyFawryCodeFromDtResult(result, bodyText);
+    }
+    if (isBadFawryCell(fawryCode) || fawryCode === 'undefined') return '';
+    return fawryCode;
+}
+
 app.post('/api/digital-transformation/register', async (req, res) => {
     console.log('\n🔔 ========== NEW REQUEST RECEIVED ==========');
     console.log('📥 Request Body:', JSON.stringify(req.body, null, 2));
@@ -351,39 +364,52 @@ app.post('/api/digital-transformation/register', async (req, res) => {
 
     console.log(`🚀 Starting automation for: ${email}`);
 
-    // Start automation in background (Fire and Forget or Await)
-    // We will await it to return the result immediately to the UI
+    const automationPayload = {
+        email, fullNameArabic, fullNameEnglish, phone, examLanguage, nationalID
+    };
+
+    const MAX_FULL_RETRIES = parseInt(process.env.DT_AUTOMATION_RETRIES || '3', 10) || 3;
+    const RETRY_GAP_MS = parseInt(process.env.DT_RETRY_GAP_MS || '12000', 10) || 12000;
+
     try {
-        const result = await runAutomation({
-            email, fullNameArabic, fullNameEnglish, phone, examLanguage, nationalID
-        });
+        let lastResult = null;
+        let lastFawry = '';
 
-        // If we had Firebase Admin, we would save here:
-        /*
-        await db.collection('digitalTransformationCodes').doc(requestId).set({
-            ...result,
-            studentId,
-            status: 'completed',
-            createdAt: new Date().toISOString()
-        });
-        */
+        for (let attempt = 1; attempt <= MAX_FULL_RETRIES; attempt++) {
+            console.log(`\n♻️ محاولة أتمتة كاملة ${attempt}/${MAX_FULL_RETRIES} (مناسب لسيرفرات بطيئة مثل HF)...\n`);
 
-        console.log('✅ Automation success:', result);
+            try {
+                lastResult = await runAutomation(automationPayload);
+            } catch (runErr) {
+                console.error(`❌ فشلت المحاولة ${attempt}:`, runErr.message);
+                if (attempt === MAX_FULL_RETRIES) {
+                    throw runErr;
+                }
+                await new Promise((r) => setTimeout(r, RETRY_GAP_MS));
+                continue;
+            }
 
-        let fawryCode = (result.fawryCode || '').toString().trim();
-        if (!fawryCode && Array.isArray(result.allData) && result.allData[2]) {
-            fawryCode = String(result.allData[2]).trim();
+            const bodyHint = (lastResult.pageText || '') + (typeof lastResult.pageContent === 'string' ? lastResult.pageContent : '');
+            lastFawry = getFinalFawryCodeFromDtResult(lastResult, bodyHint);
+
+            if (lastFawry) {
+                console.log('✅ Automation success (كود فوري):', lastFawry);
+                return res.json({ success: true, data: { ...lastResult, fawryCode: lastFawry, _attempt: attempt } });
+            }
+
+            console.warn(`⚠️ المحاولة ${attempt}: لم يُستخرج كود فوري — إعادة تشغيل كاملة بعد ${RETRY_GAP_MS / 1000} ث...`);
+            lastResult._failedAttempt = attempt;
+            if (attempt < MAX_FULL_RETRIES) {
+                await new Promise((r) => setTimeout(r, RETRY_GAP_MS));
+            }
         }
-        if (!fawryCode) {
-            console.error('❌ التحول الرقمي: لم يُستخرج كود فوري من الجدول', JSON.stringify(result).slice(0, 800));
-            return res.status(422).json({
-                success: false,
-                error: 'لم يُستخرج رقم فوري (كود الدفع) من بوابة الجامعة. راجع سجلات السيرفر أو أعد المحاولة لاحقًا.',
-                data: result
-            });
-        }
 
-        res.json({ success: true, data: { ...result, fawryCode } });
+        console.error('❌ التحول الرقمي: فشل بعد كل المحاولات', JSON.stringify(lastResult || {}).slice(0, 900));
+        return res.status(422).json({
+            success: false,
+            error: `لم يُستخرج كود فوري بعد ${MAX_FULL_RETRIES} محاولات كاملة. السيرفر البعيد قد يكون بطيء جدًا تجاه موقع الجامعة — جرّب ترقية الـ Space أو تشغيل الأتمتة على VPS أقرب لمصر.`,
+            data: lastResult
+        });
 
     } catch (error) {
         console.error('❌ Automation failed:', error.message);
