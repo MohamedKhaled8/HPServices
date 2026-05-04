@@ -45,6 +45,7 @@ import {
   clearQuickNotification
 } from '../services/firebaseService';
 import { normalizeTrackName } from '../utils/trackUtils';
+import { getAutomationApiBaseUrl, automationApiMissingMessage } from '../utils/automationApi';
 import { ServiceRequest, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
 import {
   LogOut,
@@ -1080,7 +1081,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       await updateServiceRequestStatus(requestId, status, serviceId);
 
       // Trigger Automation Service (Node.js Backend) - Digital Transformation
-      if (serviceId === '7' && status === 'completed') {
+      if (String(serviceId) === '7' && status === 'completed') {
         const request = serviceRequests.find(r => r.id === requestId);
         if (request) {
           let studentData = students[request.studentId];
@@ -1092,78 +1093,131 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               logger.error('Error fetching student data directly', e);
             }
           }
-          if (studentData || request.data) {
-            setToastState({ message: 'جاري الحصول على كود التحول الرقمي...', type: 'loading', duration: 3000 });
+          const rd = request.data || {};
+          const sd = studentData;
+          if (sd || (rd && Object.keys(rd).length > 0)) {
+            // الأتمتة قد تستغرق دقائق على HF — لا تغلق التوست بعد 3 ث (كان يبدو وكأن «مفيش حاجة حصلت»)
+            setToastState({ message: 'جاري الحصول على كود التحول الرقمي… قد يستغرق دقيقة أو أكثر.', type: 'loading', duration: 600000 });
 
             // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
             const payload = {
               requestId: requestId,
               studentId: request.studentId,
-              email: request.data.email || studentData.email || '',
-              fullNameArabic: request.data.full_name_arabic || request.data.full_name || studentData.fullNameArabic || '',
-              fullNameEnglish: request.data.full_name_english || studentData.vehicleNameEnglish || '',
-              nationalID: request.data.national_id || studentData.nationalID || '',
-              phone: request.data.whatsapp_number || studentData.whatsappNumber || '',
-              examLanguage: request.data.exam_language || request.data.selectedExamLanguage || 'عربي'
+              email: rd.email || sd?.email || '',
+              fullNameArabic: rd.full_name_arabic || rd.full_name || sd?.fullNameArabic || '',
+              fullNameEnglish: rd.full_name_english || sd?.vehicleNameEnglish || '',
+              nationalID: rd.national_id || sd?.nationalID || '',
+              phone: rd.whatsapp_number || sd?.whatsappNumber || '',
+              examLanguage: rd.exam_language || rd.selectedExamLanguage || 'عربي'
             };
 
-            const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
+            const API_BASE_URL = getAutomationApiBaseUrl();
+            if (!API_BASE_URL) {
+              setToastState({ message: automationApiMissingMessage(), type: 'error', duration: 12000 });
+              return;
+            }
             const apiUrl = `${API_BASE_URL}/api/digital-transformation/register`;
+            const ac = new AbortController();
+            const abortTimer = setTimeout(() => ac.abort(), 480000);
 
             fetch(apiUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
+              body: JSON.stringify(payload),
+              signal: ac.signal
             })
               .then(async (res) => {
-                const data = await res.json();
-                if (data.success) {
-                  // إخفاء رسالة التحميل بعد 2 ثانية
-                  setToastState(null);
-
-                  setTimeout(async () => {
-                    try {
-                      const codeData = {
-                        studentId: request.studentId || '',
-                        requestId: requestId || '',
-                        email: payload.email || '',
-                        fullNameArabic: payload.fullNameArabic || '',
-                        fullNameEnglish: payload.fullNameEnglish || '',
-                        phone: payload.phone || '',
-                        examLanguage: payload.examLanguage || '',
-                        serialNumber: data.data.serialNumber || '',
-                        name: data.data.name || '',
-                        fawryCode: data.data.fawryCode || '',
-                        mobile: data.data.mobile || '',
-                        whatsapp: data.data.whatsapp || '',
-                        type: data.data.type || '',
-                        value: data.data.value || '',
-                        status: data.data.status || '',
-                        createdAt: new Date().toISOString()
-                      };
-
-                      await saveDigitalTransformationCode(codeData);
-                      setToastState({ message: `تم الانتهاء مبروك رقم الطلب هو ${data.data.fawryCode}`, type: 'success', duration: 5000 });
-                    } catch (saveError) {
-                      logger.error('Save Error:', saveError);
-                      setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ في قاعدة البيانات', type: 'error', duration: 5000 });
-                    }
-                  }, 500); // تأخير بسيط لظهور رسالة النجاح بشكل منفصل
+                clearTimeout(abortTimer);
+                const ct = res.headers.get('content-type') || '';
+                let data: { success?: boolean; error?: string; data?: Record<string, unknown> } = {};
+                if (ct.includes('application/json')) {
+                  try {
+                    data = await res.json();
+                  } catch (e) {
+                    logger.error('DT: JSON parse error', e);
+                    setToastState({ message: 'رد غير صالح من خادم الأتمتة (ليس JSON). تحقق من VITE_API_URL والـ CORS.', type: 'error', duration: 8000 });
+                    return;
+                  }
                 } else {
-                  logger.error('Automation Error:', data.error);
-                  setToastState({ message: `فشلت الأتمتة: ${data.error}`, type: 'error' });
+                  const text = await res.text();
+                  logger.error('DT: non-JSON response', res.status, text.slice(0, 300));
+                  setToastState({
+                    message: `السيرفر رد بملف HTML أو نص (HTTP ${res.status}) وليس JSON — غالبًا VITE_API_URL يشير لنطاق الواجهة وليس خادم Node. راجع الإعدادات.`,
+                    type: 'error',
+                    duration: 12000
+                  });
+                  return;
                 }
+
+                if (!res.ok) {
+                  const msg = typeof data.error === 'string' && data.error ? data.error : `خطأ HTTP ${res.status} من خادم الأتمتة`;
+                  logger.error('Automation HTTP error:', res.status, data);
+                  setToastState({ message: `فشلت الأتمتة: ${msg}`, type: 'error', duration: 8000 });
+                  return;
+                }
+
+                if (!data.success) {
+                  logger.error('Automation Error:', data.error);
+                  setToastState({ message: `فشلت الأتمتة: ${data.error || 'بدون تفاصيل'}`, type: 'error' });
+                  return;
+                }
+
+                const row = data.data && typeof data.data === 'object' ? data.data : {};
+                const fawryCode = String(row.fawryCode ?? '').trim();
+                if (!fawryCode) {
+                  setToastState({ message: 'رد السيرفر لا يحتوي على كود فوري. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
+                  return;
+                }
+
+                setToastState(null);
+
+                setTimeout(async () => {
+                  try {
+                    const codeData = {
+                      studentId: request.studentId || '',
+                      requestId: requestId || '',
+                      email: payload.email || '',
+                      fullNameArabic: payload.fullNameArabic || '',
+                      fullNameEnglish: payload.fullNameEnglish || '',
+                      phone: payload.phone || '',
+                      examLanguage: payload.examLanguage || '',
+                      serialNumber: String(row.serialNumber ?? '') || '',
+                      name: String(row.name ?? '') || '',
+                      fawryCode,
+                      mobile: String(row.mobile ?? '') || '',
+                      whatsapp: String(row.whatsapp ?? '') || '',
+                      type: String(row.type ?? '') || '',
+                      value: String(row.value ?? '') || '',
+                      status: String(row.status ?? '') || '',
+                      createdAt: new Date().toISOString()
+                    };
+
+                    await saveDigitalTransformationCode(codeData);
+                    setToastState({ message: `تم الانتهاء. كود فوري: ${fawryCode}`, type: 'success', duration: 5000 });
+                  } catch (saveError) {
+                    logger.error('Save Error:', saveError);
+                    setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ في قاعدة البيانات', type: 'error', duration: 5000 });
+                  }
+                }, 500);
               })
               .catch(err => {
+                clearTimeout(abortTimer);
                 logger.error('Connection Error:', err);
-                setToastState({ message: 'لا يمكن الاتصال بخدمة الأتمتة', type: 'error' });
+                const aborted = err?.name === 'AbortError';
+                setToastState({
+                  message: aborted
+                    ? 'انتهت مهلة انتظار الأتمتة (8 دقائق). جرّب مرة أخرى؛ على Hugging Face قد يحتاج الـ Space وقتًا بعد السكون.'
+                    : 'لا يمكن الاتصال بخدمة الأتمتة (شبكة، CORS، أو الرابط). افتح F12 → Network وتأكد من طلب hf.space.',
+                  type: 'error',
+                  duration: 12000
+                });
               });
           }
         }
       }
 
       // Trigger Automation Service for Electronic Payment Codes (service 4 - دفع المصروفات الدراسية)
-      if (serviceId === '4' && status === 'completed') {
+      if (String(serviceId) === '4' && status === 'completed') {
         const request = serviceRequests.find(r => r.id === requestId);
         if (request) {
           let studentData = students[request.studentId];
@@ -1175,66 +1229,117 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               logger.error('Error fetching student data directly', e);
             }
           }
-          if (studentData || request.data) {
-            setToastState({ message: 'جاري الحصول على رقم الطلب...', type: 'loading', duration: 3000 });
+          const rdEp = request.data || {};
+          const sdEp = studentData;
+          if (sdEp || (rdEp && Object.keys(rdEp).length > 0)) {
+            setToastState({ message: 'جاري الحصول على رقم الطلب… قد يستغرق دقيقة أو أكثر.', type: 'loading', duration: 600000 });
 
             // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
             const payload = {
               requestId: requestId,
               studentId: request.studentId,
-              email: request.data.email || studentData.email || '',
-              fullNameArabic: request.data.full_name_arabic || request.data.full_name || studentData.fullNameArabic || '',
-              nationalID: request.data.national_id || studentData.nationalID || '',
-              phone: request.data.whatsapp_number || studentData.whatsappNumber || ''
+              email: rdEp.email || sdEp?.email || '',
+              fullNameArabic: rdEp.full_name_arabic || rdEp.full_name || sdEp?.fullNameArabic || '',
+              nationalID: rdEp.national_id || sdEp?.nationalID || '',
+              phone: rdEp.whatsapp_number || sdEp?.whatsappNumber || ''
             };
 
-            const API_BASE_URL = import.meta.env.VITE_API_URL || window.location.origin;
-            const apiUrl = `${API_BASE_URL}/api/electronic-payment/create`;
+            const API_BASE_URL_EP = getAutomationApiBaseUrl();
+            if (!API_BASE_URL_EP) {
+              setToastState({ message: automationApiMissingMessage(), type: 'error', duration: 12000 });
+              return;
+            }
+            const apiUrl = `${API_BASE_URL_EP}/api/electronic-payment/create`;
+            const acEp = new AbortController();
+            const abortTimerEp = setTimeout(() => acEp.abort(), 480000);
 
             fetch(apiUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
+              body: JSON.stringify(payload),
+              signal: acEp.signal
             })
               .then(async (res) => {
-                const data = await res.json();
-                if (data.success) {
-                  // إخفاء رسالة التحميل بعد 2 ثانية
-                  setToastState(null);
-
-                  setTimeout(async () => {
-                    const ep = data.data || {};
-                    try {
-                      const codeData = {
-                        studentId: ep.studentId || request.studentId || '',
-                        requestId: ep.requestId || requestId || '',
-                        name: ep.name || '',
-                        email: ep.email || '',
-                        nationalID: ep.nationalID || '',
-                        mobile: ep.mobile || '',
-                        entity: ep.entity || 'كلية التربية',
-                        serviceType: ep.serviceType || 'دبلوم (2025 - 2026)',
-                        orderNumber: ep.orderNumber || '',
-                        status: ep.status || 'NEW',
-                        rawText: ep.rawText || '',
-                        createdAt: new Date().toISOString()
-                      };
-
-                      await saveElectronicPaymentCode(codeData);
-                      setToastState({ message: `تم الانتهاء مبروك رقم الطلب هو ${ep.orderNumber}`, type: 'success', duration: 5000 });
-                    } catch (saveError) {
-                      logger.error('[EP] Save Error:', saveError);
-                      setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ', type: 'error', duration: 5000 });
-                    }
-                  }, 500); // تأخير بسيط لظهور رسالة النجاح بشكل منفصل
+                clearTimeout(abortTimerEp);
+                const ct = res.headers.get('content-type') || '';
+                let data: { success?: boolean; error?: string; data?: Record<string, unknown> } = {};
+                if (ct.includes('application/json')) {
+                  try {
+                    data = await res.json();
+                  } catch (e) {
+                    logger.error('[EP] JSON parse error', e);
+                    setToastState({ message: 'رد غير صالح من خادم الأتمتة (ليس JSON).', type: 'error', duration: 8000 });
+                    return;
+                  }
                 } else {
-                  logger.error('[EP] Automation Error:', data.error);
-                  setToastState({ message: `فشلت الأتمتة: ${data.error}`, type: 'error' });
+                  const text = await res.text();
+                  logger.error('[EP] non-JSON', res.status, text.slice(0, 300));
+                  setToastState({
+                    message: `رد غير JSON (HTTP ${res.status}). تحقق من VITE_API_URL.`,
+                    type: 'error',
+                    duration: 12000
+                  });
+                  return;
                 }
+
+                if (!res.ok) {
+                  const msg = typeof data.error === 'string' && data.error ? data.error : `خطأ HTTP ${res.status}`;
+                  logger.error('[EP] HTTP error', res.status, data);
+                  setToastState({ message: `فشلت الأتمتة: ${msg}`, type: 'error', duration: 8000 });
+                  return;
+                }
+
+                if (!data.success) {
+                  logger.error('[EP] Automation Error:', data.error);
+                  setToastState({ message: `فشلت الأتمتة: ${data.error || 'بدون تفاصيل'}`, type: 'error' });
+                  return;
+                }
+
+                const ep = data.data && typeof data.data === 'object' ? data.data : {};
+                const orderNumber = String(ep.orderNumber ?? '').trim();
+                if (!orderNumber) {
+                  setToastState({ message: 'رد السيرفر لا يحتوي على رقم طلب. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
+                  return;
+                }
+
+                setToastState(null);
+
+                setTimeout(async () => {
+                  try {
+                    const codeData = {
+                      studentId: String(ep.studentId || request.studentId || ''),
+                      requestId: String(ep.requestId || requestId || ''),
+                      name: String(ep.name || ''),
+                      email: String(ep.email || ''),
+                      nationalID: String(ep.nationalID || ''),
+                      mobile: String(ep.mobile || ''),
+                      entity: String(ep.entity || 'كلية التربية'),
+                      serviceType: String(ep.serviceType || 'دبلوم (2025 - 2026)'),
+                      orderNumber,
+                      status: String(ep.status || 'NEW'),
+                      rawText: String(ep.rawText || ''),
+                      createdAt: new Date().toISOString()
+                    };
+
+                    await saveElectronicPaymentCode(codeData);
+                    setToastState({ message: `تم الانتهاء. رقم الطلب: ${orderNumber}`, type: 'success', duration: 5000 });
+                  } catch (saveError) {
+                    logger.error('[EP] Save Error:', saveError);
+                    setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ', type: 'error', duration: 5000 });
+                  }
+                }, 500);
               })
               .catch(err => {
+                clearTimeout(abortTimerEp);
                 logger.error('[EP] Connection Error:', err);
-                setToastState({ message: 'لا يمكن الاتصال بخدمة الأتمتة', type: 'error' });
+                const aborted = err?.name === 'AbortError';
+                setToastState({
+                  message: aborted
+                    ? 'انتهت مهلة انتظار أتمتة الدفع (8 دقائق). جرّب مرة أخرى.'
+                    : 'لا يمكن الاتصال بخدمة الأتمتة. افتح F12 → Network.',
+                  type: 'error',
+                  duration: 12000
+                });
               });
           }
         }

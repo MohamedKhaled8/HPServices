@@ -324,7 +324,21 @@ app.post('/api/digital-transformation/register', async (req, res) => {
         */
 
         console.log('✅ Automation success:', result);
-        res.json({ success: true, data: result });
+
+        let fawryCode = (result.fawryCode || '').toString().trim();
+        if (!fawryCode && Array.isArray(result.allData) && result.allData[2]) {
+            fawryCode = String(result.allData[2]).trim();
+        }
+        if (!fawryCode) {
+            console.error('❌ التحول الرقمي: لم يُستخرج كود فوري من الجدول', JSON.stringify(result).slice(0, 800));
+            return res.status(422).json({
+                success: false,
+                error: 'لم يُستخرج رقم فوري (كود الدفع) من بوابة الجامعة. راجع سجلات السيرفر أو أعد المحاولة لاحقًا.',
+                data: result
+            });
+        }
+
+        res.json({ success: true, data: { ...result, fawryCode } });
 
     } catch (error) {
         console.error('❌ Automation failed:', error.message);
@@ -370,6 +384,20 @@ app.post('/api/electronic-payment/create', async (req, res) => {
 
         console.log('✅ Electronic payment automation success:', result);
 
+        const orderNumber = (result.orderNumber || '').toString().trim();
+        if (!orderNumber) {
+            console.error('[EP] ❌ لم يُستخرج رقم الطلب من صفحة فوري');
+            return res.status(422).json({
+                success: false,
+                error: 'لم يُستخرج رقم الطلب من بوابة الدفع. راجع سجلات السيرفر (Playwright على Linux يحتاج: npx playwright install --with-deps) أو أعد المحاولة.',
+                data: {
+                    studentId: studentId || '',
+                    requestId: requestId || '',
+                    rawText: (result.rawText || '').slice(0, 2500)
+                }
+            });
+        }
+
         // نرجع البيانات للـ Frontend ليحفظها في Firestore
         res.json({
             success: true,
@@ -380,7 +408,7 @@ app.post('/api/electronic-payment/create', async (req, res) => {
                 email: email,
                 nationalID: nationalID,
                 mobile: phone,
-                orderNumber: result.orderNumber || '',
+                orderNumber,
                 serviceType: result.serviceType || 'دبلوم (2025 - 2026)',
                 entity: result.entity || 'كلية التربية',
                 status: result.status || 'NEW',
