@@ -32,6 +32,10 @@ const DT_SERVER_META_BASE = { dtApi: '2.1' };
 /** يُسجَّل عند التشغيل — للتأكد أن HF يشغّل آخر ملف server.js وليس صورة Docker قديمة */
 const DT_BUILD_TAG = 'forget-password-after-login-verify-2026-05';
 
+console.log('━━━━━━━━ SERVER_JS_ACTIVE ━━━━━━━━');
+console.log('buildTag=', DT_BUILD_TAG, '| إن لم يظهر هذا السطر في سجل HF فأنت لا تشغّل هذا الملف.');
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
 /** خطأ شائع يمنع الدخول والجلسة: gmail.coms بدل gmail.com */
 function fixCommonEmailTypos(email) {
     const e = (email || '').trim();
