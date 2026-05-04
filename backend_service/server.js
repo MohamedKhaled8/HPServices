@@ -26,6 +26,9 @@ const PORTAL_REGISTER_URL = 'https://eksc.usc.edu.eg/register';
 const PORTAL_FORGET_PASSWORD_URL = 'https://eksc.usc.edu.eg/forget-password';
 const NEW_PORTAL_ACCOUNT_PASSWORD = 'StudentPass123!';
 
+/** يُرسل مع كل رد من مسار التحول الرقمي حتى يعرف العميل إصدار السيرفر حتى عند الفشل */
+const DT_SERVER_META_BASE = { dtApi: '2.1' };
+
 // ============================================
 // Helper: normalize Arabic text for fuzzy match
 // ============================================
@@ -397,7 +400,7 @@ app.post('/api/digital-transformation/register', async (req, res) => {
                 return res.json({
                     success: true,
                     data: { ...lastResult, fawryCode: String(lastFawry) },
-                    serverMeta: { dtApi: '2.1', hasFawry: true, attempt: attempt }
+                    serverMeta: { ...DT_SERVER_META_BASE, hasFawry: true, attempt }
                 });
             }
 
@@ -412,7 +415,8 @@ app.post('/api/digital-transformation/register', async (req, res) => {
         return res.status(422).json({
             success: false,
             error: `لم يُستخرج كود فوري بعد ${MAX_FULL_RETRIES} محاولات كاملة. السيرفر البعيد قد يكون بطيء جدًا تجاه موقع الجامعة — جرّب ترقية الـ Space أو تشغيل الأتمتة على VPS أقرب لمصر.`,
-            data: lastResult
+            data: lastResult,
+            serverMeta: DT_SERVER_META_BASE
         });
 
     } catch (error) {
@@ -421,7 +425,7 @@ app.post('/api/digital-transformation/register', async (req, res) => {
             // Attempt to take screenshot if possible (would require passing browser context)
         } catch (e) { }
 
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, error: error.message, serverMeta: DT_SERVER_META_BASE });
     }
 });
 

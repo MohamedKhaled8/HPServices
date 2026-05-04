@@ -1182,11 +1182,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 }
                 if (!fawryCode || fawryCode === 'undefined' || fawryCode === 'null') {
                   const meta = (data as { serverMeta?: { dtApi?: string } }).serverMeta;
-                  const hint = meta?.dtApi
-                    ? ` (السيرفر يقرأ dtApi=${meta.dtApi} — إن استمر الخطأ بعد النشر، المشكلة استخراج من موقع الجامعة وليس الواجهة.)`
-                    : ' غالبًا Hugging Face يشغّل نسخة قديمة من server.js (لا يوجد serverMeta.dtApi في الرد) — أعد بناء الـ Space من آخر كود.';
                   logger.error('DT: success لكن بدون fawryCode', { rowKeys: Object.keys(row), serverMeta: meta });
-                  setToastState({ message: `رد السيرفر لا يحتوي على كود فوري صالح.${hint}`, type: 'error', duration: 14000 });
+                  const msg = meta?.dtApi
+                    ? 'لم يُستخرج كود فوري من صفحة الجامعة رغم اتصال السيرفر (قد يكون الموقع بطيئًا أو البيانات مختلفة). أعد المحاولة بعد قليل أو راجع البيانات.'
+                    : 'لم يُستخرج كود فوري. الحل: (1) في إعدادات النشر — تأكد أن عنوان خادم الأتمتة صحيح (متغير VITE_API_URL يشير لرابط Hugging Face وليس صفحة الواجهة فقط). (2) على Hugging Face — ارفع آخر ملفات المشروع أو اضغط Restart للـ Space بعد التحديث.';
+                  setToastState({ message: msg, type: 'error', duration: 16000 });
                   return;
                 }
 
@@ -1215,7 +1215,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                     await saveDigitalTransformationCode(codeData);
                     setToastState({
-                      message: `تم الحفظ — كود فوري: ${fawryCode || '—'} [واجهة v2]`,
+                      message: `تم الحفظ — كود فوري: ${fawryCode || '—'}`,
                       type: 'success',
                       duration: 7000
                     });
@@ -1354,7 +1354,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                     await saveElectronicPaymentCode(codeData);
                     setToastState({
-                      message: `تم الحفظ — رقم الطلب: ${orderNumber || '—'} [واجهة v2]`,
+                      message: `تم الحفظ — رقم الطلب: ${orderNumber || '—'}`,
                       type: 'success',
                       duration: 7000
                     });
