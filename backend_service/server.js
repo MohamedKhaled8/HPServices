@@ -314,6 +314,14 @@ function extractLikelyFawryCodeFromDtResult(result, bodyText = '') {
 
     const rawHtml = typeof result.pageContent === 'string' ? result.pageContent.replace(/<[^>]+>/g, ' ') : '';
     const blob = `${bodyText}\n${result.pageText || ''}\n${rawHtml}`;
+    const labelMatch =
+        blob.match(/رقم\s*فوري\s*[:\-]?\s*(\d{9,14})/i) ||
+        blob.match(/فوري\s*[:\-]?\s*(\d{9,14})/i) ||
+        blob.match(/Fawry\s*[:\-]?\s*(\d{9,14})/i);
+    if (labelMatch && labelMatch[1]) {
+        const n = labelMatch[1].trim();
+        if (!/^01\d{8,10}$/.test(n)) return n;
+    }
     const nums = blob.match(/\b\d{9,14}\b/g) || [];
     const uniq = [...new Set(nums.map((n) => n.trim()))];
     for (const n of uniq) {
@@ -1213,15 +1221,16 @@ async function runAutomation(data) {
 
         console.log('⏳ انتظار التنقل أو ظهور الجدول بعد الحفظ...');
         await Promise.race([
-            page.waitForURL('**/fdtc/**', { timeout: 12000 }).catch(() => { }),
-            page.waitForSelector('table tbody tr', { timeout: 12000 }).catch(() => { }),
-            page.waitForTimeout(4500)
+            page.waitForURL('**/fdtc/**', { timeout: 20000 }).catch(() => { }),
+            page.waitForSelector('table tbody tr', { timeout: 20000 }).catch(() => { }),
+            page.waitForTimeout(8000)
         ]);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(2000);
         await Promise.race([
-            page.waitForSelector('table tbody tr', { state: 'visible', timeout: 8000 }).catch(() => { }),
-            page.waitForTimeout(1500)
+            page.waitForSelector('table tbody tr', { state: 'visible', timeout: 12000 }).catch(() => { }),
+            page.waitForTimeout(3000)
         ]);
+        await page.waitForTimeout(2500);
 
         // 6. Extract Data from Table (أكواد التحول الرقمي)
         console.log('🔍 Step 12: Extracting data from digital transformation codes page...');
@@ -1242,22 +1251,50 @@ async function runAutomation(data) {
                 console.log(`Found ${rows.length} data rows in table (excluding header)`);
 
                 if (rows.length > 0) {
-                    // Get the last row (most recent entry)
-                    const lastRow = rows[rows.length - 1];
-                    const cells = await lastRow.locator('td').allInnerTexts(); // Use 'td' not 'td, th'
+                    const nidNorm = (data.nationalID || '').replace(/\D/g, '');
+                    const emailNorm = (data.email || '').toString().toLowerCase().trim();
+                    const emailLocal = emailNorm.split('@')[0] || '';
 
-                    console.log(`Extracted ${cells.length} cells from last row`);
+                    const isHeaderRowCells = (cells) => {
+                        const f = (cells[0] || '').trim();
+                        return f === 'م' || f === 'الإسم' || f === 'Name' || f === '#' || f === 'No';
+                    };
+
+                    let bestCells = null;
+                    let bestScore = -1;
+                    for (let ri = rows.length - 1; ri >= 0; ri--) {
+                        const rowCells = await rows[ri].locator('td').allInnerTexts();
+                        if (!rowCells || rowCells.length < 3) continue;
+                        if (isHeaderRowCells(rowCells)) continue;
+                        const blob = rowCells.join('\t').toLowerCase();
+                        let score = ri;
+                        if (nidNorm && blob.includes(nidNorm)) score += 5000;
+                        if (emailNorm && blob.includes(emailNorm)) score += 4000;
+                        if (emailLocal.length > 3 && blob.includes(emailLocal)) score += 2000;
+                        const c2 = (rowCells[2] || '').trim();
+                        if (/^\d{9,14}$/.test(c2) && !/^01\d{8,10}$/.test(c2)) score += 500;
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestCells = rowCells;
+                        }
+                    }
+
+                    let cells = bestCells;
+                    if (!cells) {
+                        const lastRow = rows[rows.length - 1];
+                        cells = await lastRow.locator('td').allInnerTexts();
+                    }
+
+                    console.log(`Extracted ${cells.length} cells (row score=${bestScore})`);
                     console.log('Cell values:', cells);
 
-                    // Verify this is not a header row
                     const firstCell = cells[0]?.trim() || '';
                     if (firstCell === 'م' || firstCell === 'الإسم' || firstCell === 'Name') {
-                        console.log('⚠️ WARNING: Got header row instead of data! Trying second-to-last row...');
+                        console.log('⚠️ WARNING: best row looks like header, trying second-to-last...');
                         if (rows.length > 1) {
                             const secondLastRow = rows[rows.length - 2];
                             const newCells = await secondLastRow.locator('td').allInnerTexts();
                             console.log('Second-to-last row cells:', newCells);
-
                             result = {
                                 serialNumber: newCells[0]?.trim() || '',
                                 name: newCells[1]?.trim() || '',
@@ -1273,16 +1310,16 @@ async function runAutomation(data) {
                         }
                     } else {
                         result = {
-                            serialNumber: cells[0]?.trim() || '',      // م
-                            name: cells[1]?.trim() || '',               // الإسم
-                            fawryCode: cells[2]?.trim() || '',          // رقم فوري
-                            mobile: cells[3]?.trim() || '',             // موبايل
-                            whatsapp: cells[4]?.trim() || '',           // Whatsapp
-                            type: cells[5]?.trim() || '',               // النوع
-                            value: cells[6]?.trim() || '',              // القيمة
-                            status: cells[7]?.trim() || '',             // الحالة
-                            saveDate: cells[8]?.trim() || '',           // تاريخ الحفظ
-                            allData: cells // Include all data for debugging
+                            serialNumber: cells[0]?.trim() || '',
+                            name: cells[1]?.trim() || '',
+                            fawryCode: cells[2]?.trim() || '',
+                            mobile: cells[3]?.trim() || '',
+                            whatsapp: cells[4]?.trim() || '',
+                            type: cells[5]?.trim() || '',
+                            value: cells[6]?.trim() || '',
+                            status: cells[7]?.trim() || '',
+                            saveDate: cells[8]?.trim() || '',
+                            allData: cells
                         };
                     }
                 } else {
