@@ -2,23 +2,134 @@ import React, { useCallback, useEffect, useMemo, useState, useTransition, useDef
 import { StudentData } from '../types';
 import { subscribeToAllStudents, updateStudentData, deleteStudentData } from '../services/firebaseService';
 import { ArrowRight, Eye, EyeOff, RefreshCw, Search, Trash2 } from 'lucide-react';
-import { AutoSizer } from 'react-virtualized-auto-sizer';
-import { List } from 'react-window';
+import { AutoSizer as _AutoSizer } from 'react-virtualized-auto-sizer';
+import { List as _List } from 'react-window';
+
+const AutoSizer = _AutoSizer as any;
+const List = _List as any;
 import '../styles/AllUsersPage.css';
 
 interface AllUsersPageProps {
   onBack: () => void;
 }
 
+interface RowItemData {
+  items: StudentData[];
+  onEdit: (student: StudentData) => void;
+  onDelete: (id: string) => void;
+  formatDate: (dateString?: string) => string;
+  isUpdating: boolean;
+}
+
+const RowItem = React.memo(({ index, style, data }: { index: number; style: React.CSSProperties; data: RowItemData }) => {
+  const { items, onEdit, onDelete, formatDate, isUpdating } = data;
+  const student = items[index];
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const id = student.id || '';
+
+  const togglePassword = useCallback(() => setIsPasswordVisible(p => !p), []);
+
+  return (
+    <div style={style}>
+      <div className="user-card" style={{ margin: '0 0 16px 0' }}>
+        <div className="user-card-header">
+          <div className="user-avatar">
+            {student.fullNameArabic?.charAt(0) || 'U'}
+          </div>
+          <div className="user-name">
+            <h3>{student.fullNameArabic || 'بدون اسم'}</h3>
+            <p className="user-email">{student.email}</p>
+          </div>
+        </div>
+
+        <div className="user-details">
+          <div className="detail-row id-row">
+            <span className="detail-label">ID:</span>
+            <span className="detail-value">{student.id}</span>
+          </div>
+
+          <div className="detail-row">
+            <span className="detail-label">Vehicle Name:</span>
+            <span className="detail-value">{student.vehicleNameEnglish || 'غير متاح'}</span>
+          </div>
+
+          <div className="detail-row">
+            <span className="detail-label">رقم الواتس:</span>
+            <span className="detail-value">{student.whatsappNumber || 'غير متاح'}</span>
+          </div>
+
+          <div className="detail-row">
+            <span className="detail-label">رقم الهوية:</span>
+            <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
+          </div>
+
+          <div className="detail-row">
+            <span className="detail-label">التخصص:</span>
+            <span className="detail-value">{student.track || 'غير متاح'}</span>
+          </div>
+
+          <div className="detail-row">
+            <span className="detail-label">المقرر:</span>
+            <span className="detail-value">{student.course || 'غير متاح'}</span>
+          </div>
+
+          <div className="detail-row password-row">
+            <div style={{ width: '100%' }}>
+              <div className="password-display" style={{ justifyContent: 'space-between' }}>
+                <span className="detail-label">كلمة المرور:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="detail-value password-value">
+                    {isPasswordVisible ? (student.password || 'غير متاح') : '••••••••'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={togglePassword}
+                    className="toggle-password-btn"
+                    title={isPasswordVisible ? 'إخفاء' : 'إظهار'}
+                  >
+                    {isPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                  <button
+                    onClick={() => onEdit(student)}
+                    className="edit-password-btn"
+                  >
+                    تعديل
+                  </button>
+                  <button
+                    onClick={() => onDelete(id)}
+                    className="delete-btn"
+                    disabled={isUpdating}
+                    style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', marginLeft: '5px' }}
+                    title="حذف المشترك"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="detail-row">
+            <span className="detail-label">تاريخ التسجيل:</span>
+            <span className="detail-value">{formatDate(student.createdAt)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+RowItem.displayName = 'RowItem';
+
+const itemKey = (index: number, data: RowItemData) => data.items[index]?.id || index;
+
 const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
   const [students, setStudents] = useState<StudentData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showPasswords, setShowPasswords] = useState<{ [key: string]: boolean }>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [editingStudent, setEditingStudent] = useState<StudentData | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const deferredSearch = useDeferredValue(searchTerm);
 
   useEffect(() => {
@@ -32,13 +143,6 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
     });
 
     return () => unsubscribe();
-  }, []);
-
-  const togglePasswordVisibility = useCallback((studentId: string) => {
-    setShowPasswords(prev => ({
-      ...prev,
-      [studentId]: !prev[studentId]
-    }));
   }, []);
 
   const handleEditPassword = useCallback((student: StudentData) => {
@@ -106,101 +210,13 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
     }
   }, []);
 
-  const Row = useCallback(({ index, style, data }: { index: number; style: React.CSSProperties; data: any }) => {
-    const { items } = data as { items: StudentData[] };
-    const student = items[index];
-    const id = student.id || '';
-    const isPasswordVisible = !!showPasswords[id];
-
-    return (
-      <div style={style}>
-        <div className="user-card" style={{ margin: '0 0 16px 0' }}>
-          <div className="user-card-header">
-            <div className="user-avatar">
-              {student.fullNameArabic?.charAt(0) || 'U'}
-            </div>
-            <div className="user-name">
-              <h3>{student.fullNameArabic || 'بدون اسم'}</h3>
-              <p className="user-email">{student.email}</p>
-            </div>
-          </div>
-
-          <div className="user-details">
-            <div className="detail-row id-row">
-              <span className="detail-label">ID:</span>
-              <span className="detail-value">{student.id}</span>
-            </div>
-
-            <div className="detail-row">
-              <span className="detail-label">Vehicle Name:</span>
-              <span className="detail-value">{student.vehicleNameEnglish || 'غير متاح'}</span>
-            </div>
-
-            <div className="detail-row">
-              <span className="detail-label">رقم الواتس:</span>
-              <span className="detail-value">{student.whatsappNumber || 'غير متاح'}</span>
-            </div>
-
-            <div className="detail-row">
-              <span className="detail-label">رقم الهوية:</span>
-              <span className="detail-value">{student.nationalID || 'غير متاح'}</span>
-            </div>
-
-            <div className="detail-row">
-              <span className="detail-label">التخصص:</span>
-              <span className="detail-value">{student.track || 'غير متاح'}</span>
-            </div>
-
-            <div className="detail-row">
-              <span className="detail-label">المقرر:</span>
-              <span className="detail-value">{student.course || 'غير متاح'}</span>
-            </div>
-
-            <div className="detail-row password-row">
-              <div style={{ width: '100%' }}>
-                <div className="password-display" style={{ justifyContent: 'space-between' }}>
-                  <span className="detail-label">كلمة المرور:</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="detail-value password-value">
-                      {isPasswordVisible ? (student.password || 'غير متاح') : '••••••••'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => togglePasswordVisibility(id)}
-                      className="toggle-password-btn"
-                      title={isPasswordVisible ? 'إخفاء' : 'إظهار'}
-                    >
-                      {isPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                    <button
-                      onClick={() => handleEditPassword(student)}
-                      className="edit-password-btn"
-                    >
-                      تعديل
-                    </button>
-                    <button
-                      onClick={() => handleDeleteSubscriber(id)}
-                      className="delete-btn"
-                      disabled={isUpdating}
-                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', marginLeft: '5px' }}
-                      title="حذف المشترك"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="detail-row">
-              <span className="detail-label">تاريخ التسجيل:</span>
-              <span className="detail-value">{formatDate(student.createdAt)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }, [formatDate, handleDeleteSubscriber, handleEditPassword, isUpdating, showPasswords, togglePasswordVisibility]);
+  const itemData = useMemo<RowItemData>(() => ({
+    items: filteredStudents,
+    onEdit: handleEditPassword,
+    onDelete: handleDeleteSubscriber,
+    formatDate,
+    isUpdating
+  }), [filteredStudents, handleEditPassword, handleDeleteSubscriber, formatDate, isUpdating]);
 
   if (isLoading) {
     return (
@@ -250,17 +266,17 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
         ) : (
           <div style={{ height: 'calc(100vh - 220px)' }}>
             <AutoSizer>
-              {({ height, width }) => (
+              {({ height, width }: { height: number; width: number }) => (
                 <List
                   height={height}
                   width={width}
                   itemCount={filteredStudents.length}
-                  // Fixed height keeps virtualization fast; editing is done via modal now
                   itemSize={360}
-                  itemData={{ items: filteredStudents }}
+                  itemData={itemData}
+                  itemKey={itemKey}
                   overscanCount={6}
                 >
-                  {Row}
+                  {RowItem as any}
                 </List>
               )}
             </AutoSizer>
@@ -312,7 +328,7 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
       )}
     </div>
   );
-};
+}
 
 export default AllUsersPage;
 
