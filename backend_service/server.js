@@ -30,7 +30,7 @@ const NEW_PORTAL_ACCOUNT_PASSWORD = 'StudentPass123!';
 const DT_SERVER_META_BASE = { dtApi: '2.1' };
 
 /** يُسجَّل عند التشغيل — للتأكد أن HF يشغّل آخر ملف server.js وليس صورة Docker قديمة */
-const DT_BUILD_TAG = 'fdtc-login-guard-2026-05';
+const DT_BUILD_TAG = 'forget-password-after-login-verify-2026-05';
 
 /** خطأ شائع يمنع الدخول والجلسة: gmail.coms بدل gmail.com */
 function fixCommonEmailTypos(email) {
@@ -255,9 +255,9 @@ async function runPortalPasswordRecovery(page, nationalIDDigits) {
         page.waitForFunction(
             () => /Email\s*:/i.test(document.body?.innerText || '') ||
                 /@[\w.-]+\.[A-Za-z]{2,}/.test(document.body?.innerText || ''),
-            { timeout: 8000 }
+            { timeout: 14000 }
         ).catch(() => { }),
-        page.waitForTimeout(3500)
+        page.waitForTimeout(5000)
     ]);
     const body = await page.locator('body').innerText().catch(() => '');
     console.log('📄 Recovery (أول 600 حرف):', body.substring(0, 600));
@@ -278,16 +278,28 @@ async function runSmartPortalLogin(page, data, registrationHadConflict) {
     const emailKnown = (data.email || '').trim();
     const nid = (data.nationalID || '').replace(/\D/g, '');
 
+    /**
+     * يتحقق أننا لم نعد على /login فعلًا — بدون هذا قد يعتقد الكود أن الدخول نجح بينما الجلسة غير صالحة
+     * فيُفوت تشغيل استعادة كلمة المرور من PORTAL_FORGET_PASSWORD_URL.
+     */
     async function attempt(label, email, password) {
         console.log(`🔐 محاولة دخول [${label}] بريد=${email}`);
         const ok = await submitPortalLogin(page, email, password);
-        if (ok) console.log(`✅ نجح تسجيل الدخول: ${label}`);
-        return ok;
+        if (!ok) return false;
+        await page.waitForTimeout(600);
+        const u = page.url();
+        if (u.includes('/login')) {
+            console.warn(`⚠️ محاولة [${label}] لم تُنشئ جلسة — ما زال على صفحة الدخول، نتابع للمحاولة التالية أو الاستعادة`);
+            return false;
+        }
+        console.log(`✅ نجح تسجيل الدخول: ${label} → ${u}`);
+        return true;
     }
 
     if (registrationHadConflict) {
         if (await attempt('بريد الطالب + الرقم القومي ككلمة مرور', emailKnown, nid)) return;
         if (await attempt('بريد الطالب + كلمة التسجيل الافتراضية', emailKnown, NEW_PORTAL_ACCOUNT_PASSWORD)) return;
+        console.log(`📌 فتح ${PORTAL_FORGET_PASSWORD_URL} بعد فشل محاولتي الدخول مباشرة...`);
         const recovered = await runPortalPasswordRecovery(page, nid);
         if (recovered && recovered.email) {
             const pw = recovered.password || nid;
@@ -296,6 +308,7 @@ async function runSmartPortalLogin(page, data, registrationHadConflict) {
     } else {
         if (await attempt('حساب جديد: كلمة التسجيل', emailKnown, NEW_PORTAL_ACCOUNT_PASSWORD)) return;
         if (await attempt('بريد الطالب + الرقم القومي', emailKnown, nid)) return;
+        console.log(`📌 فتح ${PORTAL_FORGET_PASSWORD_URL} بعد فشل محاولتي الدخول...`);
         const recovered = await runPortalPasswordRecovery(page, nid);
         if (recovered && recovered.email) {
             const pw = recovered.password || nid;
@@ -303,7 +316,7 @@ async function runSmartPortalLogin(page, data, registrationHadConflict) {
         }
     }
 
-    throw new Error('فشل تسجيل الدخول في بوابة التحول الرقمي بعد كل المحاولات (دخول + استعادة). تحقق من البريد والرقم القومي.');
+    throw new Error('فشل تسجيل الدخول في بوابة التحول الرقمي بعد كل المحاولات (دخول + استعادة من صفحة نسيت كلمة المرور). تحقق من البريد والرقم القومي.');
 }
 
 function isBadFawryCell(s) {
