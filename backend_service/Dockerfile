@@ -12,7 +12,7 @@ WORKDIR /app
 
 # نسخ ملفات المشروع
 COPY package*.json ./
-COPY server.js ./
+COPY server.js automationCrypto.js ./
 
 # تثبيت المكتبات
 RUN npm install

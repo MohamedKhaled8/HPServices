@@ -4,13 +4,81 @@ const admin = require('firebase-admin');
 const cors = require('cors');
 require('dotenv').config();
 
+const automationCrypto = require('./automationCrypto');
+automationCrypto.initFromEnv();
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+/** متى يكون true: تم تهيئة Firebase Admin ويمكن التحقق من idToken + مستند admins/{uid} */
+let firebaseAutomationAuthReady = false;
+
+try {
+    const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (saJson && String(saJson).trim().startsWith('{')) {
+        admin.initializeApp({
+            credential: admin.credential.cert(JSON.parse(saJson))
+        });
+        firebaseAutomationAuthReady = true;
+        console.log('🔐 Firebase Admin: تم التهيئة — مسارات الأتمتة تتطلب Bearer idToken لمشرف.');
+    } else {
+        console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT_JSON غير معيّن — التحقق من المشرف معطّل (مناسب للتطوير فقط).');
+    }
+} catch (e) {
+    console.warn('⚠️ فشل تهيئة Firebase Admin:', e.message);
+}
+
+/**
+ * يحمي POST الأتمتة: Bearer ID token من Firebase Auth + مستند admins/{uid}.isAdmin === true
+ * بدون أسرار Firebase على السيرفر يُتخطّى التحقق (السلوك القديم).
+ */
+async function requireAutomationAdmin(req, res, next) {
+    if (!firebaseAutomationAuthReady) {
+        return next();
+    }
+    if (process.env.AUTOMATION_SKIP_AUTH === '1') {
+        console.warn('⚠️ AUTOMATION_SKIP_AUTH=1 — تجاوز التحقق (لا تستخدم في الإنتاج)');
+        return next();
+    }
+    const authHeader = req.headers.authorization || '';
+    const m = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!m || !m[1]) {
+        return res.status(401).json({
+            success: false,
+            error: 'غير مصرّح: أرسل Authorization: Bearer مع Firebase idToken من حساب مشرف.'
+        });
+    }
+    try {
+        const decoded = await admin.auth().verifyIdToken(m[1]);
+        const snap = await admin.firestore().doc(`admins/${decoded.uid}`).get();
+        const ok = snap.exists && snap.data()?.isAdmin === true;
+        if (!ok) {
+            return res.status(403).json({ success: false, error: 'صلاحيات غير كافية (مشرف فقط).' });
+        }
+        req.automationAdminUid = decoded.uid;
+        return next();
+    } catch (e) {
+        console.warn('🔒 رفض طلب أتمتة:', e.message);
+        return res.status(401).json({ success: false, error: 'رمز الدخول غير صالح أو منتهٍ.' });
+    }
+}
+
 // Health check route
 app.get('/', (req, res) => {
     res.send('🤖 AI Automation Server is Live and Running!');
+});
+
+/** مفتاح RSA عام (SPKI PEM) لتشفير الحمولة في المتصفح — المفتاح الخاص على السيرفر فقط */
+app.get('/api/automation-crypto-public', (req, res) => {
+    if (!automationCrypto.isEnabled()) {
+        return res.json({ enabled: false });
+    }
+    return res.json({
+        enabled: true,
+        v: 1,
+        publicKeySpkiPem: automationCrypto.getPublicSpkiPem()
+    });
 });
 
 // Initialize Firebase Admin (يجب إضافة ملف المفاتيح لاحقاً)
@@ -381,7 +449,11 @@ function getFinalFawryCodeFromDtResult(result, bodyText = '') {
     return fawryCode;
 }
 
-app.post('/api/digital-transformation/register', async (req, res) => {
+app.post(
+    '/api/digital-transformation/register',
+    automationCrypto.decryptAutomationBodyMiddleware,
+    requireAutomationAdmin,
+    async (req, res) => {
     console.log('\n🔔 ========== NEW REQUEST RECEIVED ==========');
     console.log('📥 Request Body:', JSON.stringify(req.body, null, 2));
 
@@ -468,7 +540,11 @@ app.post('/api/digital-transformation/register', async (req, res) => {
 // NEW: Electronic Payment Automation (USC Payment Portal)
 // =====================================================
 
-app.post('/api/electronic-payment/create', async (req, res) => {
+app.post(
+    '/api/electronic-payment/create',
+    automationCrypto.decryptAutomationBodyMiddleware,
+    requireAutomationAdmin,
+    async (req, res) => {
     console.log('\n💳 ========== NEW ELECTRONIC PAYMENT REQUEST ==========');
     console.log('📥 Request Body:', JSON.stringify(req.body, null, 2));
 
@@ -1833,6 +1909,7 @@ app.get('/api/automation-health', (req, res) => {
         ok: true,
         dtApi: DT_SERVER_META_BASE.dtApi,
         buildTag: DT_BUILD_TAG,
+        payloadEncryption: automationCrypto.isEnabled(),
         hint: 'إذا لم يتطابق buildTag مع آخر نشر، حدّث الـ Space وأعد البناء (Rebuild) وليس Restart فقط.'
     });
 });

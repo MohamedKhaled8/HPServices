@@ -46,7 +46,7 @@ import {
   clearQuickNotification
 } from '../services/firebaseService';
 import { normalizeTrackName } from '../utils/trackUtils';
-import { getAutomationApiBaseUrl, automationApiMissingMessage } from '../utils/automationApi';
+import { getAutomationApiBaseUrl, automationApiMissingMessage, getAutomationAuthHeaders, prepareAutomationPostBody } from '../utils/automationApi';
 import { ServiceRequest, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
 import {
   LogOut,
@@ -1151,10 +1151,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             const ac = new AbortController();
             const abortTimer = setTimeout(() => ac.abort(), 480000);
 
+            const authHeaders = await getAutomationAuthHeaders();
+            const bodyToSend = await prepareAutomationPostBody(API_BASE_URL, payload);
+
             fetch(apiUrl, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
+              headers: authHeaders,
+              body: JSON.stringify(bodyToSend),
               signal: ac.signal
             })
               .then(async (res) => {
@@ -1309,10 +1312,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             const acEp = new AbortController();
             const abortTimerEp = setTimeout(() => acEp.abort(), 480000);
 
+            const authHeadersEp = await getAutomationAuthHeaders();
+            const bodyToSendEp = await prepareAutomationPostBody(API_BASE_URL_EP, payload);
+
             fetch(apiUrl, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
+              headers: authHeadersEp,
+              body: JSON.stringify(bodyToSendEp),
               signal: acEp.signal
             })
               .then(async (res) => {
