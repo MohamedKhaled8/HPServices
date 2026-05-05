@@ -708,6 +708,56 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }));
   };
 
+  /** مفتاح تخزين ثابت لعلامات صف الطلب (لا يعتمد على ترتيب الجدول) */
+  const getRequestMarksStorageKey = (request: ServiceRequest): string => {
+    const sid = request.serviceId || 'na';
+    if (request.id) return `reqMark:${sid}:${request.id}`;
+    const stamp = request.createdAt || '';
+    return `reqMark:pending:${sid}:${request.studentId}:${stamp}`;
+  };
+
+  /** مفتاح قديم كان يُدار به الصف قبل دمج serviceId (لا نستخدم رقم الفهرس — غير مستقر بعد الفرز) */
+  const legacyRequestMarksKeys = (request: ServiceRequest): string[] =>
+    request.id ? [`req-${request.id}`] : [];
+
+  const mergedRequestMarks = (prev: Record<string, RowFlags>, request: ServiceRequest): RowFlags => {
+    const primary = getRequestMarksStorageKey(request);
+    const cur = prev[primary];
+    if (cur) return cur;
+    for (const lk of legacyRequestMarksKeys(request)) {
+      const v = prev[lk];
+      if (v) return v;
+    }
+    return { f1: false, f2: false, f3: false };
+  };
+
+  const toggleRequestMarks = (request: ServiceRequest, index: 1 | 2 | 3) => {
+    const primary = getRequestMarksStorageKey(request);
+    const legacyKeys = legacyRequestMarksKeys(request);
+    setToggledFlags(prev => {
+      let row = prev[primary];
+      if (!row) {
+        for (const lk of legacyKeys) {
+          if (prev[lk]) {
+            row = prev[lk];
+            break;
+          }
+        }
+      }
+      const base: RowFlags = row || { f1: false, f2: false, f3: false };
+      const nextRow: RowFlags = {
+        f1: index === 1 ? !base.f1 : base.f1,
+        f2: index === 2 ? !base.f2 : base.f2,
+        f3: index === 3 ? !base.f3 : base.f3
+      };
+      const next: Record<string, RowFlags> = { ...prev, [primary]: nextRow };
+      for (const lk of legacyKeys) {
+        if (lk !== primary && next[lk]) delete next[lk];
+      }
+      return next;
+    });
+  };
+
   // عارض مرفقات (Sheet) لعرض كل الصور/الملفات في Overlay داخل الصفحة
   const [documentViewer, setDocumentViewer] = useState<{ open: boolean; urls: string[] }>({
     open: false,
@@ -3326,8 +3376,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   }
                                 ).length;
                                 const isDuplicate = userRequestsCount > 1;
-                                const rowKey = `req-${request.id || index}`;
-                                const rowFlags = toggledFlags[rowKey] || { f1: false, f2: false, f3: false };
+                                const rowFlags = mergedRequestMarks(toggledFlags, request);
                                 const isAnyFlagged = rowFlags.f1 || rowFlags.f2 || rowFlags.f3;
                                 const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
 
@@ -3443,7 +3492,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 }
 
                                 return (
-                                  <tr key={request.id} style={{ background: rowBg, transition: 'all 0.2s ease' }}>
+                                  <tr
+                                    key={request.id ? `${request.serviceId}-${request.id}` : `row-${index}-${request.studentId}-${request.createdAt || ''}`}
+                                    style={{ background: rowBg, transition: 'all 0.2s ease' }}
+                                  >
                                     <td
                                       data-row={index}
                                       data-col={0}
@@ -3475,7 +3527,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                         <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                           <button
                                             type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFlag(rowKey, 1); }}
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequestMarks(request, 1); }}
                                             title={rowFlags.f1 ? 'إلغاء علامة (بدء بالحل)' : 'تمييز: بدء بالحل'}
                                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f1 ? '#2563eb' : '#94a3b8' }}
                                           >
@@ -3483,7 +3535,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                           </button>
                                           <button
                                             type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFlag(rowKey, 2); }}
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequestMarks(request, 2); }}
                                             title={rowFlags.f2 ? 'إلغاء علامة (قيد المتابعة)' : 'تمييز: قيد المتابعة'}
                                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f2 ? '#16a34a' : '#a3a3a3' }}
                                           >
@@ -3491,7 +3543,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                           </button>
                                           <button
                                             type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFlag(rowKey, 3); }}
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequestMarks(request, 3); }}
                                             title={rowFlags.f3 ? 'إلغاء علامة (تمت المراجعة)' : 'تمييز: تمت المراجعة'}
                                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f3 ? '#eab308' : '#a3a3a3' }}
                                           >
