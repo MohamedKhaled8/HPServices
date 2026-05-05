@@ -82,7 +82,10 @@ function getPublicSpkiPem() {
     return publicSpkiPem;
 }
 
-function decryptEnvelope(body) {
+/**
+ * يفك مغلف الطلب ويعيد مفتاح AES (لتشفير الرد بنفس الجلسة) والـ JSON.
+ */
+function decryptEnvelopeToPayload(body) {
     const aesKey = crypto.privateDecrypt(
         {
             key: privateKey,
@@ -108,7 +111,23 @@ function decryptEnvelope(body) {
     const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, iv);
     decipher.setAuthTag(tag);
     const plain = Buffer.concat([decipher.update(enc), decipher.final()]);
-    return JSON.parse(plain.toString('utf8'));
+    return { aesKey, payload: JSON.parse(plain.toString('utf8')) };
+}
+
+/** تشفير رد JSON بمفتاح الجلسة (AES-GCM) — لا يُعرَض نص صريح في Network للاستجابة */
+function encryptAutomationResponseWithSessionKey(aesKeyBuf, obj) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', aesKeyBuf, iv);
+    const plain = Buffer.from(JSON.stringify(obj), 'utf8');
+    const enc = Buffer.concat([cipher.update(plain), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const combined = Buffer.concat([enc, tag]);
+    return {
+        v: 1,
+        encrypted: true,
+        iv: iv.toString('base64'),
+        ciphertext: combined.toString('base64')
+    };
 }
 
 /**
@@ -156,11 +175,28 @@ function decryptAutomationBodyMiddleware(req, res, next) {
     }
 
     try {
-        req.body = decryptEnvelope(b);
+        const { aesKey, payload } = decryptEnvelopeToPayload(b);
+        req.body = payload;
         const keys = Object.keys(req.body || {});
         if (keys.length) {
             console.log('[automationCrypto] decrypted JSON keys:', keys.join(', '));
         }
+
+        const origJson = res.json.bind(res);
+        res.json = function automationEncryptedJson(bodyToSend) {
+            try {
+                const wrapped = encryptAutomationResponseWithSessionKey(aesKey, bodyToSend);
+                return origJson(wrapped);
+            } catch (encErr) {
+                console.warn('تشفير رد أتمتة:', encErr.message);
+                return origJson({
+                    success: false,
+                    error: 'فشل تشفير الرد من الخادم.',
+                    serverMeta: { encryptedResponseFailed: true }
+                });
+            }
+        };
+
         return next();
     } catch (e) {
         console.warn('فك تشفير أتمتة:', e.message);
@@ -176,5 +212,6 @@ module.exports = {
     initFromEnv,
     isEnabled,
     getPublicSpkiPem,
-    decryptAutomationBodyMiddleware
+    decryptAutomationBodyMiddleware,
+    encryptAutomationResponseWithSessionKey
 };

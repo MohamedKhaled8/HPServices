@@ -46,7 +46,13 @@ import {
   clearQuickNotification
 } from '../services/firebaseService';
 import { normalizeTrackName } from '../utils/trackUtils';
-import { getAutomationApiBaseUrl, automationApiMissingMessage, getAutomationAuthHeaders, prepareAutomationPostBody } from '../utils/automationApi';
+import {
+  getAutomationApiBaseUrl,
+  automationApiMissingMessage,
+  getAutomationAuthHeaders,
+  prepareAutomationPostBody,
+  parseAutomationApiJsonResponse
+} from '../utils/automationApi';
 import { ServiceRequest, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
 import {
   LogOut,
@@ -1152,7 +1158,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             const abortTimer = setTimeout(() => ac.abort(), 480000);
 
             const authHeaders = await getAutomationAuthHeaders();
-            const bodyToSend = await prepareAutomationPostBody(API_BASE_URL, payload);
+            const preparedPost = await prepareAutomationPostBody(API_BASE_URL, payload);
+            const bodyToSend = preparedPost.body;
+            const sessionAesKey = preparedPost.sessionAesKey;
 
             fetch(apiUrl, {
               method: 'POST',
@@ -1166,7 +1174,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 let data: { success?: boolean; error?: string; data?: Record<string, unknown> } = {};
                 if (ct.includes('application/json')) {
                   try {
-                    data = await res.json();
+                    const rawJson = await res.json();
+                    data = await parseAutomationApiJsonResponse(rawJson, sessionAesKey);
                   } catch (e) {
                     logger.error('DT: JSON parse error', e);
                     setToastState({ message: 'رد غير صالح من خادم الأتمتة (ليس JSON). تحقق من VITE_API_URL والـ CORS.', type: 'error', duration: 8000 });
@@ -1313,7 +1322,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             const abortTimerEp = setTimeout(() => acEp.abort(), 480000);
 
             const authHeadersEp = await getAutomationAuthHeaders();
-            const bodyToSendEp = await prepareAutomationPostBody(API_BASE_URL_EP, payload);
+            const preparedEp = await prepareAutomationPostBody(API_BASE_URL_EP, payload);
+            const bodyToSendEp = preparedEp.body;
+            const sessionAesKeyEp = preparedEp.sessionAesKey;
 
             fetch(apiUrl, {
               method: 'POST',
@@ -1327,7 +1338,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 let data: { success?: boolean; error?: string; data?: Record<string, unknown> } = {};
                 if (ct.includes('application/json')) {
                   try {
-                    data = await res.json();
+                    const rawJsonEp = await res.json();
+                    data = await parseAutomationApiJsonResponse(rawJsonEp, sessionAesKeyEp);
                   } catch (e) {
                     logger.error('[EP] JSON parse error', e);
                     setToastState({ message: 'رد غير صالح من خادم الأتمتة (ليس JSON).', type: 'error', duration: 8000 });

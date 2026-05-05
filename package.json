@@ -10,6 +10,8 @@
     "deploy:hf-backend": "git subtree split --prefix=backend_service -b hf-backend-deploy && git push space hf-backend-deploy:main --force",
     "vercel:push-automation-public-key": "node scripts/pushAutomationPublicToVercel.cjs",
     "automation:setup": "node scripts/automationSetupAll.cjs",
+    "automation:verify-keys": "node scripts/verifyAutomationKeyPair.cjs",
+    "automation:set-api-url": "node scripts/setVercelAutomationApiUrl.cjs",
     "automation:restore-local-env": "node scripts/restoreAutomationPublicToEnvLocal.cjs",
     "automation:vercel-env-ps": "node scripts/runVercelEnvAddPs.cjs",
     "crypto:provision": "node scripts/provisionAutomationCrypto.cjs"

@@ -1,5 +1,9 @@
 import { auth } from '../config/firebase';
-import { fetchAutomationCryptoPublic, encryptAutomationPayloadEnvelope } from './automationPayloadEncrypt';
+import {
+  fetchAutomationCryptoPublic,
+  encryptAutomationPayloadEnvelope,
+  decryptAutomationResponseEnvelope
+} from './automationPayloadEncrypt';
 
 /**
  * رؤوس الطلب لخادم الأتمتة — يضيف Firebase idToken للمشرف حتى يتحقق السيرفر من الهوية.
@@ -90,6 +94,32 @@ function getAutomationPublicPemFromEnv(): string | null {
   return null;
 }
 
+export type PreparedAutomationPostBody = {
+  body: Record<string, unknown>;
+  /** مفتاح AES لجلسة الطلب/الرد — يُستخدَم لفك تشفير الاستجابة عندما يعيد الخادم { encrypted: true } */
+  sessionAesKey: ArrayBuffer | null;
+};
+
+/**
+ * يفك JSON قادم من خادم الأتمتة إن كان مشفّرًا بمفتاح الجلسة.
+ */
+export async function parseAutomationApiJsonResponse<T = unknown>(
+  raw: unknown,
+  sessionAesKey: ArrayBuffer | null
+): Promise<T> {
+  if (
+    sessionAesKey &&
+    raw &&
+    typeof raw === 'object' &&
+    (raw as Record<string, unknown>).encrypted === true &&
+    (raw as Record<string, unknown>).v === 1
+  ) {
+    const dec = await decryptAutomationResponseEnvelope(sessionAesKey, raw as Record<string, unknown>);
+    return dec as T;
+  }
+  return raw as T;
+}
+
 /**
  * إذا خادم الأتمتة يعلن مفتاحًا عامًا (أو عرّفت VITE_AUTOMATION_RSA_PUBLIC_PEM*)، تُشفّر الحمولة.
  * في الإنتاج: لا نُرسل JSON صريحًا إذا فشل جلب المفتاح بينما السيرفر يفرض التشفير (سترى خطأ واضحًا).
@@ -97,12 +127,15 @@ function getAutomationPublicPemFromEnv(): string | null {
 export async function prepareAutomationPostBody(
   apiBase: string | null,
   payload: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-  if (!apiBase) return payload;
+): Promise<PreparedAutomationPostBody> {
+  if (!apiBase) {
+    return { body: payload, sessionAesKey: null };
+  }
 
   const envPem = getAutomationPublicPemFromEnv();
   if (envPem) {
-    return encryptAutomationPayloadEnvelope(envPem, payload);
+    const { envelope, sessionAesKey } = await encryptAutomationPayloadEnvelope(envPem, payload);
+    return { body: envelope, sessionAesKey };
   }
 
   const isProd = import.meta.env.PROD;
@@ -120,16 +153,17 @@ export async function prepareAutomationPostBody(
     }
 
     if (!cfg.enabled || !cfg.publicKeySpkiPem) {
-      return payload;
+      return { body: payload, sessionAesKey: null };
     }
 
-    return await encryptAutomationPayloadEnvelope(cfg.publicKeySpkiPem, payload);
+    const { envelope, sessionAesKey } = await encryptAutomationPayloadEnvelope(cfg.publicKeySpkiPem, payload);
+    return { body: envelope, sessionAesKey };
   } catch (e) {
     if (isProd) {
       throw e instanceof Error
         ? e
         : new Error('فشل تشفير حمولة الأتمتة. لا يُرسل الطلب نصًا صريحًا في الإنتاج.');
     }
-    return payload;
+    return { body: payload, sessionAesKey: null };
   }
 }

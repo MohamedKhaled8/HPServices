@@ -6,7 +6,11 @@
  *
  * خيارات:
  *   --skip-vercel     لا ترفع إلى Vercel (بدون إنترنت / بدون login)
- *   --deploy            بعد ضبط المتغيرات، نشر الواجهة: vercel deploy --prod --yes
+ *   --deploy          بعد ضبط المتغيرات، نشر الواجهة: vercel deploy --prod --yes
+ *   --regenerate      تجاهل الملف الحالي وتوليد زوج مفاتيح جديد (يلزم تحديث HF بالخاص الجديد)
+ *
+ * الافتراضي: إن وُجد secrets/AUTOMATION_RSA_PRIVATE_KEY_B64.txt صالح يُعاد استخدامه
+ * (لا يُولَّد مفتاح جديد) حتى لا يختلف Vercel عن HF بعد تشغيلين متتابعين.
  *
  * متغيرات بيئة:
  *   VERCEL_ENV_TARGETS=production,preview
@@ -36,6 +40,7 @@ const VERCEL_PROJECT_JSON = path.join(root, '.vercel', 'project.json');
 const argv = process.argv.slice(2);
 const skipVercel = argv.includes('--skip-vercel');
 const deployProd = argv.includes('--deploy');
+const forceRegenerate = argv.includes('--regenerate');
 
 /** نشر Vercel على Windows: shell:true + stdio inherit يعمل أوثق من npx.cmd بدون shell */
 function runVercelDeployProd(projectRoot) {
@@ -48,19 +53,62 @@ function runVercelDeployProd(projectRoot) {
   });
 }
 
-console.log('\n⚠️  يُولَّد مفتاح جديد: حدّث Hugging Face بالخاص من الملف أسفل، وإلا لن يعمل فك التشفير.\n');
-
-const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
-  modulusLength: 2048,
-  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
-  publicKeyEncoding: { type: 'spki', format: 'pem' }
-});
-
-const privB64 = Buffer.from(privateKey, 'utf8').toString('base64');
-const pubB64 = Buffer.from(publicKey, 'utf8').toString('base64');
+function derivePublicB64FromPrivatePemB64(privB64OneLine) {
+  const pem = Buffer.from(privB64OneLine, 'base64').toString('utf8');
+  const pk = crypto.createPrivateKey(pem);
+  const pub = crypto.createPublicKey(pk);
+  const spki = pub.export({ type: 'spki', format: 'pem' });
+  return Buffer.from(spki, 'utf8').toString('base64');
+}
 
 fs.mkdirSync(SECRETS_DIR, { recursive: true });
-fs.writeFileSync(HF_SECRET_FILE, privB64, 'utf8');
+
+let pubB64;
+let reusedKey = false;
+
+if (!forceRegenerate && fs.existsSync(HF_SECRET_FILE)) {
+  const raw = fs.readFileSync(HF_SECRET_FILE, 'utf8').trim();
+  if (raw) {
+    try {
+      const normalized = raw.replace(/\s/g, '');
+      pubB64 = derivePublicB64FromPrivatePemB64(normalized); // يتحقق ضمنياً من صحة PEM
+      fs.writeFileSync(HF_SECRET_FILE, normalized, 'utf8');
+      reusedKey = true;
+      console.log(
+        '\n✅ إعادة استخدام المفتاح الخاص من الملف (لم يُنشَأ زوج جديد).\n' +
+          '   لتدوير المفاتيح عمدًا:  npm run automation:setup -- --regenerate\n'
+      );
+    } catch (e) {
+      console.error(
+        '\n❌ ملف المفتاح الخاص غير صالح:',
+        e.message,
+        '\n   احذف الملف أو شغّل: npm run automation:setup -- --regenerate\n'
+      );
+      process.exit(1);
+    }
+  }
+}
+
+if (!reusedKey) {
+  if (forceRegenerate) {
+    console.log('\n⚠️  --regenerate: زوج مفاتيح جديد — حدّث Hugging Face بالخاص من الملف أسفل.\n');
+  } else {
+    console.log(
+      '\n⚠️  يُولَّد مفتاح جديد: حدّث Hugging Face بالخاص من الملف أسفل، وإلا لن يعمل فك التشفير.\n'
+    );
+  }
+
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' }
+  });
+
+  const privB64 = Buffer.from(privateKey, 'utf8').toString('base64');
+  pubB64 = Buffer.from(publicKey, 'utf8').toString('base64');
+  fs.writeFileSync(HF_SECRET_FILE, privB64, 'utf8');
+}
+
 fs.writeFileSync(VERCEL_PUBLIC_FALLBACK_FILE, pubB64, 'utf8');
 upsertEnvLine(ENV_LOCAL, KEY_PUBLIC, pubB64);
 

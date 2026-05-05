@@ -80,10 +80,47 @@ export async function fetchAutomationCryptoPublic(apiBase: string): Promise<Auto
   }
 }
 
+function base64ToUint8(b64: string): Uint8Array {
+  const cleaned = String(b64).replace(/\s/g, '');
+  const bin = atob(cleaned);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    out[i] = bin.charCodeAt(i);
+  }
+  return out;
+}
+
+/**
+ * يفك رد الخادم المشفّر بنفس مفتاح AES الذي استُخدم في الطلب (جلسة واحدة).
+ */
+export async function decryptAutomationResponseEnvelope(
+  sessionAesKey: ArrayBuffer,
+  res: Record<string, unknown>
+): Promise<unknown> {
+  if (res.v !== 1 || res.encrypted !== true) {
+    throw new Error('not_encrypted_automation_response');
+  }
+  const ivStr = res.iv;
+  const ctStr = res.ciphertext;
+  if (typeof ivStr !== 'string' || typeof ctStr !== 'string') {
+    throw new Error('bad_response_envelope');
+  }
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error('Web Crypto غير متاح');
+  }
+  const key = await subtle.importKey('raw', sessionAesKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const iv = new Uint8Array(base64ToUint8(ivStr));
+  const combined = new Uint8Array(base64ToUint8(ctStr));
+  const plainBuf = await subtle.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, key, combined);
+  const text = new TextDecoder().decode(plainBuf);
+  return JSON.parse(text) as unknown;
+}
+
 export async function encryptAutomationPayloadEnvelope(
   publicKeySpkiPem: string,
   payload: Record<string, unknown>
-): Promise<Record<string, unknown>> {
+): Promise<{ envelope: Record<string, unknown>; sessionAesKey: ArrayBuffer }> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) {
     throw new Error('Web Crypto غير متاح');
@@ -99,8 +136,9 @@ export async function encryptAutomationPayloadEnvelope(
     ['encrypt']
   );
 
-  const aesKey = await subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+  const aesKey = await subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
   const rawAes = new Uint8Array(await subtle.exportKey('raw', aesKey));
+  const sessionAesKey = rawAes.buffer.slice(rawAes.byteOffset, rawAes.byteOffset + rawAes.byteLength);
 
   const wrappedKeyBuf = await subtle.encrypt({ name: 'RSA-OAEP' }, rsaPub, rawAes);
 
@@ -109,10 +147,11 @@ export async function encryptAutomationPayloadEnvelope(
   const cipherBuf = await subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, plain);
   const cipherBytes = new Uint8Array(cipherBuf);
 
-  return {
+  const envelope = {
     v: 1,
     wrappedKey: uint8ToBase64(new Uint8Array(wrappedKeyBuf)),
     iv: uint8ToBase64(iv),
     ciphertext: uint8ToBase64(cipherBytes)
   };
+  return { envelope, sessionAesKey };
 }
