@@ -1912,11 +1912,15 @@ async function runElectronicPaymentAutomation(data) {
 }
 
 app.get('/api/automation-health', (req, res) => {
+    const enc = automationCrypto.isEnabled();
     res.json({
         ok: true,
         dtApi: DT_SERVER_META_BASE.dtApi,
         buildTag: DT_BUILD_TAG,
-        payloadEncryption: automationCrypto.isEnabled(),
+        payloadEncryption: enc,
+        cryptoHint: enc
+            ? null
+            : 'false = السيرفر لا يفك التشفير — أضف AUTOMATION_RSA_PRIVATE_KEY_B64 في HF Secrets ثم Factory Rebuild. افتح هذا المسار بعد كل نشر للتحقق.',
         hint: 'إذا لم يتطابق buildTag مع آخر نشر، حدّث الـ Space وأعد البناء (Rebuild) وليس Restart فقط.'
     });
 });

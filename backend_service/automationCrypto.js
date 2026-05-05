@@ -15,33 +15,63 @@ let publicSpkiPem = null;
  * ثم ضع محتوى automation_rsa.pem في السر كـ B64:
  *   [Convert]::ToBase64String([IO.File]::ReadAllBytes("automation_rsa.pem"))   # PowerShell
  */
+function stripOuterQuotes(s) {
+    const t = String(s).trim();
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+        return t.slice(1, -1).trim();
+    }
+    return t;
+}
+
+/** إزالة مسافات/أسطر داخل السلسلة base64 (أخطاء لصق من HF أو المحرر) */
+function normalizeBase64OneLine(s) {
+    return String(s).replace(/\s/g, '');
+}
+
 function initFromEnv() {
-    const b64 = process.env.AUTOMATION_RSA_PRIVATE_KEY_B64;
+    const b64Env = process.env.AUTOMATION_RSA_PRIVATE_KEY_B64;
     const pemEnv = process.env.AUTOMATION_RSA_PRIVATE_KEY_PEM;
     let pem = null;
-    if (b64 && String(b64).trim()) {
-        try {
-            pem = Buffer.from(String(b64).trim(), 'base64').toString('utf8');
-        } catch (_) {
-            /* ignore */
+    let source = '';
+
+    if (b64Env && String(b64Env).trim()) {
+        const raw = stripOuterQuotes(b64Env);
+        // لو لصقت PEM كامل داخل Secret بدل base64 (شائع في واجهة HF)
+        if (raw.includes('-----BEGIN') && raw.includes('PRIVATE KEY-----')) {
+            pem = raw.replace(/\r\n/g, '\n').trim();
+            source = 'AUTOMATION_RSA_PRIVATE_KEY_B64 (PEM pasted)';
+        } else {
+            try {
+                pem = Buffer.from(normalizeBase64OneLine(raw), 'base64').toString('utf8');
+                source = 'AUTOMATION_RSA_PRIVATE_KEY_B64 (base64)';
+            } catch (_) {
+                pem = null;
+            }
         }
     }
-    if (!pem && pemEnv) {
+    if (!pem && pemEnv && String(pemEnv).trim()) {
         pem = String(pemEnv).replace(/\\n/g, '\n');
+        source = 'AUTOMATION_RSA_PRIVATE_KEY_PEM';
     }
+
     if (!pem || pem.indexOf('PRIVATE') === -1) {
-        console.warn('⚠️ تشفير أتمتة: لا يوجد AUTOMATION_RSA_PRIVATE_KEY_* — الحمولة JSON عبر HTTPS فقط.');
+        console.warn(
+            '⚠️ [automationCrypto] DISABLED — لم يُحمَّل مفتاح خاص صالح. ' +
+                'أضف Secret باسم AUTOMATION_RSA_PRIVATE_KEY_B64 (قيمة base64 من secrets/ أو لصق PEM كامل). ' +
+                'تحقق: GET /api/automation-health → payloadEncryption يجب أن يكون true.'
+        );
         return;
     }
     try {
         privateKey = crypto.createPrivateKey({ key: pem, format: 'pem' });
         publicSpkiPem = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'pem' });
-        console.log('🔐 تشفير حمولة الأتمتة (RSA-OAEP + AES-256-GCM) مفعّل.');
+        console.log('🔐 [automationCrypto] ENABLED — فك تشغيل RSA-OAEP + AES-GCM | المصدر:', source);
     } catch (e) {
-        console.warn('⚠️ فشل تحميل مفتاح RSA للأتمتة:', e.message);
+        console.warn('⚠️ [automationCrypto] createPrivateKey فشل:', e.message);
         privateKey = null;
         publicSpkiPem = null;
     }
+    console.log('[automationCrypto] isEnabled=', !!privateKey);
 }
 
 function isEnabled() {
@@ -127,10 +157,18 @@ function decryptAutomationBodyMiddleware(req, res, next) {
 
     try {
         req.body = decryptEnvelope(b);
+        const keys = Object.keys(req.body || {});
+        if (keys.length) {
+            console.log('[automationCrypto] decrypted JSON keys:', keys.join(', '));
+        }
         return next();
     } catch (e) {
         console.warn('فك تشفير أتمتة:', e.message);
-        return res.status(400).json({ success: false, error: 'فشل فك تشفير الحمولة.' });
+        return res.status(400).json({
+            success: false,
+            error:
+                'فشل فك تشفير الحمولة — غالبًا المفتاح الخاص على HF لا يطابق المفتاح العام في Vercel. شغّل npm run automation:setup وانسخ الخاص والعام معًا ثم Redeploy.'
+        });
     }
 }
 
