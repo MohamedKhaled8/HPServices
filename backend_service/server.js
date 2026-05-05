@@ -1619,14 +1619,14 @@ async function runElectronicPaymentAutomation(data) {
     });
     const page = await context.newPage();
 
-    page.setDefaultTimeout(30000);
-    page.setDefaultNavigationTimeout(30000);
+    page.setDefaultTimeout(20000);
+    page.setDefaultNavigationTimeout(25000);
 
     try {
         console.log('🌍 [EP] Step 1: Navigating to payment portal...');
         await page.goto('https://payment.usc.edu.eg/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => { });
-        await page.waitForTimeout(2000);
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { });
+        await page.waitForTimeout(700);
 
         // -------- Selects: الجهة + نوع الخدمة (ثابت حسب تصميم الموقع) --------
         // من اللوج السابق:
@@ -1657,7 +1657,7 @@ async function runElectronicPaymentAutomation(data) {
 
         // انتظر حتى يتم تحميل نوع الخدمة بعد اختيار الكلية
         console.log('⏳ [EP] Waiting for service-type options to load...');
-        await page.waitForTimeout(4000);
+        await page.waitForTimeout(1200);
 
         console.log('📘 [EP] Step 2b: Selecting service type "دبلوم (2025 - 2026)"...');
         const serviceSelect = page.locator('select').first();
@@ -1667,7 +1667,7 @@ async function runElectronicPaymentAutomation(data) {
 
         // أعد المحاولة حتى تظهر الخيارات (في حالة AJAX)
         for (let i = 0; i < 5 && serviceOptions.length <= 1; i++) {
-            await page.waitForTimeout(2000);
+            await page.waitForTimeout(900);
             serviceOptions = await serviceSelect.locator('option').allInnerTexts();
             console.log(`[EP] Waiting service options... try ${i + 1}:`, serviceOptions);
         }
@@ -1710,20 +1710,23 @@ async function runElectronicPaymentAutomation(data) {
                 console.log(`[EP] ✅ Filled input ${i}: "${dataToFill[dataIndex]}"`);
                 dataIndex++;
 
-                await page.waitForTimeout(500);
+                await page.waitForTimeout(120);
             } catch (e) {
                 console.log(`[EP] Error with input ${i}:`, e.message);
             }
         }
 
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(300);
 
         // Click "متابعة"
         console.log('➡️ [EP] Step 4: Clicking متابعة...');
         const continueButton = page.locator('button, input').filter({ hasText: /متابعه|متابعة/i }).first();
         if (await continueButton.isVisible({ timeout: 5000 }).catch(() => false)) {
             await continueButton.click();
-            await page.waitForTimeout(3000);
+            await Promise.race([
+                page.waitForLoadState('domcontentloaded', { timeout: 4000 }).catch(() => { }),
+                page.waitForTimeout(1200)
+            ]);
         } else {
             throw new Error('لم يتم العثور على زر "متابعة"');
         }
@@ -1737,7 +1740,7 @@ async function runElectronicPaymentAutomation(data) {
 
         // Select Fawry Pay -> ادفع فورى -> تأكيد
         console.log('💳 [EP] Step 5: Selecting Fawry Pay...');
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(600);
 
         // أحياناً الأيقونة تكون صورة فقط بدون نص، لذلك نجرب عدّة طرق:
         let fawryClicked = false;
@@ -1747,7 +1750,7 @@ async function runElectronicPaymentAutomation(data) {
         if (await fawryInput.isVisible({ timeout: 5000 }).catch(() => false)) {
             console.log('[EP] Found Fawry input image (xsrrs), clicking...');
             await fawryInput.scrollIntoViewIfNeeded();
-            await page.waitForTimeout(500);
+            await page.waitForTimeout(150);
             await fawryInput.click({ force: true });
             fawryClicked = true;
         }
@@ -1796,7 +1799,7 @@ async function runElectronicPaymentAutomation(data) {
 
                 try {
                     await lastImg.scrollIntoViewIfNeeded();
-                    await page.waitForTimeout(1000);
+                    await page.waitForTimeout(250);
                     await lastImg.click({ force: true });
                     fawryClicked = true;
                 } catch (e) {
@@ -1810,7 +1813,7 @@ async function runElectronicPaymentAutomation(data) {
         }
 
         if (fawryClicked) {
-            await page.waitForTimeout(2000);
+            await page.waitForTimeout(700);
         }
 
         // ----- داخل نافذة فوري: اختيار "ادفع فورى" ثم الضغط على "تأكيد" -----
@@ -1832,7 +1835,7 @@ async function runElectronicPaymentAutomation(data) {
                 } catch { }
             }
             if (!fawryFrame) {
-                await page.waitForTimeout(1000);
+                await page.waitForTimeout(600);
             }
         }
 
@@ -1854,7 +1857,7 @@ async function runElectronicPaymentAutomation(data) {
                 console.log('[EP] ⚠️ Could not click radio for "ادفع فورى":', e.message);
                 await payFawryLabel.click({ force: true });
             }
-            await frameCtx.waitForTimeout(1500);
+            await frameCtx.waitForTimeout(500);
         } else {
             console.log('[EP] ⚠️ Could not find "ادفع فورى" option inside any frame.');
         }
@@ -1878,14 +1881,14 @@ async function runElectronicPaymentAutomation(data) {
 
         // انتظر تغيّر الصفحة / الـ URL بعد الضغط على تأكيد
         await Promise.race([
-            page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => { }),
-            page.waitForTimeout(8000)
+            page.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => { }),
+            page.waitForTimeout(2000)
         ]);
 
         // نبحث عن رقم الطلب في الصفحة الرئيسية وكل الـ frames
         const searchContexts = [page, ...page.frames()];
 
-        for (let attempt = 0; attempt < 5 && !orderNumber; attempt++) {
+        for (let attempt = 0; attempt < 8 && !orderNumber; attempt++) {
             for (const ctx of searchContexts) {
                 try {
                     bodyTextContent = await ctx.locator('body').innerText().catch(() => '');
@@ -1913,8 +1916,8 @@ async function runElectronicPaymentAutomation(data) {
 
             if (orderNumber) break;
 
-            console.log(`[EP] Fawry reference not found yet, retrying ${attempt + 1}/5...`);
-            await page.waitForTimeout(3000);
+            console.log(`[EP] Fawry reference not found yet, retrying ${attempt + 1}/8...`);
+            await page.waitForTimeout(1200);
         }
 
         if (!orderNumber) {
