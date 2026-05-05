@@ -30,12 +30,51 @@ export async function getAutomationAuthHeaders(): Promise<Record<string, string>
 export function getAutomationApiBaseUrl(): string | null {
   const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
   if (raw && raw !== 'undefined' && raw !== 'null') {
-    return raw.replace(/\/$/, '');
+    const normalized = normalizeAutomationApiUrl(raw);
+    if (normalized) return normalized;
   }
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     return window.location.origin.replace(/\/$/, '');
   }
   return null;
+}
+
+function normalizeAutomationApiUrl(raw: string): string | null {
+  let value = String(raw).trim();
+  value = value.replace(/^VITE_API_URL\s*=\s*/i, '');
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1).trim();
+  }
+  if (!value) return null;
+
+  // دعم صيغة //host/path
+  if (value.startsWith('//')) {
+    const protocol = typeof window !== 'undefined' ? window.location.protocol : 'https:';
+    value = `${protocol}${value}`;
+  }
+
+  // في حال نُسخ الدومين بدون protocol نضيفه تلقائيًا.
+  if (!/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(value)) {
+    const lower = value.toLowerCase();
+    const isLocal = lower.startsWith('localhost') || lower.startsWith('127.0.0.1');
+    value = `${isLocal ? 'http' : 'https'}://${value}`;
+  }
+
+  try {
+    const url = new URL(value);
+    const isHttpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const isLocal = ['localhost', '127.0.0.1'].includes(url.hostname);
+    if (isHttpsPage && url.protocol === 'http:' && !isLocal) {
+      // تجنب mixed-content الذي يظهر كـ network error في المتصفح.
+      url.protocol = 'https:';
+    }
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
 }
 
 export function automationApiMissingMessage(): string {
