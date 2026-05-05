@@ -1816,27 +1816,68 @@ async function runElectronicPaymentAutomation(data) {
             await page.waitForTimeout(700);
         }
 
+        async function findFawryFrameBySelectors(timeoutMs) {
+            const started = Date.now();
+            while (Date.now() - started < timeoutMs) {
+                const frames = page.frames();
+                for (const frame of frames) {
+                    try {
+                        const hasPay = await frame
+                            .locator('#payment-step span.deliver.ng-binding', { hasText: 'ادفع فورى' })
+                            .first()
+                            .isVisible({ timeout: 250 })
+                            .catch(() => false);
+                        const hasConfirm = await frame.locator('#billUploadFormConfBTN').first().isVisible({ timeout: 250 }).catch(() => false);
+                        if (hasPay || hasConfirm) return frame;
+                    } catch { }
+                }
+                await page.waitForTimeout(500);
+            }
+            return null;
+        }
+
         // ----- داخل نافذة فوري: اختيار "ادفع فورى" ثم الضغط على "تأكيد" -----
         // ملاحظة: عناصر فوري قد تكون داخل iframe، لذلك نبحث في جميع الـ frames
         console.log('💳 [EP] Step 5b: Selecting "ادفع فورى" inside Fawry modal (frames-aware)...');
 
         let fawryFrame = null;
-        for (let attempt = 0; attempt < 5 && !fawryFrame; attempt++) {
-            const frames = page.frames();
-            console.log(`[EP] Frames count (attempt ${attempt + 1}):`, frames.length);
-            for (const frame of frames) {
-                try {
-                    const label = frame.locator('#payment-step span.deliver.ng-binding', { hasText: 'ادفع فورى' }).first();
-                    if (await label.isVisible({ timeout: 1000 }).catch(() => false)) {
-                        fawryFrame = frame;
-                        console.log('[EP] ✅ Found Fawry frame containing "ادفع فورى".');
-                        break;
-                    }
-                } catch { }
+        let modalOpened = false;
+        for (let modalAttempt = 0; modalAttempt < 2 && !modalOpened; modalAttempt++) {
+            console.log(`[EP] Fawry modal attempt ${modalAttempt + 1}/2`);
+            for (let attempt = 0; attempt < 5 && !fawryFrame; attempt++) {
+                const frames = page.frames();
+                console.log(`[EP] Frames count (attempt ${attempt + 1}):`, frames.length);
+                for (const frame of frames) {
+                    try {
+                        const label = frame.locator('#payment-step span.deliver.ng-binding', { hasText: 'ادفع فورى' }).first();
+                        if (await label.isVisible({ timeout: 900 }).catch(() => false)) {
+                            fawryFrame = frame;
+                            console.log('[EP] ✅ Found Fawry frame containing "ادفع فورى".');
+                            break;
+                        }
+                    } catch { }
+                }
+                if (!fawryFrame) {
+                    await page.waitForTimeout(600);
+                }
             }
+
             if (!fawryFrame) {
-                await page.waitForTimeout(600);
+                // أحيانًا الضغط على فوري لا يفتح المودال/iframe، فنجرّب إعادة الفتح تلقائيًا.
+                console.log('[EP] ⚠️ Fawry frame not found. Retrying open modal (Escape + re-click xsrrs)...');
+                await page.keyboard.press('Escape').catch(() => { });
+                await page.waitForTimeout(500);
+                if (await fawryInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+                    await fawryInput.scrollIntoViewIfNeeded().catch(() => { });
+                    await page.waitForTimeout(250);
+                    await fawryInput.click({ force: true }).catch(() => { });
+                    await page.waitForTimeout(900);
+                }
+                // انتظر ظهور أي إطار به selectors
+                fawryFrame = await findFawryFrameBySelectors(12000);
             }
+
+            modalOpened = !!fawryFrame;
         }
 
         const frameCtx = fawryFrame || page;
