@@ -1356,7 +1356,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   method: 'POST',
                   headers: authHeadersEp,
                   body: JSON.stringify(bodyToSendEp),
-                  signal: acEp.signal
+                  signal: acEp.signal,
+                  // يسمح بإكمال الإرسال حتى لو المستخدم غادر الصفحة/بدّل تبويب
+                  // (مفيد للمهام الطويلة مع Queue على السيرفر)
+                  keepalive: true
                 });
 
                 const ct = res.headers.get('content-type') || '';
