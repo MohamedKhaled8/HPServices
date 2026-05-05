@@ -105,7 +105,7 @@ const NEW_PORTAL_ACCOUNT_PASSWORD = 'StudentPass123!';
 const DT_SERVER_META_BASE = { dtApi: '2.1' };
 
 /** يُسجَّل عند التشغيل — للتأكد أن HF يشغّل آخر ملف server.js وليس صورة Docker قديمة */
-const DT_BUILD_TAG = 'forget-password-after-login-verify-2026-05';
+const DT_BUILD_TAG = 'ep-autoretry-modal-2026-05-05-2335';
 
 /**
  * بوابة الدفع غير مستقرة مع جلسات متوازية؛ ننفّذ طلبات الدفع بالتتابع.
