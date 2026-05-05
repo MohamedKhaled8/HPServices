@@ -8,7 +8,14 @@ const automationCrypto = require('./automationCrypto');
 automationCrypto.initFromEnv();
 
 const app = express();
-app.use(cors());
+app.use(
+    cors({
+        origin: true,
+        credentials: true,
+        methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    })
+);
 app.use(express.json());
 
 /** متى يكون true: تم تهيئة Firebase Admin ويمكن التحقق من idToken + مستند admins/{uid} */

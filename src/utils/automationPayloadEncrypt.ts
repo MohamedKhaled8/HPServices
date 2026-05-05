@@ -7,6 +7,9 @@ export type AutomationCryptoPublicResponse = {
   enabled: boolean;
   v?: number;
   publicKeySpkiPem?: string;
+  /** فشل الشبكة أو CORS أو غير 200 — لا يُعاد بعدها لإرسال JSON صريح في الإنتاج */
+  unreachable?: boolean;
+  httpStatus?: number;
 };
 
 function pemSpkiToArrayBuffer(pem: string): ArrayBuffer {
@@ -29,12 +32,20 @@ function uint8ToBase64(bytes: Uint8Array): string {
 
 export async function fetchAutomationCryptoPublic(apiBase: string): Promise<AutomationCryptoPublicResponse> {
   const url = `${apiBase.replace(/\/$/, '')}/api/automation-crypto-public`;
-  const res = await fetch(url, { method: 'GET' });
-  if (!res.ok) return { enabled: false };
   try {
-    return (await res.json()) as AutomationCryptoPublicResponse;
+    const res = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-store',
+      credentials: 'omit'
+    });
+    if (!res.ok) {
+      return { enabled: false, unreachable: true, httpStatus: res.status };
+    }
+    const data = (await res.json()) as AutomationCryptoPublicResponse;
+    return { ...data, unreachable: false };
   } catch {
-    return { enabled: false };
+    return { enabled: false, unreachable: true };
   }
 }
 
