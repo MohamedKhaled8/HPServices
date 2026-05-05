@@ -35,23 +35,57 @@ export function getAutomationApiBaseUrl(): string | null {
 }
 
 export function automationApiMissingMessage(): string {
-  return 'خدمة الأتمتة غير مضبوطة للإنتاج: أضف المتغير VITE_API_URL في لوحة الاستضافة (مثل Vercel) بقيمة رابط السيرفر الكامل (مثلاً https://your-api.onrender.com) ثم أعد بناء الموقع.';
+  return 'خدمة الأتمتة غير مضبوطة للإنتاج: أضف VITE_API_URL (رابط خادم الأتمتة) في Vercel. لتوليد مفاتيح التشفير ورفعها تلقائيًا: npm run automation:setup ثم Redeploy (أو npm run automation:setup -- --deploy).';
+}
+
+/** لو نُسخ سطر .env كامل بالخطأ داخل قيمة المتغير (KEY=value) نأخذ الجزء بعد = فقط. */
+function stripEnvAssignmentPrefix(raw: string, keyName: string): string {
+  const s = String(raw).trim();
+  const re = new RegExp(`^${keyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*`, 'i');
+  return s.replace(re, '');
+}
+
+/** بعض لوحات الاستضافة تلف القيمة بين quotes؛ أو مسافات/ZWSP من اللصق. */
+function unwrapQuotesAndTrim(raw: string): string {
+  let s = String(raw).trim().replace(/\u200b/g, '');
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+/** فك base64 مع معالجة مسافات ولصق URL-safe ولو بدون padding */
+function decodeSpkiPemFromBase64(b64Raw: string): string | null {
+  let cleaned = stripEnvAssignmentPrefix(b64Raw, 'VITE_AUTOMATION_RSA_PUBLIC_PEM_B64')
+    .replace(/\s/g, '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  if (!cleaned) return null;
+  const pad = (4 - (cleaned.length % 4)) % 4;
+  if (pad) cleaned += '='.repeat(pad);
+  try {
+    const bin = atob(cleaned);
+    if (!bin.includes('BEGIN PUBLIC KEY')) return null;
+    return bin;
+  } catch {
+    return null;
+  }
 }
 
 /** مفتاح RSA العام (SPKI PEM) من Vercel — يتجاوز طلب /api/automation-crypto-public (مفيد إن كان الطلب يُحظر أو يفشل). */
 function getAutomationPublicPemFromEnv(): string | null {
   const pemRaw = (import.meta.env as { VITE_AUTOMATION_RSA_PUBLIC_PEM?: string }).VITE_AUTOMATION_RSA_PUBLIC_PEM;
   if (pemRaw && String(pemRaw).trim()) {
-    return String(pemRaw).trim().replace(/\\n/g, '\n');
+    const u = unwrapQuotesAndTrim(pemRaw);
+    return stripEnvAssignmentPrefix(u, 'VITE_AUTOMATION_RSA_PUBLIC_PEM').replace(/\\n/g, '\n');
   }
   const b64 = (import.meta.env as { VITE_AUTOMATION_RSA_PUBLIC_PEM_B64?: string }).VITE_AUTOMATION_RSA_PUBLIC_PEM_B64;
-  if (b64 && String(b64).trim()) {
-    try {
-      const bin = atob(String(b64).trim().replace(/\s/g, ''));
-      return bin;
-    } catch {
-      return null;
-    }
+  if (b64 !== undefined && b64 !== null && String(b64).trim() !== '') {
+    const pem = decodeSpkiPemFromBase64(unwrapQuotesAndTrim(String(b64)));
+    if (pem) return pem;
   }
   return null;
 }
@@ -78,8 +112,10 @@ export async function prepareAutomationPostBody(
 
     if (cfg.unreachable && isProd) {
       throw new Error(
-        'تعذر الاتصال بـ /api/automation-crypto-public (تحقق من CORS أو نشر السيرفر). ' +
-          'أضف في Vercel المتغير VITE_AUTOMATION_RSA_PUBLIC_PEM_B64 (المفتاح العام base64 من سكربت التوليد) لتجاوز هذا الطلب، أو أصلح الرابط.'
+        'تعذر الاتصال بـ /api/automation-crypto-public (CORS أو السيرفر أو رابط خاطئ). ' +
+          'للتجاوز: في Vercel أضف VITE_AUTOMATION_RSA_PUBLIC_PEM_B64 = المفتاح العام (سطر base64 من secrets/PASTE_... فقط). ' +
+          'فعّل نفس المتغير لبيئة البناء التي تفتح منها الموقع (Production و/أو Preview) ثم أعد Deploy (المتغيرات VITE تُخبأ أثناء البناء). ' +
+          'تأكد أن VITE_API_URL = رابط خادم الأتمتة. توليد ورفع: npm run automation:setup -- --deploy.'
       );
     }
 

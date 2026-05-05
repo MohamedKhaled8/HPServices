@@ -12,6 +12,29 @@ export type AutomationCryptoPublicResponse = {
   httpStatus?: number;
 };
 
+/** يقلل تكرار طلبات GET عند فشل CORS أو بطء الشبكة بعد أول نجاح في الجلسة */
+const SESSION_SPKI_CACHE_KEY = 'eksc_automation_spki_pem_v1';
+
+function readCachedSpkiPem(): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    const pem = sessionStorage.getItem(SESSION_SPKI_CACHE_KEY);
+    if (pem && pem.includes('BEGIN PUBLIC KEY')) return pem;
+  } catch {
+    /* storage معطّل */
+  }
+  return null;
+}
+
+function writeCachedSpkiPem(pem: string) {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.setItem(SESSION_SPKI_CACHE_KEY, pem);
+  } catch {
+    /* quota / private */
+  }
+}
+
 function pemSpkiToArrayBuffer(pem: string): ArrayBuffer {
   const lines = pem.split('\n').filter((l) => !l.includes('-----'));
   const b64 = lines.join('').replace(/\s/g, '');
@@ -31,6 +54,11 @@ function uint8ToBase64(bytes: Uint8Array): string {
 }
 
 export async function fetchAutomationCryptoPublic(apiBase: string): Promise<AutomationCryptoPublicResponse> {
+  const cached = readCachedSpkiPem();
+  if (cached) {
+    return { enabled: true, v: 1, publicKeySpkiPem: cached, unreachable: false };
+  }
+
   const url = `${apiBase.replace(/\/$/, '')}/api/automation-crypto-public`;
   try {
     const res = await fetch(url, {
@@ -43,6 +71,9 @@ export async function fetchAutomationCryptoPublic(apiBase: string): Promise<Auto
       return { enabled: false, unreachable: true, httpStatus: res.status };
     }
     const data = (await res.json()) as AutomationCryptoPublicResponse;
+    if (data.publicKeySpkiPem && data.enabled) {
+      writeCachedSpkiPem(data.publicKeySpkiPem);
+    }
     return { ...data, unreachable: false };
   } catch {
     return { enabled: false, unreachable: true };
