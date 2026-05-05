@@ -85,20 +85,35 @@ function decryptEnvelope(body) {
  * إذا التشفير مفعّل: يقبل فقط مغلف { v, wrappedKey, iv, ciphertext } ما عدا ALLOW_PLAINTEXT_AUTOMATION=1
  */
 function decryptAutomationBodyMiddleware(req, res, next) {
-    if (!isEnabled()) {
-        return next();
-    }
     if (req.method !== 'POST' || !req.body || typeof req.body !== 'object') {
         return next();
     }
     const b = req.body;
-    const isEnvelope =
+    const looksEncrypted =
         b.v === 1 &&
         typeof b.wrappedKey === 'string' &&
         typeof b.iv === 'string' &&
         typeof b.ciphertext === 'string';
 
-    if (!isEnvelope) {
+    /** واجهة أرسلت حمولة مشفّرة لكن السيرفر بلا مفتاح خاص — لا نمرّر المغلف كأنه JSON عادي */
+    if (!isEnabled() && looksEncrypted) {
+        console.error(
+            '❌ طلب أتمتة مشفر لكن الخادم بلا AUTOMATION_RSA_PRIVATE_KEY_B64 (أو مفتاح غير صالح). ' +
+                'أضف نفس المفتاح الخاص المقترن للمفتاح العام في الواجهة في أسرار Hugging Face ثم Rebuild.'
+        );
+        return res.status(503).json({
+            success: false,
+            error:
+                'خادم الأتمتة غير جاهز لفك التشفير: اضبط Secret باسم AUTOMATION_RSA_PRIVATE_KEY_B64 في Hugging Face (نفس قيمة آخر automation:setup من secrets/) ثم أعد بناء الـ Space.',
+            requiresServerPrivateKey: true
+        });
+    }
+
+    if (!isEnabled()) {
+        return next();
+    }
+
+    if (!looksEncrypted) {
         if (process.env.ALLOW_PLAINTEXT_AUTOMATION === '1') {
             console.warn('⚠️ قبول طلب أتمتة غير مشفر (ALLOW_PLAINTEXT_AUTOMATION=1)');
             return next();
