@@ -99,7 +99,9 @@ import {
   ArrowDown,
   GripVertical,
   ChevronDown,
-  Folder
+  Folder,
+  Key,
+  Lock
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
@@ -194,6 +196,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
   const [toastState, setToastState] = useState<{ message: string; type: 'loading' | 'success' | 'error'; duration?: number } | null>(null);
   const [viewingStudentRequests, setViewingStudentRequests] = useState<StudentData | null>(null);
+  const [statsUnlocked, setStatsUnlocked] = useState(false);
+  const [statsPasswordOpen, setStatsPasswordOpen] = useState(false);
+  const [statsPasswordInput, setStatsPasswordInput] = useState('');
   const epAutomationQueueRef = React.useRef<Promise<unknown>>(Promise.resolve());
   const epAutomationQueueDepthRef = React.useRef(0);
 
@@ -240,6 +245,46 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     });
     return map;
   }, [epCodes]);
+
+  useEffect(() => {
+    try {
+      const v = sessionStorage.getItem('admin_stats_unlocked_v1');
+      if (v === '1') setStatsUnlocked(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const maskNumber = (n: number) => (statsUnlocked ? String(n) : '*****');
+  const maskMoney = (n: number) => (statsUnlocked ? `${Number(n || 0).toLocaleString()} ج.م` : '*****');
+
+  const lockStats = () => {
+    setStatsUnlocked(false);
+    setStatsPasswordOpen(false);
+    setStatsPasswordInput('');
+    try {
+      sessionStorage.removeItem('admin_stats_unlocked_v1');
+    } catch {
+      // ignore
+    }
+  };
+
+  const tryUnlockStats = () => {
+    const expected = '0100500500@##';
+    if (statsPasswordInput === expected) {
+      setStatsUnlocked(true);
+      setStatsPasswordOpen(false);
+      setStatsPasswordInput('');
+      try {
+        sessionStorage.setItem('admin_stats_unlocked_v1', '1');
+      } catch {
+        // ignore
+      }
+      setToastState({ message: 'تم إظهار الأرقام.', type: 'success', duration: 2500 });
+      return;
+    }
+    setToastState({ message: 'كلمة المرور غير صحيحة.', type: 'error', duration: 3000 });
+  };
 
   const enqueueElectronicPaymentAutomation = <T,>(task: (meta: { queuePosition: number }) => Promise<T>): Promise<T> => {
     epAutomationQueueDepthRef.current += 1;
@@ -2530,17 +2575,126 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     <div className="service-file-stats">
                       <div className="service-file-stat-item service-file-stat-new">
                         <span className="stat-label">جديدة</span>
-                        <span className="stat-value">{newRequests}</span>
+                        <span className="stat-value">{maskNumber(newRequests)}</span>
                       </div>
                       <div className="service-file-stat-item service-file-stat-total">
                         <span className="stat-label">الإجمالي</span>
-                        <span className="stat-value">{totalRequests}</span>
+                        <span className="stat-value">{maskNumber(totalRequests)}</span>
                       </div>
+                    </div>
+
+                    <div
+                      style={{ position: 'absolute', top: 10, left: 10, zIndex: 2 }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (statsUnlocked) {
+                          lockStats();
+                          setToastState({ message: 'تم إخفاء الأرقام.', type: 'success', duration: 2200 });
+                          return;
+                        }
+                        setStatsPasswordOpen((s) => !s);
+                      }}
+                      title={statsUnlocked ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
+                      role="button"
+                      aria-label={statsUnlocked ? 'إخفاء أرقام الطلبات' : 'إظهار أرقام الطلبات'}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (statsUnlocked) {
+                            lockStats();
+                            return;
+                          }
+                          setStatsPasswordOpen((s) => !s);
+                        }
+                      }}
+                    >
+                      {statsUnlocked ? <Lock size={18} /> : <Key size={18} />}
                     </div>
                   </div>
                 );
               })}
             </div>
+
+            {statsPasswordOpen && !statsUnlocked && (
+              <div
+                style={{
+                  position: 'sticky',
+                  top: 10,
+                  zIndex: 5,
+                  marginTop: 12,
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 12,
+                  borderRadius: 12,
+                  background: '#0b1220',
+                  color: '#e2e8f0',
+                  border: '1px solid rgba(148,163,184,0.2)'
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>إظهار الأرقام:</span>
+                <input
+                  type="password"
+                  value={statsPasswordInput}
+                  onChange={(e) => setStatsPasswordInput(e.target.value)}
+                  placeholder="أدخل كلمة المرور"
+                  style={{
+                    width: 260,
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,0.25)',
+                    background: '#0f172a',
+                    color: '#e2e8f0',
+                    outline: 'none'
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      tryUnlockStats();
+                    } else if (e.key === 'Escape') {
+                      setStatsPasswordOpen(false);
+                      setStatsPasswordInput('');
+                    }
+                  }}
+                  autoFocus
+                />
+                <button
+                  onClick={tryUnlockStats}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,0.25)',
+                    background: '#1e293b',
+                    color: '#e2e8f0',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  فتح
+                </button>
+                <button
+                  onClick={() => {
+                    setStatsPasswordOpen(false);
+                    setStatsPasswordInput('');
+                  }}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,0.25)',
+                    background: 'transparent',
+                    color: '#e2e8f0',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  إلغاء
+                </button>
+              </div>
+            )}
 
             {/* Display requests for selected service */}
             {selectedServiceId && (
@@ -5938,6 +6092,36 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 <h2 style={{ fontSize: '1.8rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <TrendingUp size={32} color="#2563eb" />
                   مركز الإحصائيات والتقارير المالية
+                  <span
+                    style={{ marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', padding: 8, borderRadius: 10, border: '1px solid rgba(148,163,184,0.25)', background: 'rgba(241,245,249,0.6)' }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (statsUnlocked) {
+                        lockStats();
+                        setToastState({ message: 'تم إخفاء الأرقام.', type: 'success', duration: 2200 });
+                        return;
+                      }
+                      setStatsPasswordOpen(true);
+                    }}
+                    title={statsUnlocked ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
+                    role="button"
+                    aria-label={statsUnlocked ? 'إخفاء أرقام الإحصائيات' : 'إظهار أرقام الإحصائيات'}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (statsUnlocked) {
+                          lockStats();
+                        } else {
+                          setStatsPasswordOpen(true);
+                        }
+                      }
+                    }}
+                  >
+                    {statsUnlocked ? <Lock size={18} /> : <Key size={18} />}
+                  </span>
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '15px', flexWrap: 'wrap' }}>
                   <button
@@ -5961,14 +6145,92 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               <div style={{ display: 'flex', gap: '15px' }}>
                 <div style={{ background: '#f1f5f9', padding: '12px 24px', borderRadius: '16px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '4px' }}>إجمالي الدخل المحقق</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#10b981' }}>{totalRevenue.toLocaleString()} ج.م</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#10b981' }}>{maskMoney(totalRevenue)}</div>
                 </div>
                 <div style={{ background: '#fef3c7', padding: '12px 24px', borderRadius: '16px', textAlign: 'center', border: '1px solid #fde68a' }}>
                   <div style={{ fontSize: '0.85rem', color: '#b45309', marginBottom: '4px' }}>إجمالي المكسب</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#d97706' }}>{totalProfit.toLocaleString()} ج.م</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#d97706' }}>{maskMoney(totalProfit)}</div>
                 </div>
               </div>
             </div>
+
+            {statsPasswordOpen && !statsUnlocked && (
+              <div
+                style={{
+                  position: 'sticky',
+                  top: 10,
+                  zIndex: 5,
+                  marginBottom: 18,
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 12,
+                  borderRadius: 12,
+                  background: '#0b1220',
+                  color: '#e2e8f0',
+                  border: '1px solid rgba(148,163,184,0.2)'
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>إظهار أرقام الإحصائيات:</span>
+                <input
+                  type="password"
+                  value={statsPasswordInput}
+                  onChange={(e) => setStatsPasswordInput(e.target.value)}
+                  placeholder="أدخل كلمة المرور"
+                  style={{
+                    width: 260,
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,0.25)',
+                    background: '#0f172a',
+                    color: '#e2e8f0',
+                    outline: 'none'
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      tryUnlockStats();
+                    } else if (e.key === 'Escape') {
+                      setStatsPasswordOpen(false);
+                      setStatsPasswordInput('');
+                    }
+                  }}
+                  autoFocus
+                />
+                <button
+                  onClick={tryUnlockStats}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,0.25)',
+                    background: '#1e293b',
+                    color: '#e2e8f0',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  فتح
+                </button>
+                <button
+                  onClick={() => {
+                    setStatsPasswordOpen(false);
+                    setStatsPasswordInput('');
+                  }}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,0.25)',
+                    background: 'transparent',
+                    color: '#e2e8f0',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  إلغاء
+                </button>
+              </div>
+            )}
 
             {/* KPI Cards */}
             <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '40px' }}>
@@ -5977,7 +6239,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   <div style={{ padding: '12px', background: '#eff6ff', borderRadius: '12px', color: '#2563eb' }}><Activity size={24} /></div>
                   <span style={{ color: '#64748b', fontSize: '0.9rem' }}>إجمالي الطلبات</span>
                 </div>
-                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{serviceRequests.length}</h3>
+                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{maskNumber(serviceRequests.length)}</h3>
                 <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#64748b' }}>طلب مقدم على المنصة</div>
               </div>
 
@@ -5986,7 +6248,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   <div style={{ padding: '12px', background: '#dcfce7', borderRadius: '12px', color: '#166534' }}><CheckCircle size={24} /></div>
                   <span style={{ color: '#64748b', fontSize: '0.9rem' }}>الطلبات المكتملة</span>
                 </div>
-                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{completedCount}</h3>
+                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{maskNumber(completedCount)}</h3>
                 <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#166534', fontWeight: 'bold' }}>
                   {Math.round((completedCount / (serviceRequests.length || 1)) * 100)}% معدل القبول
                 </div>
@@ -5997,7 +6259,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   <div style={{ padding: '12px', background: '#fef2f2', borderRadius: '12px', color: '#dc2626' }}><XCircle size={24} /></div>
                   <span style={{ color: '#64748b', fontSize: '0.9rem' }}>الطلبات المرفوضة</span>
                 </div>
-                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{rejectedCount}</h3>
+                <h3 style={{ fontSize: '2rem', margin: 0, color: '#0f172a' }}>{maskNumber(rejectedCount)}</h3>
                 <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#ef4444' }}>تحتاج لمراجعة السبب</div>
               </div>
 
@@ -6010,7 +6272,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   {sortedServicesByRew[0]?.revenue > 0 ? sortedServicesByRew[0].name : 'لا يوجد'}
                 </h3>
                 <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#ea580c', fontWeight: 'bold' }}>
-                  {sortedServicesByRew[0]?.revenue.toLocaleString()} ج.م
+                  {maskMoney(sortedServicesByRew[0]?.revenue || 0)}
                 </div>
               </div>
             </div>
@@ -6035,7 +6297,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           transition: 'width 1s ease-out'
                         }} />
                       </div>
-                      <div style={{ width: '40px', fontSize: '0.85rem', fontWeight: 'bold', textAlign: 'right' }}>{service.count}</div>
+                      <div style={{ width: '40px', fontSize: '0.85rem', fontWeight: 'bold', textAlign: 'right' }}>{maskNumber(service.count)}</div>
                     </div>
                   ))}
                 </div>
@@ -6054,8 +6316,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                           <span style={{ fontWeight: '600', color: '#334155' }}>{service.name}</span>
                           <div>
-                            <span style={{ fontWeight: 'bold', color: '#10b981', marginLeft: '10px' }}>{service.revenue.toLocaleString()} ج.م</span>
-                            <span style={{ fontWeight: 'bold', color: '#d97706' }}>(مكسب: {service.profit.toLocaleString()} ج.م)</span>
+                            <span style={{ fontWeight: 'bold', color: '#10b981', marginLeft: '10px' }}>
+                              {statsUnlocked ? `${service.revenue.toLocaleString()} ج.م` : '*****'}
+                            </span>
+                            <span style={{ fontWeight: 'bold', color: '#d97706' }}>
+                              (مكسب: {statsUnlocked ? `${service.profit.toLocaleString()} ج.م` : '*****'})
+                            </span>
                           </div>
                         </div>
                         <div style={{ width: '100%', height: '8px', background: '#f1f5f9', borderRadius: '4px', marginBottom: '10px' }}>

@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import {
   uploadAssignmentFilesForTrack,
   getAssignmentFilesForTrack,
+  createAssignmentFolderForTrack,
+  getAssignmentFoldersForTrack,
   distributeAssignmentsForTrack,
   deleteAssignmentFilesForTrack,
   getAssignmentsServiceConfig,
@@ -12,9 +14,14 @@ import {
   ServiceTier,
   upload130UnifiedFile,
   get130UnifiedFiles,
+  create130UnifiedFolder,
+  get130UnifiedFolders,
+  deleteAssignmentFolderForTrack,
+  delete130UnifiedFolder,
   delete130UnifiedFiles,
   distribute130UnifiedFiles,
-  removeAssignedFilesFromAllStudents
+  removeAssignedFilesFromAllStudents,
+  AssignmentFolderMeta
 } from '../services/firebaseService';
 import { AssignmentsServiceConfig, AssignmentItem } from '../types';
 import { normalizeInstaPay } from '../utils/validation';
@@ -37,6 +44,8 @@ interface AssignmentsManagementPageProps {
 }
 
 const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ onBack }) => {
+  const TRACK_FOLDERS_CACHE_KEY = 'assignments_track_folders_cache_v1';
+  const UNIFIED130_FOLDERS_CACHE_KEY = 'assignments_unified130_folders_cache_v1';
 
 
   // Tabs: إدارة التكليفات / إدارة تكاليف المسارات
@@ -81,12 +90,77 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
   const [isDistributingAssignments, setIsDistributingAssignments] = useState(false);
   const [assignmentsMessage, setAssignmentsMessage] = useState<string | null>(null);
+  const [trackFolders, setTrackFolders] = useState<Record<TrackKey, AssignmentFolderMeta[]>>({
+    track1: [],
+    track2: [],
+    track3: []
+  });
+  const [trackCurrentPath, setTrackCurrentPath] = useState<Record<TrackKey, string>>({
+    track1: '',
+    track2: '',
+    track3: ''
+  });
+  const [newTrackFolderName, setNewTrackFolderName] = useState('');
 
   // Tier selection modal state
   const [showTierModal, setShowTierModal] = useState(false);
 
   // 130 unified files state
   const [unified130Files, setUnified130Files] = useState<any[]>([]);
+  const [unified130Folders, setUnified130Folders] = useState<AssignmentFolderMeta[]>([]);
+  const [unified130CurrentPath, setUnified130CurrentPath] = useState('');
+  const [newUnified130FolderName, setNewUnified130FolderName] = useState('');
+
+  const readCachedTrackFolders = (): Record<TrackKey, AssignmentFolderMeta[]> => {
+    try {
+      const raw = localStorage.getItem(TRACK_FOLDERS_CACHE_KEY);
+      if (!raw) return { track1: [], track2: [], track3: [] };
+      const parsed = JSON.parse(raw) as Record<TrackKey, AssignmentFolderMeta[]>;
+      return {
+        track1: Array.isArray(parsed?.track1) ? parsed.track1 : [],
+        track2: Array.isArray(parsed?.track2) ? parsed.track2 : [],
+        track3: Array.isArray(parsed?.track3) ? parsed.track3 : []
+      };
+    } catch {
+      return { track1: [], track2: [], track3: [] };
+    }
+  };
+
+  const writeCachedTrackFolders = (folders: Record<TrackKey, AssignmentFolderMeta[]>) => {
+    try {
+      localStorage.setItem(TRACK_FOLDERS_CACHE_KEY, JSON.stringify(folders));
+    } catch {
+      // ignore localStorage quota/private mode
+    }
+  };
+
+  const readCachedUnified130Folders = (): AssignmentFolderMeta[] => {
+    try {
+      const raw = localStorage.getItem(UNIFIED130_FOLDERS_CACHE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as AssignmentFolderMeta[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeCachedUnified130Folders = (folders: AssignmentFolderMeta[]) => {
+    try {
+      localStorage.setItem(UNIFIED130_FOLDERS_CACHE_KEY, JSON.stringify(folders));
+    } catch {
+      // ignore localStorage quota/private mode
+    }
+  };
+
+  const mergeFoldersByPath = (a: AssignmentFolderMeta[], b: AssignmentFolderMeta[]) => {
+    const map = new Map<string, AssignmentFolderMeta>();
+    [...a, ...b].forEach((f) => {
+      if (!f?.path) return;
+      map.set(f.path, f);
+    });
+    return Array.from(map.values());
+  };
   const [isUploading130, setIsUploading130] = useState(false);
   const [isDistributing130, setIsDistributing130] = useState(false);
   const [selected130FileIds, setSelected130FileIds] = useState<Set<string>>(new Set());
@@ -112,6 +186,13 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     singleFileId?: string;
   }>({ open: false, fileIds: [], source: 'track' });
   const [isRemovingFromUsers, setIsRemovingFromUsers] = useState(false);
+
+  /** أثناء حذف فولدر (قد ياخد وقتًا بسبب Firestore والتخزين + تنظيف الطلاب) */
+  const [folderDeleteLoading, setFolderDeleteLoading] = useState<{
+    scope: 'track' | 'unified130';
+    track?: TrackKey;
+    folderPath: string;
+  } | null>(null);
 
   // Animation states
   const [showSnackbar, setShowSnackbar] = useState(false);
@@ -141,10 +222,13 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   useEffect(() => {
     const loadAllTracks = async () => {
       try {
-        const [files1, files2, files3] = await Promise.all([
+        const [files1, files2, files3, folders1, folders2, folders3] = await Promise.all([
           getAssignmentFilesForTrack('track1'),
           getAssignmentFilesForTrack('track2'),
-          getAssignmentFilesForTrack('track3')
+          getAssignmentFilesForTrack('track3'),
+          getAssignmentFoldersForTrack('track1'),
+          getAssignmentFoldersForTrack('track2'),
+          getAssignmentFoldersForTrack('track3')
         ]);
 
         setTrackFiles({
@@ -152,8 +236,18 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
           track2: files2,
           track3: files3
         });
+        const cached = readCachedTrackFolders();
+        const merged = {
+          track1: mergeFoldersByPath(folders1, cached.track1),
+          track2: mergeFoldersByPath(folders2, cached.track2),
+          track3: mergeFoldersByPath(folders3, cached.track3)
+        };
+        setTrackFolders(merged);
+        writeCachedTrackFolders(merged);
       } catch (error) {
         console.error('Error loading track files:', error);
+        const cached = readCachedTrackFolders();
+        setTrackFolders(cached);
       }
     };
 
@@ -164,10 +258,15 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   useEffect(() => {
     const load130Files = async () => {
       try {
-        const files = await get130UnifiedFiles();
+        const [files, folders] = await Promise.all([get130UnifiedFiles(), get130UnifiedFolders()]);
         setUnified130Files(files);
+        const cached = readCachedUnified130Folders();
+        const merged = mergeFoldersByPath(folders, cached);
+        setUnified130Folders(merged);
+        writeCachedUnified130Folders(merged);
       } catch (error) {
         console.error('Error loading 130 unified files:', error);
+        setUnified130Folders(readCachedUnified130Folders());
       }
     };
     load130Files();
@@ -259,6 +358,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         track,
         files,
         user.uid,
+        trackCurrentPath[track] || '',
         (current, total) => {
           setUploadProgress(prev => ({
             ...prev,
@@ -296,7 +396,12 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       setTimeout(() => setShowPaperPlane(false), 1500);
 
       const targetTrack = openedTrack || activeTrackFolder;
-      const ids = Array.from(selectedFileIds[targetTrack] || []);
+      const selectedIds = Array.from(selectedFileIds[targetTrack] || []);
+      const visibleIds = getVisibleTrackFiles(targetTrack).map((f: any) => f.id);
+      const ids = selectedIds.length > 0 ? selectedIds : visibleIds;
+      if (ids.length === 0) {
+        throw new Error('لا توجد ملفات داخل المجلد الحالي للإرسال');
+      }
       await distributeAssignmentsForTrack(targetTrack, ids, tier);
 
       const tierLabel = tier === '500' ? 'مشتركي الـ 500 (حل وتسليم)' : 'مشتركي الـ 300 (حل فقط)';
@@ -320,7 +425,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     if (!user) return;
     try {
       setIsUploading130(true);
-      const uploaded = await upload130UnifiedFile(file, user.uid);
+      const uploaded = await upload130UnifiedFile(file, user.uid, unified130CurrentPath || '');
       setUnified130Files(prev => [...prev, uploaded]);
       showSnackbarNotification('تم رفع الملف الموحد بنجاح', 'success');
     } catch (error: any) {
@@ -336,7 +441,12 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       setShowPaperPlane(true);
       setTimeout(() => setShowPaperPlane(false), 1500);
 
-      const ids = Array.from(selected130FileIds);
+      const selectedIds = Array.from(selected130FileIds);
+      const visibleIds = getVisibleUnified130Files().map((f: any) => f.id);
+      const ids = selectedIds.length > 0 ? selectedIds : visibleIds;
+      if (ids.length === 0) {
+        throw new Error('لا توجد ملفات داخل المجلد الحالي للإرسال');
+      }
       await distribute130UnifiedFiles(ids.length > 0 ? ids : undefined);
       showSnackbarNotification('تم إرسال الملفات الموحدة لمشتركي الـ 130 بنجاح', 'success');
       setSelected130FileIds(new Set());
@@ -476,6 +586,193 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     }
 
     onBack();
+  };
+
+  const getPathParts = (path: string): string[] => String(path || '').split('/').filter(Boolean);
+  const getParentPath = (path: string): string => {
+    const parts = getPathParts(path);
+    parts.pop();
+    return parts.join('/');
+  };
+  const getPathLastName = (path: string): string => {
+    const parts = getPathParts(path);
+    return parts[parts.length - 1] || '';
+  };
+
+  const getVisibleTrackFiles = (track: TrackKey) => {
+    const current = trackCurrentPath[track] || '';
+    return (trackFiles[track] || []).filter((f) => (f.folderPath || '') === current);
+  };
+
+  const getVisibleTrackFolders = (track: TrackKey) => {
+    const current = trackCurrentPath[track] || '';
+    return (trackFolders[track] || []).filter((f) => f.parentPath === current);
+  };
+
+  const getVisibleUnified130Files = () => {
+    const current = unified130CurrentPath || '';
+    return (unified130Files || []).filter((f) => (f.folderPath || '') === current);
+  };
+
+  const getVisibleUnified130Folders = () => {
+    const current = unified130CurrentPath || '';
+    return (unified130Folders || []).filter((f) => f.parentPath === current);
+  };
+
+  const handleCreateTrackFolder = async (track: TrackKey) => {
+    const folderName = newTrackFolderName.trim();
+    if (!folderName) return;
+    try {
+      const created = await createAssignmentFolderForTrack(track, folderName, trackCurrentPath[track] || '');
+      setTrackFolders((prev) => {
+        const next = { ...prev, [track]: mergeFoldersByPath(prev[track] || [], [created]) };
+        writeCachedTrackFolders(next);
+        return next;
+      });
+      setNewTrackFolderName('');
+      showSnackbarNotification('تم إنشاء المجلد بنجاح', 'success');
+    } catch (error: any) {
+      // fallback local-only folder حتى لا يختفي عند إعادة فتح الصفحة
+      const fallback: AssignmentFolderMeta = {
+        id: `local_${Date.now()}`,
+        name: folderName.replace(/[\\/:*?"<>|]/g, '_').trim(),
+        path: (trackCurrentPath[track] ? `${trackCurrentPath[track]}/` : '') + folderName.replace(/[\\/:*?"<>|]/g, '_').trim(),
+        parentPath: trackCurrentPath[track] || ''
+      };
+      setTrackFolders((prev) => {
+        const next = { ...prev, [track]: mergeFoldersByPath(prev[track] || [], [fallback]) };
+        writeCachedTrackFolders(next);
+        return next;
+      });
+      setNewTrackFolderName('');
+      showSnackbarNotification(error.message ? `${error.message} — تم حفظ المجلد محلياً.` : 'تم حفظ المجلد محلياً.', 'error');
+    }
+  };
+
+  const handleCreateUnified130Folder = async () => {
+    const folderName = newUnified130FolderName.trim();
+    if (!folderName) return;
+    try {
+      const created = await create130UnifiedFolder(folderName, unified130CurrentPath || '');
+      setUnified130Folders((prev) => {
+        const next = mergeFoldersByPath(prev, [created]);
+        writeCachedUnified130Folders(next);
+        return next;
+      });
+      setNewUnified130FolderName('');
+      showSnackbarNotification('تم إنشاء المجلد بنجاح', 'success');
+    } catch (error: any) {
+      const safe = folderName.replace(/[\\/:*?"<>|]/g, '_').trim();
+      const fallback: AssignmentFolderMeta = {
+        id: `local_${Date.now()}`,
+        name: safe,
+        path: (unified130CurrentPath ? `${unified130CurrentPath}/` : '') + safe,
+        parentPath: unified130CurrentPath || ''
+      };
+      setUnified130Folders((prev) => {
+        const next = mergeFoldersByPath(prev, [fallback]);
+        writeCachedUnified130Folders(next);
+        return next;
+      });
+      setNewUnified130FolderName('');
+      showSnackbarNotification(error.message ? `${error.message} — تم حفظ المجلد محلياً.` : 'تم حفظ المجلد محلياً.', 'error');
+    }
+  };
+
+  const handleDeleteTrackFolder = async (track: TrackKey, folderPath: string) => {
+    const folderName = getPathLastName(folderPath) || folderPath;
+    const ok = window.confirm(`سيتم حذف المجلد "${folderName}" وكل ما بداخله. هل أنت متأكد؟`);
+    if (!ok) return;
+    setFolderDeleteLoading({ scope: 'track', track, folderPath });
+    try {
+      const result = await deleteAssignmentFolderForTrack(track, folderPath);
+
+      const nextFolders = {
+        ...trackFolders,
+        [track]: (trackFolders[track] || []).filter((f) => !(f.path === folderPath || f.path.startsWith(`${folderPath}/`)))
+      };
+      const nextFiles = {
+        ...trackFiles,
+        [track]: (trackFiles[track] || []).filter((f: any) => {
+          const fp = String(f.folderPath || '');
+          return !(fp === folderPath || fp.startsWith(`${folderPath}/`));
+        })
+      };
+      setTrackFolders(nextFolders);
+      setTrackFiles(nextFiles);
+      writeCachedTrackFolders(nextFolders);
+
+      const cur = trackCurrentPath[track] || '';
+      if (cur === folderPath || cur.startsWith(`${folderPath}/`)) {
+        setTrackCurrentPath((p) => ({ ...p, [track]: getParentPath(folderPath) }));
+      }
+
+      const removedIds = new Set(result.deletedFiles);
+      if (removedIds.size > 0) {
+        setSelectedFileIds((prev) => {
+          const s = new Set(prev[track] || []);
+          removedIds.forEach((id) => s.delete(id));
+          return { ...prev, [track]: s };
+        });
+      }
+
+      if (result.deletedFiles.length > 0) {
+        try {
+          await removeAssignedFilesFromAllStudents(result.deletedFiles);
+        } catch {
+          // ignore secondary cleanup failure
+        }
+      }
+      showSnackbarNotification('تم حذف المجلد وكل محتوياته', 'success');
+    } catch (error: any) {
+      showSnackbarNotification(error.message || 'فشل حذف المجلد', 'error');
+    } finally {
+      setFolderDeleteLoading(null);
+    }
+  };
+
+  const handleDeleteUnified130Folder = async (folderPath: string) => {
+    const folderName = getPathLastName(folderPath) || folderPath;
+    const ok = window.confirm(`سيتم حذف المجلد "${folderName}" وكل ما بداخله. هل أنت متأكد؟`);
+    if (!ok) return;
+    setFolderDeleteLoading({ scope: 'unified130', folderPath });
+    try {
+      const result = await delete130UnifiedFolder(folderPath);
+      const nextFolders = unified130Folders.filter((f) => !(f.path === folderPath || f.path.startsWith(`${folderPath}/`)));
+      const nextFiles = unified130Files.filter((f: any) => {
+        const fp = String(f.folderPath || '');
+        return !(fp === folderPath || fp.startsWith(`${folderPath}/`));
+      });
+      setUnified130Folders(nextFolders);
+      setUnified130Files(nextFiles);
+      writeCachedUnified130Folders(nextFolders);
+
+      const cur = unified130CurrentPath || '';
+      if (cur === folderPath || cur.startsWith(`${folderPath}/`)) {
+        setUnified130CurrentPath(getParentPath(folderPath));
+      }
+
+      if (result.deletedFiles.length > 0) {
+        setSelected130FileIds((prev) => {
+          const s = new Set(prev);
+          result.deletedFiles.forEach((id) => s.delete(id));
+          return s;
+        });
+      }
+
+      if (result.deletedFiles.length > 0) {
+        try {
+          await removeAssignedFilesFromAllStudents(result.deletedFiles);
+        } catch {
+          // ignore secondary cleanup failure
+        }
+      }
+      showSnackbarNotification('تم حذف المجلد وكل محتوياته', 'success');
+    } catch (error: any) {
+      showSnackbarNotification(error.message || 'فشل حذف المجلد', 'error');
+    } finally {
+      setFolderDeleteLoading(null);
+    }
   };
 
   return (
@@ -733,6 +1030,12 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
             {trackView === 'details' && openedTrack && (
               <div className="track-files-panel">
+                {(() => {
+                  const visibleFiles = getVisibleTrackFiles(openedTrack);
+                  const visibleFolders = getVisibleTrackFolders(openedTrack);
+                  const currentPath = trackCurrentPath[openedTrack] || '';
+                  return (
+                    <>
                 <div className="track-files-header">
                   <div className="track-header-main">
                     <button
@@ -751,6 +1054,29 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                       {openedTrack === 'track2' && 'ملفات المسار الثاني'}
                       {openedTrack === 'track3' && 'ملفات المسار الثالث'}
                     </h3>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="back-to-tracks-button"
+                        onClick={() => setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: '' }))}
+                        disabled={!currentPath}
+                      >
+                        الجذر
+                      </button>
+                      {getPathParts(currentPath).map((part, idx, arr) => {
+                        const full = arr.slice(0, idx + 1).join('/');
+                        return (
+                          <button
+                            key={full}
+                            type="button"
+                            className="back-to-tracks-button"
+                            onClick={() => setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: full }))}
+                          >
+                            {part}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <div className="track-files-actions">
@@ -792,15 +1118,26 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                         </>
                       )}
                     </button>
+                    <input
+                      type="text"
+                      value={newTrackFolderName}
+                      onChange={(e) => setNewTrackFolderName(e.target.value)}
+                      placeholder="اسم مجلد جديد"
+                      style={{ minWidth: 170, padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}
+                    />
+                    <button
+                      type="button"
+                      className="add-costs-button"
+                      onClick={() => handleCreateTrackFolder(openedTrack)}
+                    >
+                      <Folder size={16} />
+                      إنشاء مجلد
+                    </button>
 
                     <button
                       type="button"
                       className="send-button"
-                      disabled={
-                        isDistributingAssignments ||
-                        !selectedFileIds[openedTrack] ||
-                        selectedFileIds[openedTrack].size === 0
-                      }
+                      disabled={isDistributingAssignments || (selectedFileIds[openedTrack]?.size === 0 && visibleFiles.length === 0)}
                       onClick={() => setShowTierModal(true)}
                     >
                       {isDistributingAssignments ? (
@@ -843,9 +1180,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
                 <div className="track-files-body">
                   <div className="files-table-wrapper">
-                    {!trackFiles[openedTrack] || trackFiles[openedTrack].length === 0 ? (
+                    {visibleFolders.length === 0 && visibleFiles.length === 0 ? (
                       <div className="no-items-message">
-                        لا توجد ملفات مضافة لهذا المسار بعد
+                        لا توجد عناصر داخل هذا المجلد بعد
                       </div>
                     ) : (
                       <table className="files-table">
@@ -856,17 +1193,18 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                                 <input
                                   type="checkbox"
                                   checked={
-                                    trackFiles[openedTrack]?.length > 0 &&
-                                    selectedFileIds[openedTrack]?.size === trackFiles[openedTrack]?.length
+                                    visibleFiles.length > 0 &&
+                                    visibleFiles.every((f: any) => selectedFileIds[openedTrack]?.has(f.id))
                                   }
                                   onChange={(e) => {
                                     if (e.target.checked) {
-                                      // Select All
-                                      const allIds = new Set(trackFiles[openedTrack].map((f: any) => f.id));
+                                      const allIds = new Set(selectedFileIds[openedTrack] || []);
+                                      visibleFiles.forEach((f: any) => allIds.add(f.id));
                                       setSelectedFileIds(prev => ({ ...prev, [openedTrack]: allIds }));
                                     } else {
-                                      // Deselect All
-                                      setSelectedFileIds(prev => ({ ...prev, [openedTrack]: new Set() }));
+                                      const allIds = new Set(selectedFileIds[openedTrack] || []);
+                                      visibleFiles.forEach((f: any) => allIds.delete(f.id));
+                                      setSelectedFileIds(prev => ({ ...prev, [openedTrack]: allIds }));
                                     }
                                   }}
                                 />
@@ -878,7 +1216,43 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                           </tr>
                         </thead>
                         <tbody>
-                          {trackFiles[openedTrack].map((file: any) => {
+                          {visibleFolders.map((folder) => {
+                            const deletingThis =
+                              !!folderDeleteLoading &&
+                              folderDeleteLoading.scope === 'track' &&
+                              folderDeleteLoading.track === openedTrack &&
+                              folderDeleteLoading.folderPath === folder.path;
+                            return (
+                            <tr key={`folder-${folder.id}`}>
+                              <td />
+                              <td>
+                                <button
+                                  type="button"
+                                  disabled={!!folderDeleteLoading || isDeletingAssignments[openedTrack]}
+                                  onClick={() => setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: folder.path }))}
+                                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#2563eb', fontWeight: 700 }}
+                                >
+                                  📁 {folder.name}
+                                </button>
+                              </td>
+                              <td>
+                                <button
+                                  className="icon-button delete"
+                                  disabled={!!folderDeleteLoading || isDeletingAssignments[openedTrack]}
+                                  onClick={() => handleDeleteTrackFolder(openedTrack, folder.path)}
+                                  title="حذف المجلد"
+                                >
+                                  {deletingThis ? (
+                                    <Loader2 size={16} className="spinning-loader-small" />
+                                  ) : (
+                                    <X size={16} />
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                          })}
+                          {visibleFiles.map((file: any) => {
                             const isSelected = selectedFileIds[openedTrack]?.has(file.id);
                             const isAnimatingDelete = animatingDeleteIds[openedTrack]?.has(file.id);
                             return (
@@ -941,6 +1315,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                     )}
                   </div>
                 </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -949,9 +1326,38 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         {/* TAB: ملفات الـ 130 الموحدة */}
         {activeTab === 'unified130' && (
           <div className="track-files-panel">
+            {(() => {
+              const visibleFiles = getVisibleUnified130Files();
+              const visibleFolders = getVisibleUnified130Folders();
+              const currentPath = unified130CurrentPath || '';
+              return (
+                <>
             <div className="track-files-header">
               <div className="track-header-main">
                 <h3>ملفات خدمة الـ 130 جنيه (ملف موحد للكل)</h3>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="back-to-tracks-button"
+                    onClick={() => setUnified130CurrentPath('')}
+                    disabled={!currentPath}
+                  >
+                    الجذر
+                  </button>
+                  {getPathParts(currentPath).map((part, idx, arr) => {
+                    const full = arr.slice(0, idx + 1).join('/');
+                    return (
+                      <button
+                        key={full}
+                        type="button"
+                        className="back-to-tracks-button"
+                        onClick={() => setUnified130CurrentPath(full)}
+                      >
+                        {part}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div className="track-files-actions">
                 <input
@@ -979,10 +1385,25 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                     <><Upload size={16} /> رفع ملف</>
                   )}
                 </button>
+                <input
+                  type="text"
+                  value={newUnified130FolderName}
+                  onChange={(e) => setNewUnified130FolderName(e.target.value)}
+                  placeholder="اسم مجلد جديد"
+                  style={{ minWidth: 170, padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}
+                />
+                <button
+                  type="button"
+                  className="add-costs-button"
+                  onClick={handleCreateUnified130Folder}
+                >
+                  <Folder size={16} />
+                  إنشاء مجلد
+                </button>
                 <button
                   type="button"
                   className="send-button"
-                  disabled={isDistributing130}
+                  disabled={isDistributing130 || (selected130FileIds.size === 0 && visibleFiles.length === 0)}
                   onClick={handle130Distribute}
                 >
                   {isDistributing130 ? (
@@ -1007,9 +1428,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
             </div>
             <div className="track-files-body">
               <div className="files-table-wrapper">
-                {unified130Files.length === 0 ? (
+                {visibleFolders.length === 0 && visibleFiles.length === 0 ? (
                   <div className="no-items-message">
-                    لا توجد ملفات موحدة مرفوعة بعد. الملفات المرفوعة هنا ستُرسل لجميع مشتركي خدمة الـ 130 جنيه.
+                    لا توجد عناصر داخل هذا المجلد بعد. الملفات المرفوعة هنا ستُرسل لجميع مشتركي خدمة الـ 130 جنيه.
                   </div>
                 ) : (
                   <table className="files-table">
@@ -1019,12 +1440,20 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                           <label className="checkbox-label">
                             <input
                               type="checkbox"
-                              checked={unified130Files.length > 0 && selected130FileIds.size === unified130Files.length}
+                              checked={visibleFiles.length > 0 && visibleFiles.every((f: any) => selected130FileIds.has(f.id))}
                               onChange={(e) => {
                                 if (e.target.checked) {
-                                  setSelected130FileIds(new Set(unified130Files.map(f => f.id)));
+                                  setSelected130FileIds(prev => {
+                                    const s = new Set(prev);
+                                    visibleFiles.forEach((f: any) => s.add(f.id));
+                                    return s;
+                                  });
                                 } else {
-                                  setSelected130FileIds(new Set());
+                                  setSelected130FileIds(prev => {
+                                    const s = new Set(prev);
+                                    visibleFiles.forEach((f: any) => s.delete(f.id));
+                                    return s;
+                                  });
                                 }
                               }}
                             />
@@ -1036,7 +1465,42 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                       </tr>
                     </thead>
                     <tbody>
-                      {unified130Files.map((file: any) => {
+                      {visibleFolders.map((folder) => {
+                        const deletingThis =
+                          !!folderDeleteLoading &&
+                          folderDeleteLoading.scope === 'unified130' &&
+                          folderDeleteLoading.folderPath === folder.path;
+                        return (
+                        <tr key={`folder-130-${folder.id}`}>
+                          <td />
+                          <td>
+                            <button
+                              type="button"
+                              disabled={!!folderDeleteLoading || isDeleting130}
+                              onClick={() => setUnified130CurrentPath(folder.path)}
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#2563eb', fontWeight: 700 }}
+                            >
+                              📁 {folder.name}
+                            </button>
+                          </td>
+                          <td>
+                            <button
+                              className="icon-button delete"
+                              disabled={!!folderDeleteLoading || isDeleting130}
+                              onClick={() => handleDeleteUnified130Folder(folder.path)}
+                              title="حذف المجلد"
+                            >
+                              {deletingThis ? (
+                                <Loader2 size={16} className="spinning-loader-small" />
+                              ) : (
+                                <X size={16} />
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                      })}
+                      {visibleFiles.map((file: any) => {
                         const isSelected = selected130FileIds.has(file.id);
                         return (
                           <tr key={file.id} className={isSelected ? 'selected-row' : ''}>
@@ -1084,6 +1548,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                 )}
               </div>
             </div>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -1192,6 +1659,20 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
             <Loader2 size={40} className="spinning-loader-large" />
             <p>جاري حذف الملفات من حسابات الطلاب...</p>
             <span>يرجى الانتظار وعدم إغلاق الصفحة</span>
+          </div>
+        </div>
+      )}
+
+      {folderDeleteLoading && (
+        <div className="removing-users-overlay">
+          <div className="removing-users-content">
+            <Loader2 size={40} className="spinning-loader-large" />
+            <p>
+              جاري حذف المجلد{' '}
+              <strong dir="ltr">{getPathLastName(folderDeleteLoading.folderPath) || folderDeleteLoading.folderPath}</strong>
+              {folderDeleteLoading.scope === 'track' ? ' وكل محتوياته من المسار...' : ' وكل محتوياته من الـ 130...'}
+            </p>
+            <span>يرجى الانتظار — قد يستغرق ذلك بضع ثوانٍ</span>
           </div>
         </div>
       )}

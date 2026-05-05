@@ -50,7 +50,17 @@ interface AssignmentFileMeta {
   url: string;
   track: TrackKey;
   storagePath: string;
+  /** مسار مجلد افتراضي داخل التبويب (مثل: "folderA/sub") */
+  folderPath?: string;
   uploadedAt?: any;
+}
+
+export interface AssignmentFolderMeta {
+  id: string;
+  name: string;
+  path: string;
+  parentPath: string;
+  createdAt?: any;
 }
 
 // Auth Functions
@@ -420,6 +430,7 @@ export const uploadAssignmentFilesForTrack = async (
   track: TrackKey,
   files: File[],
   adminId: string,
+  folderPath: string = '',
   onProgress?: (current: number, total: number) => void
 ): Promise<AssignmentFileMeta[]> => {
   try {
@@ -450,6 +461,7 @@ export const uploadAssignmentFilesForTrack = async (
         url: result.url,
         track,
         storagePath: result.fileId || result.url, // Store ID if available, else URL
+        folderPath,
         uploadedAt: serverTimestamp()
       };
 
@@ -458,6 +470,7 @@ export const uploadAssignmentFilesForTrack = async (
         adminId,
         provider: result.provider, // 'google-drive' or 'mega'
         bucket: 'cloud-storage', // Placeholder
+        folderPath,
         uploadedAt: serverTimestamp()
       });
 
@@ -484,6 +497,7 @@ export const getAssignmentFilesForTrack = async (track: TrackKey): Promise<Assig
         url: data.url,
         track: data.track as TrackKey,
         storagePath: data.storagePath,
+        folderPath: typeof data.folderPath === 'string' ? data.folderPath : '',
         uploadedAt: data.uploadedAt
       };
     });
@@ -630,6 +644,7 @@ export const distributeAssignmentsForTrack = async (
 export const upload130UnifiedFile = async (
   file: File,
   adminId: string,
+  folderPath: string = '',
   onProgress?: (current: number, total: number) => void
 ): Promise<AssignmentFileMeta> => {
   try {
@@ -654,6 +669,7 @@ export const upload130UnifiedFile = async (
       url: result.url,
       track: 'track1' as TrackKey, // placeholder, not relevant for 130
       storagePath: result.fileId || result.url,
+      folderPath,
       uploadedAt: serverTimestamp()
     };
 
@@ -662,6 +678,7 @@ export const upload130UnifiedFile = async (
       adminId,
       provider: result.provider,
       bucket: 'cloud-storage',
+      folderPath,
       uploadedAt: serverTimestamp()
     });
 
@@ -685,6 +702,7 @@ export const get130UnifiedFiles = async (): Promise<AssignmentFileMeta[]> => {
         url: data.url,
         track: 'track1' as TrackKey,
         storagePath: data.storagePath,
+        folderPath: typeof data.folderPath === 'string' ? data.folderPath : '',
         uploadedAt: data.uploadedAt
       };
     });
@@ -692,6 +710,182 @@ export const get130UnifiedFiles = async (): Promise<AssignmentFileMeta[]> => {
     logger.error('Error fetching 130 unified files:', error);
     throw new Error(error.message || 'حدث خطأ أثناء جلب الملفات الموحدة');
   }
+};
+
+export const createAssignmentFolderForTrack = async (
+  track: TrackKey,
+  name: string,
+  parentPath: string = ''
+): Promise<AssignmentFolderMeta> => {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) throw new Error('اسم المجلد مطلوب');
+  const safeName = cleanName.replace(/[\\/:*?"<>|]/g, '_').trim();
+  if (!safeName) throw new Error('اسم المجلد غير صالح');
+  const path = parentPath ? `${parentPath}/${safeName}` : safeName;
+  const folderRef = doc(collection(db, 'assignments', track, 'folders'));
+  const folder: AssignmentFolderMeta = {
+    id: folderRef.id,
+    name: safeName,
+    path,
+    parentPath
+  };
+  await setDoc(folderRef, {
+    ...folder,
+    createdAt: serverTimestamp()
+  });
+  return folder;
+};
+
+export const getAssignmentFoldersForTrack = async (track: TrackKey): Promise<AssignmentFolderMeta[]> => {
+  const snapshot = await getDocs(collection(db, 'assignments', track, 'folders'));
+  return snapshot.docs.map((d) => {
+    const data = d.data() as any;
+    return {
+      id: d.id,
+      name: String(data.name || ''),
+      path: String(data.path || ''),
+      parentPath: String(data.parentPath || ''),
+      createdAt: data.createdAt
+    };
+  });
+};
+
+export const deleteAssignmentFolderForTrack = async (track: TrackKey, folderPath: string): Promise<{ deletedFiles: string[] }> => {
+  const target = String(folderPath || '').trim();
+  if (!target) throw new Error('مسار المجلد غير صالح');
+
+  const filesCollection = collection(db, 'assignments', track, 'files');
+  const foldersCollection = collection(db, 'assignments', track, 'folders');
+
+  const [filesSnap, foldersSnap] = await Promise.all([getDocs(filesCollection), getDocs(foldersCollection)]);
+
+  const fileIdsToDelete: string[] = [];
+  const deleteFilePromises: Promise<void>[] = [];
+  const deleteFolderPromises: Promise<void>[] = [];
+
+  filesSnap.docs.forEach((d) => {
+    const data = d.data() as any;
+    const fp = String(data.folderPath || '');
+    const isInside = fp === target || fp.startsWith(`${target}/`);
+    if (!isInside) return;
+    fileIdsToDelete.push(d.id);
+    deleteFilePromises.push(
+      (async () => {
+        const storagePath = data?.storagePath as string | undefined;
+        const provider = data?.provider as string | undefined;
+        await deleteDoc(d.ref);
+        if (storagePath) {
+          try {
+            if (provider === 'supabase') {
+              const { error } = await supabase.storage.from(ASSIGNMENTS_BUCKET).remove([storagePath]);
+              if (error) logger.error('Error removing folder file from Supabase:', error);
+            } else {
+              await deleteObject(ref(storage, storagePath));
+            }
+          } catch (storageError) {
+            logger.error('Error deleting folder file from storage:', storageError);
+          }
+        }
+      })()
+    );
+  });
+
+  foldersSnap.docs.forEach((d) => {
+    const data = d.data() as any;
+    const p = String(data.path || '');
+    if (p === target || p.startsWith(`${target}/`)) {
+      deleteFolderPromises.push(deleteDoc(d.ref));
+    }
+  });
+
+  await Promise.all([...deleteFilePromises, ...deleteFolderPromises]);
+  return { deletedFiles: fileIdsToDelete };
+};
+
+export const create130UnifiedFolder = async (name: string, parentPath: string = ''): Promise<AssignmentFolderMeta> => {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) throw new Error('اسم المجلد مطلوب');
+  const safeName = cleanName.replace(/[\\/:*?"<>|]/g, '_').trim();
+  if (!safeName) throw new Error('اسم المجلد غير صالح');
+  const path = parentPath ? `${parentPath}/${safeName}` : safeName;
+  const folderRef = doc(collection(db, 'assignments', 'unified130', 'folders'));
+  const folder: AssignmentFolderMeta = {
+    id: folderRef.id,
+    name: safeName,
+    path,
+    parentPath
+  };
+  await setDoc(folderRef, {
+    ...folder,
+    createdAt: serverTimestamp()
+  });
+  return folder;
+};
+
+export const get130UnifiedFolders = async (): Promise<AssignmentFolderMeta[]> => {
+  const snapshot = await getDocs(collection(db, 'assignments', 'unified130', 'folders'));
+  return snapshot.docs.map((d) => {
+    const data = d.data() as any;
+    return {
+      id: d.id,
+      name: String(data.name || ''),
+      path: String(data.path || ''),
+      parentPath: String(data.parentPath || ''),
+      createdAt: data.createdAt
+    };
+  });
+};
+
+export const delete130UnifiedFolder = async (folderPath: string): Promise<{ deletedFiles: string[] }> => {
+  const target = String(folderPath || '').trim();
+  if (!target) throw new Error('مسار المجلد غير صالح');
+
+  const filesCollection = collection(db, 'assignments', 'unified130', 'files');
+  const foldersCollection = collection(db, 'assignments', 'unified130', 'folders');
+
+  const [filesSnap, foldersSnap] = await Promise.all([getDocs(filesCollection), getDocs(foldersCollection)]);
+
+  const fileIdsToDelete: string[] = [];
+  const deleteFilePromises: Promise<void>[] = [];
+  const deleteFolderPromises: Promise<void>[] = [];
+
+  filesSnap.docs.forEach((d) => {
+    const data = d.data() as any;
+    const fp = String(data.folderPath || '');
+    const isInside = fp === target || fp.startsWith(`${target}/`);
+    if (!isInside) return;
+    fileIdsToDelete.push(d.id);
+    deleteFilePromises.push(
+      (async () => {
+        const storagePath = data?.storagePath as string | undefined;
+        const provider = data?.provider as string | undefined;
+        await deleteDoc(d.ref);
+        if (storagePath) {
+          try {
+            if (provider === 'supabase') {
+              const { error } = await supabase.storage.from(ASSIGNMENTS_BUCKET).remove([storagePath]);
+              if (error) logger.error('Error removing 130 folder file from Supabase:', error);
+            } else {
+              await deleteObject(ref(storage, storagePath));
+            }
+          } catch (storageError) {
+            logger.error('Error deleting 130 folder file from storage:', storageError);
+          }
+        }
+      })()
+    );
+  });
+
+  foldersSnap.docs.forEach((d) => {
+    const data = d.data() as any;
+    const p = String(data.path || '');
+    if (p === target || p.startsWith(`${target}/`)) {
+      deleteFolderPromises.push(deleteDoc(d.ref));
+    }
+  });
+
+  await Promise.all([...deleteFilePromises, ...deleteFolderPromises]);
+  return { deletedFiles: fileIdsToDelete };
 };
 
 export const delete130UnifiedFiles = async (fileIds: string[]): Promise<void> => {
