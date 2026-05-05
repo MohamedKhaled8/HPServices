@@ -107,6 +107,33 @@ const DT_SERVER_META_BASE = { dtApi: '2.1' };
 /** يُسجَّل عند التشغيل — للتأكد أن HF يشغّل آخر ملف server.js وليس صورة Docker قديمة */
 const DT_BUILD_TAG = 'forget-password-after-login-verify-2026-05';
 
+/**
+ * بوابة الدفع غير مستقرة مع جلسات متوازية؛ ننفّذ طلبات الدفع بالتتابع.
+ * لو ظهرت كثافة طلبات من الأدمن، تُصفّ في Queue بدل تشغيل Playwright بالتوازي.
+ */
+let electronicPaymentQueue = Promise.resolve();
+let electronicPaymentQueueDepth = 0;
+
+function enqueueElectronicPayment(task) {
+    electronicPaymentQueueDepth += 1;
+    const queuedAt = Date.now();
+    const queuePosition = electronicPaymentQueueDepth;
+    console.log(`[EP][QUEUE] queued | position=${queuePosition} depth=${electronicPaymentQueueDepth}`);
+
+    const run = () => task({ queuePosition, queuedMs: Date.now() - queuedAt });
+    const guardedRun = () => Promise.resolve().then(run);
+
+    const current = electronicPaymentQueue.then(guardedRun, guardedRun);
+    electronicPaymentQueue = current
+        .catch(() => { })
+        .finally(() => {
+            electronicPaymentQueueDepth = Math.max(0, electronicPaymentQueueDepth - 1);
+            console.log(`[EP][QUEUE] completed | remaining=${electronicPaymentQueueDepth}`);
+        });
+
+    return current;
+}
+
 console.log('━━━━━━━━ SERVER_JS_ACTIVE ━━━━━━━━');
 console.log('buildTag=', DT_BUILD_TAG, '| إن لم يظهر هذا السطر في سجل HF فأنت لا تشغّل هذا الملف.');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -572,11 +599,14 @@ app.post(
     }
 
     try {
-        const result = await runElectronicPaymentAutomation({
-            email,
-            fullNameArabic,
-            nationalID,
-            phone
+        const result = await enqueueElectronicPayment(async ({ queuePosition, queuedMs }) => {
+            console.log(`[EP][QUEUE] start | position=${queuePosition} waitedMs=${queuedMs}`);
+            return runElectronicPaymentAutomation({
+                email,
+                fullNameArabic,
+                nationalID,
+                phone
+            });
         });
 
         console.log('✅ Electronic payment automation success:', result);

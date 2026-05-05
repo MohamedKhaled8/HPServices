@@ -194,6 +194,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
   const [toastState, setToastState] = useState<{ message: string; type: 'loading' | 'success' | 'error'; duration?: number } | null>(null);
   const [viewingStudentRequests, setViewingStudentRequests] = useState<StudentData | null>(null);
+  const epAutomationQueueRef = React.useRef<Promise<unknown>>(Promise.resolve());
+  const epAutomationQueueDepthRef = React.useRef(0);
 
   /* Spreadsheet-style grid: selection, clipboard, keyboard, context menu */
   const gridApi = useSpreadsheetGrid();
@@ -238,6 +240,22 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     });
     return map;
   }, [epCodes]);
+
+  const enqueueElectronicPaymentAutomation = <T,>(task: (meta: { queuePosition: number }) => Promise<T>): Promise<T> => {
+    epAutomationQueueDepthRef.current += 1;
+    const queuePosition = epAutomationQueueDepthRef.current;
+
+    const run = () => task({ queuePosition });
+    const current = epAutomationQueueRef.current.then(run, run);
+
+    epAutomationQueueRef.current = current
+      .catch(() => undefined)
+      .finally(() => {
+        epAutomationQueueDepthRef.current = Math.max(0, epAutomationQueueDepthRef.current - 1);
+      });
+
+    return current;
+  };
 
   /** بطاقات الخدمات: حساب واحد O(n) بدل 11× filter على كل رسم */
   const requestStatsByServiceId = useMemo(() => {
@@ -1300,40 +1318,47 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           const rdEp = request.data || {};
           const sdEp = studentData;
           if (sdEp || (rdEp && Object.keys(rdEp).length > 0)) {
-            setToastState({ message: 'جاري الحصول على رقم الطلب… قد يستغرق دقيقة أو أكثر.', type: 'loading', duration: 3000 });
+            await enqueueElectronicPaymentAutomation(async ({ queuePosition }) => {
+              setToastState({
+                message: queuePosition > 1
+                  ? `طلب الدفع في انتظار الدور (رقم ${queuePosition})...`
+                  : 'جاري الحصول على رقم الطلب… قد يستغرق دقيقة أو أكثر.',
+                type: 'loading',
+                duration: 5000
+              });
 
-            // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
-            const payload = {
-              requestId: requestId,
-              studentId: request.studentId,
-              email: rdEp.email || sdEp?.email || '',
-              fullNameArabic: rdEp.full_name_arabic || rdEp.full_name || sdEp?.fullNameArabic || '',
-              nationalID: rdEp.national_id || sdEp?.nationalID || '',
-              phone: rdEp.whatsapp_number || sdEp?.whatsappNumber || ''
-            };
+              // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
+              const payload = {
+                requestId: requestId,
+                studentId: request.studentId,
+                email: rdEp.email || sdEp?.email || '',
+                fullNameArabic: rdEp.full_name_arabic || rdEp.full_name || sdEp?.fullNameArabic || '',
+                nationalID: rdEp.national_id || sdEp?.nationalID || '',
+                phone: rdEp.whatsapp_number || sdEp?.whatsappNumber || ''
+              };
 
-            const API_BASE_URL_EP = getAutomationApiBaseUrl();
-            if (!API_BASE_URL_EP) {
-              setToastState({ message: automationApiMissingMessage(), type: 'error', duration: 12000 });
-              return;
-            }
-            const apiUrl = `${API_BASE_URL_EP}/api/electronic-payment/create`;
-            const acEp = new AbortController();
-            const abortTimerEp = setTimeout(() => acEp.abort(), 480000);
+              const API_BASE_URL_EP = getAutomationApiBaseUrl();
+              if (!API_BASE_URL_EP) {
+                setToastState({ message: automationApiMissingMessage(), type: 'error', duration: 12000 });
+                return;
+              }
+              const apiUrl = `${API_BASE_URL_EP}/api/electronic-payment/create`;
+              const acEp = new AbortController();
+              const abortTimerEp = setTimeout(() => acEp.abort(), 480000);
 
-            const authHeadersEp = await getAutomationAuthHeaders();
-            const preparedEp = await prepareAutomationPostBody(API_BASE_URL_EP, payload);
-            const bodyToSendEp = preparedEp.body;
-            const sessionAesKeyEp = preparedEp.sessionAesKey;
+              try {
+                const authHeadersEp = await getAutomationAuthHeaders();
+                const preparedEp = await prepareAutomationPostBody(API_BASE_URL_EP, payload);
+                const bodyToSendEp = preparedEp.body;
+                const sessionAesKeyEp = preparedEp.sessionAesKey;
 
-            fetch(apiUrl, {
-              method: 'POST',
-              headers: authHeadersEp,
-              body: JSON.stringify(bodyToSendEp),
-              signal: acEp.signal
-            })
-              .then(async (res) => {
-                clearTimeout(abortTimerEp);
+                const res = await fetch(apiUrl, {
+                  method: 'POST',
+                  headers: authHeadersEp,
+                  body: JSON.stringify(bodyToSendEp),
+                  signal: acEp.signal
+                });
+
                 const ct = res.headers.get('content-type') || '';
                 let data: { success?: boolean; error?: string; data?: Record<string, unknown> } = {};
                 if (ct.includes('application/json')) {
@@ -1383,38 +1408,34 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 }
 
                 setToastState(null);
+                await new Promise((resolve) => setTimeout(resolve, 500));
+                try {
+                  const codeData = {
+                    studentId: String(ep.studentId || request.studentId || ''),
+                    requestId: String(ep.requestId || requestId || ''),
+                    name: String(ep.name || ''),
+                    email: String(ep.email || ''),
+                    nationalID: String(ep.nationalID || ''),
+                    mobile: String(ep.mobile || ''),
+                    entity: String(ep.entity || 'كلية التربية'),
+                    serviceType: String(ep.serviceType || 'دبلوم (2025 - 2026)'),
+                    orderNumber,
+                    status: String(ep.status || 'NEW'),
+                    rawText: String(ep.rawText || ''),
+                    createdAt: new Date().toISOString()
+                  };
 
-                setTimeout(async () => {
-                  try {
-                    const codeData = {
-                      studentId: String(ep.studentId || request.studentId || ''),
-                      requestId: String(ep.requestId || requestId || ''),
-                      name: String(ep.name || ''),
-                      email: String(ep.email || ''),
-                      nationalID: String(ep.nationalID || ''),
-                      mobile: String(ep.mobile || ''),
-                      entity: String(ep.entity || 'كلية التربية'),
-                      serviceType: String(ep.serviceType || 'دبلوم (2025 - 2026)'),
-                      orderNumber,
-                      status: String(ep.status || 'NEW'),
-                      rawText: String(ep.rawText || ''),
-                      createdAt: new Date().toISOString()
-                    };
-
-                    await saveElectronicPaymentCode(codeData);
-                    setToastState({
-                      message: `تم الحفظ — رقم الطلب: ${orderNumber || '—'}`,
-                      type: 'success',
-                      duration: 7000
-                    });
-                  } catch (saveError) {
-                    logger.error('[EP] Save Error:', saveError);
-                    setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ', type: 'error', duration: 5000 });
-                  }
-                }, 500);
-              })
-              .catch(err => {
-                clearTimeout(abortTimerEp);
+                  await saveElectronicPaymentCode(codeData);
+                  setToastState({
+                    message: `تم الحفظ — رقم الطلب: ${orderNumber || '—'}`,
+                    type: 'success',
+                    duration: 7000
+                  });
+                } catch (saveError) {
+                  logger.error('[EP] Save Error:', saveError);
+                  setToastState({ message: 'نجحت الأتمتة ولكن فشل الحفظ', type: 'error', duration: 5000 });
+                }
+              } catch (err: any) {
                 logger.error('[EP] Connection Error:', err);
                 const aborted = err?.name === 'AbortError';
                 setToastState({
@@ -1424,7 +1445,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   type: 'error',
                   duration: 12000
                 });
-              });
+              } finally {
+                clearTimeout(abortTimerEp);
+              }
+            });
           }
         }
       }
