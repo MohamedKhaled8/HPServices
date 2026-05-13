@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, startTransition } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
 import {
@@ -24,7 +24,8 @@ import {
   checkIsAdmin,
   getStudentData,
   getStudentsByIds,
-  subscribeToAllStudents,
+  getStudentsCollectionCount,
+  fetchStudentsPageByDocumentId,
   searchStudent,
   updateStudentData,
   deleteStudentData,
@@ -80,6 +81,7 @@ import {
   Trash2,
   Image,
   EyeOff,
+  Loader2,
   Newspaper,
   Download,
   Bell,
@@ -117,6 +119,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
+import AdminServicesFilesGrid from '../components/admin/AdminServicesFilesGrid';
 
 
 interface AdminDashboardPageProps {
@@ -125,11 +128,96 @@ interface AdminDashboardPageProps {
   onAssignmentsClick?: () => void;
 }
 
+/** عدد صفوف جدول المستخدمين لكل صفحة — يقلل عقد DOM ويُسرّع الرسم */
+const ADMIN_USERS_PAGE_SIZE = 75;
+
+function adminCodeCreatedAtMs(v: any): number {
+  if (!v) return 0;
+  if (v?.toDate && typeof v.toDate === 'function') return v.toDate().getTime();
+  if (typeof v?.seconds === 'number') return v.seconds * 1000;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+/** فهارس لآخر كود DT/EP لكل طالب أو رقم قومي/هاتف — يستبدل filter+sort على كل صف في الجدول */
+function buildAdminCodesLookup(dtCodes: any[], epCodes: any[]) {
+  const dtLatestByStudent = new Map<string, any>();
+  for (const c of dtCodes) {
+    const sid = c.studentId;
+    if (!sid) continue;
+    const prev = dtLatestByStudent.get(sid);
+    if (!prev || adminCodeCreatedAtMs(c.createdAt) > adminCodeCreatedAtMs(prev.createdAt)) dtLatestByStudent.set(sid, c);
+  }
+  const epLatestByStudent = new Map<string, any>();
+  const epLatestByNational = new Map<string, any>();
+  const epLatestByPhone = new Map<string, any>();
+  for (const c of epCodes) {
+    const ts = adminCodeCreatedAtMs(c.createdAt);
+    const sid = c.studentId;
+    if (sid) {
+      const prev = epLatestByStudent.get(sid);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt)) epLatestByStudent.set(sid, c);
+    }
+    const nat = String(c.nationalID || '').replace(/\D/g, '');
+    if (nat.length >= 6) {
+      const prev = epLatestByNational.get(nat);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt)) epLatestByNational.set(nat, c);
+    }
+    const ph = String(c.mobile || c.whatsapp || '').replace(/\D/g, '');
+    const ph10 = ph.length >= 10 ? ph.slice(-10) : ph;
+    if (ph10.length >= 10) {
+      const prev = epLatestByPhone.get(ph10);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt)) epLatestByPhone.set(ph10, c);
+    }
+  }
+  return { dtLatestByStudent, epLatestByStudent, epLatestByNational, epLatestByPhone };
+}
+
+/** كان يُحسب داخل كل صف (O(n³)) — مرة واحدة لكل لقطة جدول */
+function computeRequestDuplicateCounts(rows: ServiceRequest[], students: Record<string, StudentData>): number[] {
+  const n = rows.length;
+  const counts = new Array<number>(n);
+  for (let i = 0; i < n; i++) {
+    const request = rows[i];
+    const studentData = students[request.studentId];
+    const rEmail = (request.data?.email || studentData?.email || '').toLowerCase().trim();
+    const rNationalID = String(request.data?.national_id || studentData?.nationalID || '');
+    let c = 0;
+    for (let j = 0; j < n; j++) {
+      const r = rows[j];
+      const rStudentData = students[r.studentId];
+      const testNationalID = r.data?.national_id || rStudentData?.nationalID;
+      const testEmail = r.data?.email || rStudentData?.email;
+      if (
+        r.studentId === request.studentId ||
+        (testEmail && rEmail && String(testEmail).toLowerCase() === rEmail) ||
+        (testNationalID && rNationalID && testNationalID === rNationalID)
+      ) {
+        c++;
+      }
+    }
+    counts[i] = c;
+  }
+  return counts;
+}
+
 const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBack, onAssignmentsClick }) => {
   const { student } = useStudent();
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [dataReady, setDataReady] = useState(false);
+  const dataReadyRef = useRef(false);
+  useEffect(() => {
+    dataReadyRef.current = dataReady;
+  }, [dataReady]);
   const [students, setStudents] = useState<Record<string, StudentData>>({});
+  const studentsRef = useRef<Record<string, StudentData>>({});
+  const latestServiceRequestsRef = useRef<ServiceRequest[]>([]);
+  const studentIdsInFlightRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
+
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services'>('requests');
   const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
@@ -164,6 +252,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const requestsSectionRef = React.useRef<HTMLDivElement>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [usersListPage, setUsersListPage] = useState(0);
+  /** انتظار أول لقطة من Firestore لمجموعة الطلاب (قائمة كاملة بدون بحث) */
+  const [usersDirectoryLoading, setUsersDirectoryLoading] = useState(true);
+  /** العدد الكلي من Firestore (استعلام count) — يظهر فوراً */
+  const [studentsTotalCount, setStudentsTotalCount] = useState<number | null>(null);
+  /** جاري جلب دفعات إضافية بعد أول دفعة */
+  const [studentsRestLoading, setStudentsRestLoading] = useState(false);
   const [serviceSearchTerm, setServiceSearchTerm] = useState<string>('');
   const [dtSearchTerm, setDtSearchTerm] = useState<string>('');
   const [epSearchTerm, setEpSearchTerm] = useState<string>('');
@@ -246,6 +341,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return map;
   }, [epCodes]);
 
+  const adminCodesLookup = useMemo(() => buildAdminCodesLookup(dtCodes, epCodes), [dtCodes, epCodes]);
+
   useEffect(() => {
     try {
       const v = sessionStorage.getItem('admin_stats_unlocked_v1');
@@ -255,10 +352,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   }, []);
 
-  const maskNumber = (n: number) => (statsUnlocked ? String(n) : '*****');
-  const maskMoney = (n: number) => (statsUnlocked ? `${Number(n || 0).toLocaleString()} ج.م` : '*****');
-
-  const lockStats = () => {
+  const lockStats = useCallback(() => {
     setStatsUnlocked(false);
     setStatsPasswordOpen(false);
     setStatsPasswordInput('');
@@ -267,7 +361,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     } catch {
       // ignore
     }
-  };
+  }, []);
+
+  const maskNumber = (n: number) => (statsUnlocked ? String(n) : '*****');
+  const maskMoney = (n: number) => (statsUnlocked ? `${Number(n || 0).toLocaleString()} ج.م` : '*****');
 
   const tryUnlockStats = () => {
     const expected = '0100500500@##';
@@ -285,6 +382,44 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
     setToastState({ message: 'كلمة المرور غير صحيحة.', type: 'error', duration: 3000 });
   };
+
+  const handleServiceFileSelect = useCallback((serviceId: string, alreadySelected: boolean) => {
+    if (alreadySelected) {
+      setSelectedServiceId(null);
+    } else {
+      setSelectedServiceId(serviceId);
+      setCurrentPage(1);
+    }
+  }, []);
+
+  const handleStatsLockIndicatorClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (statsUnlocked) {
+        lockStats();
+        setToastState({ message: 'تم إخفاء الأرقام.', type: 'success', duration: 2200 });
+        return;
+      }
+      setStatsPasswordOpen((s) => !s);
+    },
+    [statsUnlocked, lockStats]
+  );
+
+  const handleStatsLockIndicatorKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (statsUnlocked) {
+          lockStats();
+          return;
+        }
+        setStatsPasswordOpen((s) => !s);
+      }
+    },
+    [statsUnlocked, lockStats]
+  );
 
   const enqueueElectronicPaymentAutomation = <T,>(task: (meta: { queuePosition: number }) => Promise<T>): Promise<T> => {
     epAutomationQueueDepthRef.current += 1;
@@ -314,6 +449,48 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
     return m;
   }, [serviceRequests]);
+
+  /** عدد طلبات كل طالب — O(عدد الطلبات) مرة واحدة بدل فلترة لكل صف مستخدم */
+  const requestCountByStudentId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of serviceRequests) {
+      const id = r.studentId;
+      if (!id) continue;
+      m.set(id, (m.get(id) ?? 0) + 1);
+    }
+    return m;
+  }, [serviceRequests]);
+
+  const filteredAdminStudents = useMemo(() => {
+    const term = searchTerm.toLowerCase().trim();
+    return allStudents.filter(student => {
+      if (!term) return true;
+      return (
+        student.fullNameArabic?.toLowerCase().includes(term) ||
+        student.email?.toLowerCase().includes(term) ||
+        student.nationalID?.includes(term) ||
+        student.whatsappNumber?.includes(term) ||
+        student.diplomaType?.toLowerCase().includes(term) ||
+        student.diplomaYear?.includes(term)
+      );
+    });
+  }, [allStudents, searchTerm]);
+
+  const displayedAdminStudents = useMemo(() => {
+    const start = usersListPage * ADMIN_USERS_PAGE_SIZE;
+    return filteredAdminStudents.slice(start, start + ADMIN_USERS_PAGE_SIZE);
+  }, [filteredAdminStudents, usersListPage]);
+
+  const adminUsersTotalPages = Math.max(1, Math.ceil(filteredAdminStudents.length / ADMIN_USERS_PAGE_SIZE) || 1);
+
+  useEffect(() => {
+    setUsersListPage(0);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const maxP = Math.max(0, Math.ceil(filteredAdminStudents.length / ADMIN_USERS_PAGE_SIZE) - 1);
+    setUsersListPage(p => (p > maxP ? maxP : p));
+  }, [filteredAdminStudents.length]);
 
   // Custom Alert Modal State
   const [alertConfig, setAlertConfig] = useState<{
@@ -639,21 +816,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return keys[key] || key;
   };
 
-  // Fixed Scroll Effect when service changes
-  useEffect(() => {
-    if (selectedServiceId && requestsSectionRef.current) {
-      // Small delay to ensure the content is rendered and height is stable
-      const timer = setTimeout(() => {
-        if (requestsSectionRef.current) {
-          const yOffset = -20; // Slight offset to not be exactly at the top
-          const element = requestsSectionRef.current;
-          const y = element.getBoundingClientRect().top + window.pageYOffset + yOffset;
-
-          window.scrollTo({ top: y, behavior: 'smooth' });
-        }
-      }, 400); // 400ms is very safe for layout stability
-      return () => clearTimeout(timer);
-    }
+  useLayoutEffect(() => {
+    if (!selectedServiceId || !requestsSectionRef.current) return;
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled || !requestsSectionRef.current) return;
+        requestsSectionRef.current.scrollIntoView({ behavior: 'instant', block: 'start', inline: 'nearest' });
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedServiceId]);
 
   // Final Review states
@@ -831,43 +1005,81 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (isLoading) return;
 
     let cancelled = false;
+    let studentFetchTimer: number | undefined;
+    let progressRaf = 0;
+    let unsubscribe: (() => void) | undefined;
+    let subscribeTimer: number | undefined;
 
-    // لقطة أولية متوازية من Firestore — الأرقام تظهر أسرع من انتظار سلسلة onSnapshot
+    // لقطة أولية: تحديث الواجهة بعد كل مجموعة تكتمل (بدل انتظار الـ 11 معاً)
     (async () => {
       try {
-        const initial = await fetchAllServiceRequestsOnce();
+        const initial = await fetchAllServiceRequestsOnce((merged) => {
+          if (cancelled) return;
+          cancelAnimationFrame(progressRaf);
+          progressRaf = requestAnimationFrame(() => {
+            if (cancelled) return;
+            setServiceRequests(merged);
+            setDataReady(true);
+          });
+        });
         if (!cancelled) {
+          cancelAnimationFrame(progressRaf);
           setServiceRequests(initial);
           setDataReady(true);
         }
       } catch (e) {
         logger.error('Admin: fetchAllServiceRequestsOnce failed', e);
+        if (!cancelled) {
+          setDataReady(true);
+        }
       }
     })();
 
-    const unsubscribe = subscribeToAllServiceRequests((requests) => {
-      setServiceRequests(requests);
-      setDataReady(true);
-
-      // Fetch student data for each request - batch fetch (أسرع من طلب كل طالب لوحده)
-      const fetchStudents = async () => {
-        const uniqueStudentIds = [...new Set(requests.map(r => r.studentId))];
-        setStudents(prev => {
-          const missingIds = uniqueStudentIds.filter(id => !prev[id]);
-          if (missingIds.length === 0) return prev;
-
-          getStudentsByIds(missingIds).then(fetched => {
-            setStudents(current => ({ ...current, ...fetched }));
+    // تأجيل تسجيل الـ 11 مستمعًا قليلاً يقلل التصادم مع أول getDocs ويُحسّن استجابة أول رسم
+    subscribeTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      unsubscribe = subscribeToAllServiceRequests((requests) => {
+        if (!dataReadyRef.current) {
+          setServiceRequests(requests);
+          setDataReady(true);
+        } else {
+          startTransition(() => {
+            setServiceRequests(requests);
           });
-          return prev;
-        });
-      };
-      fetchStudents();
-    });
+        }
+
+        latestServiceRequestsRef.current = requests;
+        if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
+        studentFetchTimer = window.setTimeout(() => {
+          if (cancelled) return;
+          const reqs = latestServiceRequestsRef.current;
+          const uniqueStudentIds = [...new Set(reqs.map((r) => r.studentId).filter(Boolean))] as string[];
+          const prev = studentsRef.current;
+          const missingIds = uniqueStudentIds.filter(
+            (id) => id && !prev[id] && !studentIdsInFlightRef.current.has(id)
+          );
+          if (missingIds.length === 0) return;
+          missingIds.forEach((id) => studentIdsInFlightRef.current.add(id));
+          void getStudentsByIds(missingIds)
+            .then((fetched) => {
+              if (cancelled) return;
+              missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+              setStudents((current) => ({ ...current, ...fetched }));
+            })
+            .catch(() => {
+              missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+            });
+        }, 550);
+      });
+    }, 100);
 
     return () => {
       cancelled = true;
-      unsubscribe();
+      cancelAnimationFrame(progressRaf);
+      if (subscribeTimer !== undefined) window.clearTimeout(subscribeTimer);
+      if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
+      studentIdsInFlightRef.current.clear();
+      unsubscribe?.();
     };
   }, [isLoading]);
 
@@ -1223,28 +1435,70 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return () => unsubscribe();
   }, []);
 
-  // Subscribe to all students for users tab
+  // تحميل المستخدمين: عدّ سريع + دفعات (أسرع بكثير من onSnapshot لمجموعة ضخمة كاملة)
   useEffect(() => {
-    if (isLoading || activeTab !== 'users') {
-      setAllStudents([]);
-      return;
-    }
+    if (isLoading) return;
 
-    // Only subscribe if searchTerm is empty (showing all students)
     if (searchTerm.trim()) {
+      setUsersDirectoryLoading(false);
+      setStudentsRestLoading(false);
       return;
     }
 
-    const unsubscribe = subscribeToAllStudents((students) => {
-      logger.log('Students loaded:', students.length);
-      setAllStudents(students);
-    }, (error) => {
-      logger.error('Error subscribing to students:', error);
-      showAlert('خطأ', 'حدث خطأ أثناء جلب بيانات المستخدمين', 'error');
-    });
+    let cancelled = false;
+    const STUDENTS_PAGE = 50;
+    setUsersDirectoryLoading(true);
+    setStudentsRestLoading(false);
+    setAllStudents([]);
+    setStudentsTotalCount(null);
 
-    return () => unsubscribe();
-  }, [isLoading, activeTab, searchTerm]);
+    void getStudentsCollectionCount()
+      .then((t) => {
+        if (!cancelled) setStudentsTotalCount(t);
+      })
+      .catch((e) => {
+        logger.warn('Admin: getStudentsCollectionCount failed (non-fatal)', e);
+      });
+
+    (async () => {
+      try {
+        let lastSnap: Awaited<ReturnType<typeof fetchStudentsPageByDocumentId>>['lastSnapshot'] = null;
+        let accumulated: StudentData[] = [];
+
+        const first = await fetchStudentsPageByDocumentId(STUDENTS_PAGE, null);
+        if (cancelled) return;
+        accumulated = first.students;
+        setAllStudents(accumulated);
+        setUsersDirectoryLoading(false);
+        lastSnap = first.lastSnapshot;
+
+        let hasMore = first.hasMore;
+        while (hasMore && lastSnap && !cancelled) {
+          setStudentsRestLoading(true);
+          const next = await fetchStudentsPageByDocumentId(STUDENTS_PAGE, lastSnap);
+          if (cancelled) return;
+          accumulated = [...accumulated, ...next.students];
+          setAllStudents(accumulated);
+          lastSnap = next.lastSnapshot;
+          hasMore = next.hasMore;
+        }
+        setStudentsRestLoading(false);
+
+        if (!cancelled) {
+          setStudentsTotalCount((prev) => (typeof prev === 'number' ? prev : accumulated.length));
+        }
+      } catch (error: any) {
+        logger.error('Admin: paginated students load failed', error);
+        setUsersDirectoryLoading(false);
+        setStudentsRestLoading(false);
+        showAlert('خطأ', error.message || 'حدث خطأ أثناء جلب بيانات المستخدمين', 'error');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, searchTerm]);
 
   const handleStatusChange = async (requestId: string, status: ServiceRequestWorkflowStatus, serviceId: string) => {
     try {
@@ -1997,8 +2251,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const handleSearchStudent = async () => {
     if (!searchTerm.trim()) {
-      // Reset to show all students - useEffect will handle this
-      setAllStudents([]);
       return;
     }
 
@@ -2182,6 +2434,55 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     return order[normalizeWorkflowStatus(s)] ?? 0;
   };
+
+  /** فلترة + فرز الطلبات للخدمة المختارة — useMemo يمنع إعادة الحساب الثقيلة عند كل رسم للصفحة */
+  const adminRequestsFilteredSorted = useMemo(() => {
+    if (!selectedServiceId || !dataReady) return [];
+    const term = serviceSearchTerm.toLowerCase().trim();
+    return serviceRequests
+      .filter((r) => r.serviceId === selectedServiceId)
+      .filter((request) => {
+        if (!term) return true;
+        const studentData = students[request.studentId];
+
+        const dataMatch = Object.values(request.data || {}).some(
+          (val) => val && String(val).toLowerCase().includes(term)
+        );
+        if (dataMatch) return true;
+
+        if (studentData) {
+          if (studentData.fullNameArabic?.toLowerCase().includes(term)) return true;
+          if (studentData.nationalID?.includes(term)) return true;
+          if (studentData.whatsappNumber?.includes(term)) return true;
+          if (studentData.email?.toLowerCase().includes(term)) return true;
+        }
+
+        const statusAr = workflowStatusLabelAr(request.status);
+        if (statusAr.includes(term)) return true;
+
+        if (request.createdAt) {
+          const dateStr = new Date(request.createdAt).toLocaleDateString('ar-EG');
+          if (dateStr.includes(term)) return true;
+        }
+
+        return false;
+      })
+      .sort((a, b) => {
+        const nameA = (
+          a.data.full_name_arabic ||
+          a.data.full_name ||
+          students[a.studentId]?.fullNameArabic ||
+          ''
+        ).toLowerCase();
+        const nameB = (
+          b.data.full_name_arabic ||
+          b.data.full_name ||
+          students[b.studentId]?.fullNameArabic ||
+          ''
+        ).toLowerCase();
+        return nameA.localeCompare(nameB, 'ar');
+      });
+  }, [dataReady, selectedServiceId, serviceRequests, serviceSearchTerm, students]);
 
   const getStatusBadge = (status: string | undefined) => {
     const n = normalizeWorkflowStatus(status);
@@ -2626,100 +2927,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       {activeTab === 'requests' && (
         <div className="admin-content">
           <div className="requests-section">
-            <h2>جميع الطلبات {dataReady ? serviceRequests.length : 'جاري التحميل...'}</h2>
+            <h2>
+              جميع الطلبات{' '}
+              {!dataReady && serviceRequests.length === 0 ? 'جاري التحميل…' : serviceRequests.length}
+            </h2>
 
-            {/* Services Files Grid */}
-            <div className="services-files-grid">
-              {SERVICES.map(service => {
-                const q = requestStatsByServiceId[service.id];
-                const newRequests = q?.pending ?? 0;
-                const totalRequests = q?.total ?? 0;
-                const isSelected = selectedServiceId === service.id;
-                let serviceName = service.nameAr;
-                if (service.id === '3' && bookConfig) {
-                  serviceName = bookConfig.serviceName;
-                } else if (service.id === '5' && assignmentsConfig) {
-                  serviceName = assignmentsConfig.serviceName;
-                }
-
-                // Get icon component based on service icon name
-                const getServiceIcon = () => {
-                  const iconProps = { size: 32 };
-                  switch (service.icon) {
-                    case 'clipboard-list': return <ClipboardList {...iconProps} />;
-                    case 'user': return <User {...iconProps} />;
-                    case 'package': return <Package {...iconProps} />;
-                    case 'credit-card': return <CreditCard {...iconProps} />;
-                    case 'book-open': return <BookOpen {...iconProps} />;
-                    case 'graduation-cap': return <GraduationCap {...iconProps} />;
-                    case 'file-check': return <FileCheck {...iconProps} />;
-                    case 'award': return <Award {...iconProps} />;
-                    default: return <FileText {...iconProps} />;
-                  }
-                };
-
-                return (
-                  <div
-                    key={service.id}
-                    className={`service-file ${isSelected ? 'selected' : ''}`}
-                    onClick={() => {
-                      if (isSelected) {
-                        setSelectedServiceId(null);
-                      } else {
-                        setSelectedServiceId(service.id);
-                        setCurrentPage(1);
-                      }
-                    }}
-                  >
-                    <div className="service-file-icon" style={{ color: service.color }}>
-                      {getServiceIcon()}
-                    </div>
-                    <div className="service-file-name">{serviceName}</div>
-                    <div className="service-file-stats">
-                      <div className="service-file-stat-item service-file-stat-new">
-                        <span className="stat-label">جديدة</span>
-                        <span className="stat-value">{maskNumber(newRequests)}</span>
-                      </div>
-                      <div className="service-file-stat-item service-file-stat-total">
-                        <span className="stat-label">الإجمالي</span>
-                        <span className="stat-value">{maskNumber(totalRequests)}</span>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{ position: 'absolute', top: 10, left: 10, zIndex: 2 }}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (statsUnlocked) {
-                          lockStats();
-                          setToastState({ message: 'تم إخفاء الأرقام.', type: 'success', duration: 2200 });
-                          return;
-                        }
-                        setStatsPasswordOpen((s) => !s);
-                      }}
-                      title={statsUnlocked ? 'إخفاء الأرقام' : 'إظهار الأرقام'}
-                      role="button"
-                      aria-label={statsUnlocked ? 'إخفاء أرقام الطلبات' : 'إظهار أرقام الطلبات'}
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (statsUnlocked) {
-                            lockStats();
-                            return;
-                          }
-                          setStatsPasswordOpen((s) => !s);
-                        }
-                      }}
-                    >
-                      {statsUnlocked ? <Lock size={18} /> : <Key size={18} />}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <AdminServicesFilesGrid
+              selectedServiceId={selectedServiceId}
+              onSelectService={handleServiceFileSelect}
+              requestStatsByServiceId={requestStatsByServiceId}
+              bookConfig={bookConfig}
+              assignmentsConfig={assignmentsConfig}
+              statsUnlocked={statsUnlocked}
+              onToggleStatsLockClick={handleStatsLockIndicatorClick}
+              onToggleStatsLockKeyDown={handleStatsLockIndicatorKeyDown}
+            />
 
             {statsPasswordOpen && !statsUnlocked && (
               <div
@@ -2829,40 +3051,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   </div>
 
                   {(() => {
-                    const term = serviceSearchTerm.toLowerCase().trim();
-                    const filteredRequests = serviceRequests
-                      .filter(r => r.serviceId === selectedServiceId)
-                      .filter(request => {
-                        if (!term) return true;
-                        const studentData = students[request.studentId];
-
-                        const dataMatch = Object.values(request.data || {}).some(val =>
-                          val && String(val).toLowerCase().includes(term)
-                        );
-                        if (dataMatch) return true;
-
-                        if (studentData) {
-                          if (studentData.fullNameArabic?.toLowerCase().includes(term)) return true;
-                          if (studentData.nationalID?.includes(term)) return true;
-                          if (studentData.whatsappNumber?.includes(term)) return true;
-                          if (studentData.email?.toLowerCase().includes(term)) return true;
-                        }
-
-                        const statusAr = workflowStatusLabelAr(request.status);
-                        if (statusAr.includes(term)) return true;
-
-                        if (request.createdAt) {
-                          const dateStr = new Date(request.createdAt).toLocaleDateString('ar-EG');
-                          if (dateStr.includes(term)) return true;
-                        }
-
-                        return false;
-                      })
-                      .sort((a, b) => {
-                        const nameA = (a.data.full_name_arabic || a.data.full_name || students[a.studentId]?.fullNameArabic || '').toLowerCase();
-                        const nameB = (b.data.full_name_arabic || b.data.full_name || students[b.studentId]?.fullNameArabic || '').toLowerCase();
-                        return nameA.localeCompare(nameB, 'ar');
-                      });
+                    const filteredRequests = adminRequestsFilteredSorted;
 
                     if (!dataReady) {
                       return (
@@ -2946,14 +3135,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       label: 'رقم فوري',
                       getValue: (r: any) => {
                         let code = r.id ? dtCodesIndex[String(r.id)] : undefined;
-                        if (!code && r.studentId) {
-                          const matches = dtCodes.filter((c: any) => c.studentId === r.studentId);
-                          code = matches.sort((a: any, b: any) => {
-                            const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                            const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                            return tb - ta;
-                          })[0];
-                        }
+                        if (!code && r.studentId) code = adminCodesLookup.dtLatestByStudent.get(r.studentId);
                         return code?.fawryCode || code?.serialNumber || '-';
                       }
                     };
@@ -2962,34 +3144,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       label: 'رقم الطلب',
                       getValue: (r: any) => {
                         const studentData = students[r.studentId];
-                        const getTs = (v: any) => {
-                          if (!v) return 0;
-                          if (v?.toDate && typeof v.toDate === 'function') return v.toDate().getTime();
-                          if (typeof v?.seconds === 'number') return v.seconds * 1000;
-                          const d = new Date(v);
-                          return isNaN(d.getTime()) ? 0 : d.getTime();
-                        };
                         let code = r.id ? epCodesIndex[String(r.id)] : undefined;
-                        if (!code && r.studentId) {
-                          const matches = epCodes.filter((c: any) => c.studentId === r.studentId);
-                          code = matches.sort((a: any, b: any) => getTs(b.createdAt) - getTs(a.createdAt))[0];
-                        }
+                        if (!code && r.studentId) code = adminCodesLookup.epLatestByStudent.get(r.studentId);
                         if (!code) {
                           const nat = String(r.data?.national_id || studentData?.nationalID || '').replace(/\D/g, '');
-                          if (nat) {
-                            const matches = epCodes.filter((c: any) => String(c.nationalID || '').replace(/\D/g, '') === nat);
-                            code = matches.sort((a: any, b: any) => getTs(b.createdAt) - getTs(a.createdAt))[0];
-                          }
+                          if (nat.length >= 6) code = adminCodesLookup.epLatestByNational.get(nat);
                         }
                         if (!code) {
                           const phone = String(r.data?.whatsapp_number || r.data?.phone_whatsapp || studentData?.whatsappNumber || '').replace(/\D/g, '');
-                          if (phone) {
-                            const matches = epCodes.filter((c: any) => {
-                              const cp = String(c.mobile || c.whatsapp || '').replace(/\D/g, '');
-                              return cp && cp === phone;
-                            });
-                            code = matches.sort((a: any, b: any) => getTs(b.createdAt) - getTs(a.createdAt))[0];
-                          }
+                          const ph10 = phone.length >= 10 ? phone.slice(-10) : phone;
+                          if (ph10.length >= 10) code = adminCodesLookup.epLatestByPhone.get(ph10);
                         }
                         return code?.orderNumber || '-';
                       }
@@ -3125,6 +3289,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                           return 0;
                         });
+
+                    const duplicateCountByRow = computeRequestDuplicateCounts(displayRequests, students);
 
                     const requestsColCount = 3 + dataColumnCount + 2;
 
@@ -3414,19 +3580,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                             >
                               {displayRequests.map((request, index) => {
                                 const studentData = students[request.studentId];
-                                const rNationalID = request.data.national_id || studentData?.nationalID;
-                                const rEmail = request.data.email || studentData?.email;
 
-                                const userRequestsCount = displayRequests.filter(
-                                  r => {
-                                    const rStudentData = students[r.studentId];
-                                    const testNationalID = r.data.national_id || rStudentData?.nationalID;
-                                    const testEmail = r.data.email || rStudentData?.email;
-                                    return r.studentId === request.studentId ||
-                                      (testEmail && rEmail && testEmail.toLowerCase() === rEmail.toLowerCase()) ||
-                                      (testNationalID && rNationalID && testNationalID === rNationalID);
-                                  }
-                                ).length;
+                                const userRequestsCount = duplicateCountByRow[index];
                                 const isDuplicate = userRequestsCount > 1;
                                 const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
 
@@ -3452,45 +3607,20 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const colLeaderWhatsappVal = request.data.leader_whatsapp || '-';
                                 const colDtFawryCodeVal = (() => {
                                   let code = request.id ? dtCodesIndex[String(request.id)] : undefined;
-                                  if (!code && request.studentId) {
-                                    const matches = dtCodes.filter(c => c.studentId === request.studentId);
-                                    code = matches.sort((a, b) => {
-                                      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                                      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                                      return tb - ta;
-                                    })[0];
-                                  }
+                                  if (!code && request.studentId) code = adminCodesLookup.dtLatestByStudent.get(request.studentId);
                                   return code?.fawryCode || code?.serialNumber || '-';
                                 })();
                                 const colEpOrderNumberVal = (() => {
-                                  const getTs = (v: any) => {
-                                    if (!v) return 0;
-                                    if (v?.toDate && typeof v.toDate === 'function') return v.toDate().getTime();
-                                    if (typeof v?.seconds === 'number') return v.seconds * 1000;
-                                    const d = new Date(v);
-                                    return isNaN(d.getTime()) ? 0 : d.getTime();
-                                  };
                                   let code = request.id ? epCodesIndex[String(request.id)] : undefined;
-                                  if (!code && request.studentId) {
-                                    const matches = epCodes.filter(c => c.studentId === request.studentId);
-                                    code = matches.sort((a, b) => getTs(b.createdAt) - getTs(a.createdAt))[0];
-                                  }
+                                  if (!code && request.studentId) code = adminCodesLookup.epLatestByStudent.get(request.studentId);
                                   if (!code) {
                                     const nat = String(colNationalIdVal || '').replace(/\D/g, '');
-                                    if (nat) {
-                                      const matches = epCodes.filter(c => String(c.nationalID || '').replace(/\D/g, '') === nat);
-                                      code = matches.sort((a, b) => getTs(b.createdAt) - getTs(a.createdAt))[0];
-                                    }
+                                    if (nat.length >= 6) code = adminCodesLookup.epLatestByNational.get(nat);
                                   }
                                   if (!code) {
                                     const phone = String(colWhatsappVal || '').replace(/\D/g, '');
-                                    if (phone) {
-                                      const matches = epCodes.filter(c => {
-                                        const cp = String(c.mobile || c.whatsapp || '').replace(/\D/g, '');
-                                        return cp && cp === phone;
-                                      });
-                                      code = matches.sort((a, b) => getTs(b.createdAt) - getTs(a.createdAt))[0];
-                                    }
+                                    const ph10 = phone.length >= 10 ? phone.slice(-10) : phone;
+                                    if (ph10.length >= 10) code = adminCodesLookup.epLatestByPhone.get(ph10);
                                   }
                                   return code?.orderNumber || '-';
                                 })();
@@ -4688,7 +4818,31 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         activeTab === 'users' && (
           <div className="admin-content">
             <div className="section-header">
-              <h2>إدارة المستخدمين ({allStudents.length})</h2>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span>إدارة المستخدمين</span>
+                {searchTerm.trim() ? (
+                  <span style={{ color: '#64748b', fontWeight: 700 }}>({filteredAdminStudents.length})</span>
+                ) : usersDirectoryLoading && filteredAdminStudents.length === 0 ? (
+                  <span style={{ color: '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '15px' }}>
+                    <Loader2 size={18} className="spinning-loader-small" style={{ flexShrink: 0, color: '#64748b' }} />
+                    جاري التحميل
+                    {typeof studentsTotalCount === 'number' && (
+                      <span style={{ color: '#94a3b8' }}>({studentsTotalCount.toLocaleString('ar-EG')})</span>
+                    )}
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ color: '#64748b', fontWeight: 700 }}>({filteredAdminStudents.length})</span>
+                    {studentsRestLoading &&
+                      typeof studentsTotalCount === 'number' &&
+                      studentsTotalCount > filteredAdminStudents.length && (
+                        <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: '0.9em' }}>
+                          — {filteredAdminStudents.length.toLocaleString('ar-EG')} / {studentsTotalCount.toLocaleString('ar-EG')}
+                        </span>
+                      )}
+                  </span>
+                )}
+              </h2>
               <div className="search-box">
                 <Search size={18} />
                 <input
@@ -4702,221 +4856,308 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             </div>
 
             <div className="requests-list-container">
-              {(() => {
-                const filteredStudents = allStudents.filter(student => {
-                  if (!searchTerm.trim()) return true;
-                  const term = searchTerm.toLowerCase().trim();
-                  return (
-                    student.fullNameArabic?.toLowerCase().includes(term) ||
-                    student.email?.toLowerCase().includes(term) ||
-                    student.nationalID?.includes(term) ||
-                    student.whatsappNumber?.includes(term) ||
-                    student.diplomaType?.toLowerCase().includes(term) ||
-                    student.diplomaYear?.includes(term)
-                  );
-                });
+              {searchTerm.trim() && filteredAdminStudents.length === 0 ? (
+                <div className="no-requests-message">
+                  <p>لا يوجد مستخدمين يطابقون بحثك</p>
+                </div>
+              ) : !searchTerm.trim() && !usersDirectoryLoading && filteredAdminStudents.length === 0 ? (
+                <div className="no-requests-message">
+                  <p>لا يوجد مستخدمين مسجلين حالياً</p>
+                </div>
+              ) : (
+                <>
+                  <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+                    {usersDirectoryLoading && !searchTerm.trim() && filteredAdminStudents.length === 0 ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                        <Loader2 size={16} strokeWidth={2.2} className="spinning-loader-small" style={{ color: '#64748b', flexShrink: 0 }} />
+                        <span>جاري تحميل المستخدمين…</span>
+                        {typeof studentsTotalCount === 'number' && (
+                          <span style={{ color: '#94a3b8', fontSize: '13px' }}>
+                            ({studentsTotalCount.toLocaleString('ar-EG')} في السحابة)
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span>
+                        إجمالي المستخدمين المعروضين: {filteredAdminStudents.length.toLocaleString('ar-EG')}
+                        {typeof studentsTotalCount === 'number' &&
+                          studentsRestLoading &&
+                          studentsTotalCount > filteredAdminStudents.length && (
+                            <span style={{ color: '#94a3b8', marginRight: '8px', fontSize: '13px' }}>
+                              — جاري إكمال القائمة ({filteredAdminStudents.length.toLocaleString('ar-EG')} /{' '}
+                              {studentsTotalCount.toLocaleString('ar-EG')})
+                            </span>
+                          )}
+                        {typeof studentsTotalCount === 'number' &&
+                          !(studentsRestLoading && studentsTotalCount > filteredAdminStudents.length) &&
+                          studentsTotalCount !== filteredAdminStudents.length &&
+                          !searchTerm.trim() && (
+                            <span style={{ color: '#94a3b8', marginRight: '8px', fontSize: '13px' }}>
+                              — في السحابة: {studentsTotalCount.toLocaleString('ar-EG')}
+                            </span>
+                          )}
+                        {filteredAdminStudents.length > ADMIN_USERS_PAGE_SIZE && (
+                          <span style={{ color: '#94a3b8', fontSize: '13px', marginRight: '8px' }}>
+                            — عرض {usersListPage * ADMIN_USERS_PAGE_SIZE + 1}–{Math.min((usersListPage + 1) * ADMIN_USERS_PAGE_SIZE, filteredAdminStudents.length)}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {!(usersDirectoryLoading && !searchTerm.trim() && filteredAdminStudents.length === 0) &&
+                      filteredAdminStudents.length > ADMIN_USERS_PAGE_SIZE && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          disabled={usersListPage <= 0}
+                          onClick={() => setUsersListPage(p => Math.max(0, p - 1))}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid #cbd5e1',
+                            background: usersListPage <= 0 ? '#f1f5f9' : '#fff',
+                            cursor: usersListPage <= 0 ? 'not-allowed' : 'pointer',
+                            fontWeight: 700,
+                            fontSize: '13px'
+                          }}
+                        >
+                          السابق
+                        </button>
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+                          صفحة {usersListPage + 1} / {adminUsersTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={usersListPage >= adminUsersTotalPages - 1}
+                          onClick={() => setUsersListPage(p => Math.min(adminUsersTotalPages - 1, p + 1))}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid #cbd5e1',
+                            background: usersListPage >= adminUsersTotalPages - 1 ? '#f1f5f9' : '#fff',
+                            cursor: usersListPage >= adminUsersTotalPages - 1 ? 'not-allowed' : 'pointer',
+                            fontWeight: 700,
+                            fontSize: '13px'
+                          }}
+                        >
+                          التالي
+                        </button>
+                      </span>
+                    )}
+                  </div>
 
-                if (filteredStudents.length === 0) {
-                  return (
-                    <div className="no-requests-message">
-                      <p>لا يوجد مستخدمين يطابقون بحثك</p>
-                    </div>
-                  );
-                }
+                  <div className="excel-table-wrapper" style={{
+                    maxHeight: 'none',
+                    overflowY: 'visible',
+                    overflowX: 'auto',
+                    borderRadius: '12px',
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                  }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                      <thead>
+                        <tr style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', width: '50px' }}>#</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', width: '40px' }}>✓</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '180px' }}>الاسم</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '140px' }}>الرقم القومي</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '180px' }}>البريد الإلكتروني</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '120px' }}>رقم الواتساب</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '120px' }}>نوع الدبلومة</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>سنة الدبلومة</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '80px' }}>المسار</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '150px' }}>العنوان</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>كلمة المرور</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>تاريخ الانضمام</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '60px' }}>الطلبات</th>
+                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>إجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usersDirectoryLoading && !searchTerm.trim() && filteredAdminStudents.length === 0
+                          ? Array.from({ length: 6 }).map((_, skRow) => (
+                              <tr key={`u-sk-${skRow}`} style={{ background: skRow % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                                {Array.from({ length: 14 }).map((__, skCol) => (
+                                  <td
+                                    key={skCol}
+                                    style={{
+                                      padding: '14px 10px',
+                                      border: '1px solid #e2e8f0',
+                                      verticalAlign: 'middle'
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        height: 10,
+                                        width: skCol === 0 ? 20 : skCol < 4 ? '70%' : '45%',
+                                        maxWidth: skCol >= 4 ? 120 : undefined,
+                                        background: '#e2e8f0',
+                                        borderRadius: 5,
+                                        margin: skCol >= 3 ? '0 auto' : skCol === 0 ? '0 auto' : undefined
+                                      }}
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            ))
+                          : displayedAdminStudents.map((student, index) => {
+                          const globalIndex = usersListPage * ADMIN_USERS_PAGE_SIZE + index;
+                          const studentRequestCount = requestCountByStudentId.get(student.id || '') ?? 0;
+                          const flagKey = `student-${student.id}`;
+                          const studentFlags = toggledFlags[flagKey] || { f1: false, f2: false, f3: false };
+                          const isFlagged = studentFlags.f1 || studentFlags.f2 || studentFlags.f3;
+                          const addressStr = [student.address?.governorate, student.address?.city, student.address?.street].filter(Boolean).join(' - ') || '';
 
-                return (
-                  <>
-                    <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px' }}>
-                      إجمالي المستخدمين: {filteredStudents.length} مستخدم
-                    </div>
+                          return (
+                            <tr key={student.id} style={{
+                              background: isFlagged ? '#eff6ff' : (globalIndex % 2 === 0 ? '#ffffff' : '#f8fafc'),
+                              borderLeft: isFlagged ? '3px solid #2563eb' : 'none',
+                              transition: 'background-color 0.2s'
+                            }}>
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '13px', color: '#64748b', fontWeight: '700' }}>
+                                {globalIndex + 1}
+                              </td>
 
-                    <div className="excel-table-wrapper" style={{
-                      maxHeight: 'none',
-                      overflowY: 'visible',
-                      overflowX: 'auto',
-                      borderRadius: '12px',
-                      border: '1px solid #e2e8f0',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
-                    }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                        <thead>
-                          <tr style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', width: '50px' }}>#</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', width: '40px' }}>✓</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '180px' }}>الاسم</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '140px' }}>الرقم القومي</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '180px' }}>البريد الإلكتروني</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '120px' }}>رقم الواتساب</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '120px' }}>نوع الدبلومة</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>سنة الدبلومة</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '80px' }}>المسار</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '150px' }}>العنوان</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>كلمة المرور</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>تاريخ الانضمام</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '60px' }}>الطلبات</th>
-                            <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>إجراءات</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredStudents.map((student, index) => {
-                            const studentRequests = getStudentRequests(student.id || '');
-                            const flagKey = `student-${student.id}`;
-                            const studentFlags = toggledFlags[flagKey] || { f1: false, f2: false, f3: false };
-                            const isFlagged = studentFlags.f1 || studentFlags.f2 || studentFlags.f3;
-                            const addressStr = [student.address?.governorate, student.address?.city, student.address?.street].filter(Boolean).join(' - ') || '';
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleFlag(flagKey, 1)}
+                                  style={{ background: 'none', border: 'none', padding: '0', cursor: 'pointer', color: isFlagged ? '#2563eb' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}
+                                >
+                                  {isFlagged ? <CheckSquare size={20} strokeWidth={2.5} /> : <Square size={20} strokeWidth={1.5} />}
+                                </button>
+                              </td>
 
-                            return (
-                              <tr key={student.id} style={{
-                                background: isFlagged ? '#eff6ff' : (index % 2 === 0 ? '#ffffff' : '#f8fafc'),
-                                borderLeft: isFlagged ? '3px solid #2563eb' : 'none',
-                                transition: 'background-color 0.2s'
-                              }}>
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '13px', color: '#64748b', fontWeight: '700' }}>
-                                  {index + 1}
-                                </td>
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#1e293b', fontWeight: '700', minWidth: '180px' }}>
+                                {student.fullNameArabic || 'بدون اسم'}
+                              </td>
 
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', fontWeight: '600', direction: 'ltr', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                                  {student.nationalID || '-'}
+                                  {student.nationalID && (
+                                    <Copy
+                                      size={14}
+                                      style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.6 }}
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(student.nationalID!);
+                                        setToastState({ message: 'تم نسخ الرقم القومي', type: 'success', duration: 2000 });
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              </td>
+
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', direction: 'ltr', textAlign: 'right', maxWidth: '200px', wordBreak: 'break-all' }}>
+                                {student.email || '-'}
+                              </td>
+
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', direction: 'ltr', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                                  {student.whatsappNumber || '-'}
+                                  {student.whatsappNumber && (
+                                    <Copy
+                                      size={14}
+                                      style={{ cursor: 'pointer', color: '#10b981', opacity: 0.6 }}
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(student.whatsappNumber!);
+                                        setToastState({ message: 'تم نسخ رقم الواتساب', type: 'success', duration: 2000 });
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              </td>
+
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
+                                {student.diplomaType || '-'}
+                              </td>
+
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', textAlign: 'center' }}>
+                                {student.diplomaYear || '-'}
+                              </td>
+
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
+                                {student.track || '-'}
+                              </td>
+
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', maxWidth: '200px' }}>
+                                <div style={{ maxHeight: '60px', overflowY: 'auto', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                  {addressStr || '-'}
+                                </div>
+                              </td>
+
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+                                    {showPasswords[student.id || ''] ? (student.password || '-') : '••••••••'}
+                                  </span>
                                   <button
                                     type="button"
-                                    onClick={() => toggleFlag(flagKey, 1)}
-                                    style={{ background: 'none', border: 'none', padding: '0', cursor: 'pointer', color: isFlagged ? '#2563eb' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}
+                                    onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: 0, display: 'flex' }}
                                   >
-                                    {isFlagged ? <CheckSquare size={20} strokeWidth={2.5} /> : <Square size={20} strokeWidth={1.5} />}
+                                    {showPasswords[student.id || ''] ? <EyeOff size={14} /> : <Eye size={14} />}
                                   </button>
-                                </td>
+                                </div>
+                              </td>
 
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#1e293b', fontWeight: '700', minWidth: '180px' }}>
-                                  {student.fullNameArabic || 'بدون اسم'}
-                                </td>
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                {student.createdAt ? new Date(student.createdAt).toLocaleDateString('ar-EG') : '-'}
+                              </td>
 
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', fontWeight: '600', direction: 'ltr', textAlign: 'right' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                                    {student.nationalID || '-'}
-                                    {student.nationalID && (
-                                      <Copy
-                                        size={14}
-                                        style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.6 }}
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(student.nationalID!);
-                                          setToastState({ message: 'تم نسخ الرقم القومي', type: 'success', duration: 2000 });
-                                        }}
-                                      />
-                                    )}
-                                  </div>
-                                </td>
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                                <span style={{
+                                  background: studentRequestCount > 0 ? '#dbeafe' : '#f1f5f9',
+                                  color: studentRequestCount > 0 ? '#1d4ed8' : '#94a3b8',
+                                  padding: '4px 10px',
+                                  borderRadius: '12px',
+                                  fontSize: '13px',
+                                  fontWeight: '700'
+                                }}>
+                                  {studentRequestCount}
+                                </span>
+                              </td>
 
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', direction: 'ltr', textAlign: 'right', maxWidth: '200px', wordBreak: 'break-all' }}>
-                                  {student.email || '-'}
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', direction: 'ltr', textAlign: 'right' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                                    {student.whatsappNumber || '-'}
-                                    {student.whatsappNumber && (
-                                      <Copy
-                                        size={14}
-                                        style={{ cursor: 'pointer', color: '#10b981', opacity: 0.6 }}
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(student.whatsappNumber!);
-                                          setToastState({ message: 'تم نسخ رقم الواتساب', type: 'success', duration: 2000 });
-                                        }}
-                                      />
-                                    )}
-                                  </div>
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
-                                  {student.diplomaType || '-'}
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', textAlign: 'center' }}>
-                                  {student.diplomaYear || '-'}
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
-                                  {student.track || '-'}
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', maxWidth: '200px' }}>
-                                  <div style={{ maxHeight: '60px', overflowY: 'auto', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                    {addressStr || '-'}
-                                  </div>
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
-                                      {showPasswords[student.id || ''] ? (student.password || '-') : '••••••••'}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
-                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: 0, display: 'flex' }}
-                                    >
-                                      {showPasswords[student.id || ''] ? <EyeOff size={14} /> : <Eye size={14} />}
-                                    </button>
-                                  </div>
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                  {student.createdAt ? new Date(student.createdAt).toLocaleDateString('ar-EG') : '-'}
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                                  <span style={{
-                                    background: studentRequests.length > 0 ? '#dbeafe' : '#f1f5f9',
-                                    color: studentRequests.length > 0 ? '#1d4ed8' : '#94a3b8',
-                                    padding: '4px 10px',
-                                    borderRadius: '12px',
-                                    fontSize: '13px',
-                                    fontWeight: '700'
-                                  }}>
-                                    {studentRequests.length}
-                                  </span>
-                                </td>
-
-                                <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
-                                    <button
-                                      onClick={() => setViewingStudentRequests(student)}
-                                      title="عرض جميع الطلبات"
-                                      style={{ padding: '8px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: '8px', cursor: 'pointer' }}
-                                    >
-                                      <ClipboardList size={16} />
-                                    </button>
-                                    <button
-                                      onClick={() => handleEditStudent(student)}
-                                      title="تعديل البيانات"
-                                      style={{ padding: '8px', background: '#eff6ff', color: '#2563eb', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer' }}
-                                    >
-                                      <Edit2 size={16} />
-                                    </button>
-                                    <button
-                                      onClick={async () => {
-                                        if (!window.confirm("هل أنت متأكد من حذف هذا المشترك نهائياً من المنصة؟")) return;
-                                        try {
-                                          await deleteStudentData(student.id!);
-                                          showAlert('نجاح', 'تم حذف المشترك بنجاح', 'success');
-                                        } catch (error: any) {
-                                          showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
-                                        }
-                                      }}
-                                      title="حذف المشترك"
-                                      style={{ padding: '8px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '8px', cursor: 'pointer' }}
-                                    >
-                                      <Trash2 size={16} />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                );
-              })()}
+                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                                  <button
+                                    onClick={() => setViewingStudentRequests(student)}
+                                    title="عرض جميع الطلبات"
+                                    style={{ padding: '8px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: '8px', cursor: 'pointer' }}
+                                  >
+                                    <ClipboardList size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleEditStudent(student)}
+                                    title="تعديل البيانات"
+                                    style={{ padding: '8px', background: '#eff6ff', color: '#2563eb', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer' }}
+                                  >
+                                    <Edit2 size={16} />
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      if (!window.confirm("هل أنت متأكد من حذف هذا المشترك نهائياً من المنصة؟")) return;
+                                      try {
+                                        await deleteStudentData(student.id!);
+                                        showAlert('نجاح', 'تم حذف المشترك بنجاح', 'success');
+                                      } catch (error: any) {
+                                        showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
+                                      }
+                                    }}
+                                    title="حذف المشترك"
+                                    style={{ padding: '8px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '8px', cursor: 'pointer' }}
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )

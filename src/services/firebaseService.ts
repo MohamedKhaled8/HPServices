@@ -28,7 +28,10 @@ import {
   orderBy,
   deleteDoc,
   documentId,
-  writeBatch
+  writeBatch,
+  limit,
+  startAfter,
+  getCountFromServer
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { auth, db, storage, firebaseConfig } from '../config/firebase';
@@ -36,6 +39,7 @@ import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
 import { uploadMultipleToCloudStorage, CloudProvider } from './cloudStorageService';
 import { StudentData, ServiceRequest, ServiceRequestWorkflowStatus, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings } from '../types';
+import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
 
@@ -290,10 +294,11 @@ export const subscribeToStudentData = (
 const FIRESTORE_IN_LIMIT = 10;
 export const getStudentsByIds = async (userIds: string[]): Promise<Record<string, StudentData>> => {
   const result: Record<string, StudentData> = {};
-  if (userIds.length === 0) return result;
+  const uniqueIds = [...new Set(userIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return result;
   try {
-    for (let i = 0; i < userIds.length; i += FIRESTORE_IN_LIMIT) {
-      const chunk = userIds.slice(i, i + FIRESTORE_IN_LIMIT);
+    for (let i = 0; i < uniqueIds.length; i += FIRESTORE_IN_LIMIT) {
+      const chunk = uniqueIds.slice(i, i + FIRESTORE_IN_LIMIT);
       const q = query(
         collection(db, 'students'),
         where(documentId(), 'in', chunk)
@@ -1122,6 +1127,48 @@ export const getAllStudents = async (): Promise<StudentData[]> => {
   }
 };
 
+/** عدد مستندات الطلاب دون تنزيل المحتوى — سريع للواجهة */
+export const getStudentsCollectionCount = async (): Promise<number> => {
+  try {
+    const snapshot = await getCountFromServer(query(collection(db, 'students')));
+    return snapshot.data().count;
+  } catch (error: any) {
+    logger.error('getStudentsCollectionCount:', error);
+    throw new Error(error.message || 'فشل حساب عدد المستخدمين');
+  }
+};
+
+const mapStudentDoc = (docSnap: QueryDocumentSnapshot<DocumentData>): StudentData => {
+  const data = docSnap.data();
+  return {
+    ...data,
+    id: docSnap.id,
+    createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+  } as StudentData;
+};
+
+/**
+ * صفحة من مستخدمي الطلاب (ترتيب مستقر documentId) — للتحميل التدريجي بدل لقطة واحدة ثقيلة.
+ */
+export const fetchStudentsPageByDocumentId = async (
+  pageSize: number,
+  lastDoc: QueryDocumentSnapshot<DocumentData> | null
+): Promise<{
+  students: StudentData[];
+  lastSnapshot: QueryDocumentSnapshot<DocumentData> | null;
+  hasMore: boolean;
+}> => {
+  const coll = collection(db, 'students');
+  const q = lastDoc
+    ? query(coll, orderBy(documentId()), startAfter(lastDoc), limit(pageSize))
+    : query(coll, orderBy(documentId()), limit(pageSize));
+  const snap = await getDocs(q);
+  const students = snap.docs.map(mapStudentDoc);
+  const lastSnapshot = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+  const hasMore = snap.docs.length === pageSize;
+  return { students, lastSnapshot, hasMore };
+};
+
 // Real-time listener for all students
 export const subscribeToAllStudents = (
   callback: (students: StudentData[]) => void,
@@ -1591,24 +1638,34 @@ export const getAllServiceRequests = async (): Promise<ServiceRequest[]> => {
   }
 };
 
-/** جلب لقطة واحدة من كل مجموعات الطلبات بالتوازي — أسرع ظهورًا للبطاقات من انتظار أول دفعة من عدة onSnapshot */
-export const fetchAllServiceRequestsOnce = async (): Promise<ServiceRequest[]> => {
-  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
-  const snapshots = await Promise.all(
-    serviceIds.map((serviceId) => getDocs(query(collection(db, `serviceRequests_${serviceId}`))))
+/** جلب لقطة من كل مجموعات الطلبات بالتوازي. يستدعي onProgress بعد اكتمال كل مجموعة لعرض تدريجي في الواجهة. */
+export const fetchAllServiceRequestsOnce = async (
+  onProgress?: (merged: ServiceRequest[], servicesCompleted: number) => void
+): Promise<ServiceRequest[]> => {
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const;
+  const perService: Record<string, ServiceRequest[]> = Object.fromEntries(
+    serviceIds.map((id) => [id, [] as ServiceRequest[]])
+  ) as Record<string, ServiceRequest[]>;
+
+  let completed = 0;
+  await Promise.all(
+    serviceIds.map(async (serviceId) => {
+      const querySnapshot = await getDocs(query(collection(db, `serviceRequests_${serviceId}`)));
+      const requests: ServiceRequest[] = querySnapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          ...data,
+          id: docSnap.id,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+        } as ServiceRequest;
+      });
+      perService[serviceId] = requests;
+      completed += 1;
+      const merged = serviceIds.flatMap((id) => perService[id]);
+      onProgress?.(merged, completed);
+    })
   );
-  const merged: ServiceRequest[] = [];
-  snapshots.forEach((snap) => {
-    snap.docs.forEach((docSnap) => {
-      const data = docSnap.data();
-      merged.push({
-        ...data,
-        id: docSnap.id,
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
-      } as ServiceRequest);
-    });
-  });
-  return merged;
+  return serviceIds.flatMap((id) => perService[id]);
 };
 
 export const subscribeToAllServiceRequests = (
@@ -1627,6 +1684,7 @@ export const subscribeToAllServiceRequests = (
 
   const scheduleFlush = () => {
     if (debounceTimer) clearTimeout(debounceTimer);
+    /** دمج تحديثات الـ 11 مجموعة في أقل عدد ممكن من إعادة الرسم */
     debounceTimer = setTimeout(flushCallback, 16);
   };
 
