@@ -1655,7 +1655,7 @@ export const subscribeToAllServiceRequests = (
   const scheduleFlush = () => {
     if (debounceTimer) clearTimeout(debounceTimer);
     /** دمج تحديثات الـ 11 مجموعة في أقل عدد ممكن من إعادة الرسم */
-    debounceTimer = setTimeout(flushCallback, 16);
+    debounceTimer = setTimeout(flushCallback, 8);
   };
 
   serviceIds.forEach(serviceId => {

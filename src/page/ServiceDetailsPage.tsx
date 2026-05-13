@@ -12,6 +12,9 @@ import { logger } from '../utils/logger';
 import { normalizeInstaPay } from '../utils/validation';
 import '../styles/ServiceDetailsPage.css';
 
+/** واتساب متابعة الطلب بعد التقديم — الرقم: +20 10 50889596 */
+const POST_SUBMIT_WHATSAPP_MSISDN = '201050889596';
+
 interface ServiceDetailsPageProps {
   serviceId: string;
   onBack: () => void;
@@ -695,13 +698,59 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
       // Simulate progress for better UX (faster)
       setUploadProgress({ uploading: true, progress: 30 });
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve => setTimeout(resolve, 75));
       setUploadProgress({ uploading: true, progress: 60 });
 
       await addServiceRequest(request);
 
+      const serviceNameForMsg =
+        service.id === '3' && bookConfig
+          ? bookConfig.serviceName
+          : service.id === '5' && assignmentsConfig
+            ? assignmentsConfig.serviceName
+            : service.id === '8' && finalReviewConfig
+              ? finalReviewConfig.serviceName
+              : service.id === '9' && graduationProjectConfig
+                ? graduationProjectConfig.serviceName
+                : service.nameAr;
+
+      const submitterName = String(
+        requestData.full_name_arabic || requestData.full_name || student?.fullNameArabic || ''
+      ).trim() || '—';
+      const submitterNational = String(requestData.national_id || student?.nationalID || '').trim() || '—';
+      const submitterPhone = String(
+        requestData.whatsapp_number ||
+          requestData.phone_whatsapp ||
+          requestData.phone ||
+          requestData.leader_whatsapp ||
+          student?.whatsappNumber ||
+          ''
+      ).trim() || '—';
+      const rawPrice = requestData.totalPrice;
+      const priceLine =
+        rawPrice != null && rawPrice !== ''
+          ? `${Number(rawPrice).toLocaleString('ar-EG')} ج.م`
+          : '—';
+
+      const waBody = [
+        'السلام عليكم ورحمة الله وبركاته،',
+        '',
+        `تم التقديم على خدمة: ${serviceNameForMsg}`,
+        `الاسم: ${submitterName}`,
+        `الرقم القومي: ${submitterNational}`,
+        `رقم الهاتف / واتساب: ${submitterPhone}`,
+        `المبلغ: ${priceLine}`,
+      ].join('\n');
+
+      const waUrl = `https://wa.me/${POST_SUBMIT_WHATSAPP_MSISDN}?text=${encodeURIComponent(waBody)}`;
+      try {
+        window.open(waUrl, '_blank', 'noopener,noreferrer');
+      } catch {
+        // ignore — المتصفح قد يمنع النافذة الجديدة
+      }
+
       setUploadProgress({ uploading: true, progress: 100 });
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve => setTimeout(resolve, 75));
 
       setSubmitMessage({
         type: 'success',
@@ -2042,7 +2091,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                     <span>تم بنجاح!</span>
                   </h3>
                   <p className="loading-subtitle">
-                    <span>تم إرسال طلبك بنجاح، جاري تحويلك...</span>
+                    <span>تم إرسال طلبك بنجاح. جاري فتح واتساب للمتابعة — إن لم يفتح، اسمح بالنوافذ المنبثقة للموقع.</span>
                   </p>
                 </div>
               ) : (

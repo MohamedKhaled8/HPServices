@@ -2942,9 +2942,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       {activeTab === 'requests' && (
         <div className="admin-content">
           <div className="requests-section">
-            <h2>
-              جميع الطلبات{' '}
-              {!dataReady && serviceRequests.length === 0 ? 'جاري التحميل…' : serviceRequests.length}
+            <h2 className="requests-section-heading">
+              <span className="requests-section-heading-title">جميع الطلبات</span>
+              {!dataReady && serviceRequests.length === 0 ? (
+                <span className="requests-section-heading-sync" aria-live="polite">
+                  <span className="requests-section-heading-sync-dot" aria-hidden />
+                  <span className="requests-section-heading-sync-text">جاري تحميل البيانات من السيرفر</span>
+                </span>
+              ) : (
+                <span className="requests-section-heading-count" title="إجمالي الطلبات عبر كل الخدمات">
+                  {serviceRequests.length}
+                </span>
+              )}
             </h2>
 
             <AdminServicesFilesGrid
