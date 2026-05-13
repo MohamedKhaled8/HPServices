@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
 import { SERVICES } from '../constants/services';
 import { ServiceRequest, UploadedFile, ServiceSettings } from '../types';
-import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, updateStudentData, subscribeToServiceSettings } from '../services/firebaseService';
+import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, updateStudentData, subscribeToServiceSettings, subscribeToAdminPreferences } from '../services/firebaseService';
 import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
 import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils/trackUtils';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
@@ -23,7 +23,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   onBack,
   onSubmitSuccess
 }) => {
-  const { student, addServiceRequest, setStudent } = useStudent();
+  const { student, addServiceRequest, setStudent, serviceRequests } = useStudent();
   const service = SERVICES.find(s => s.id === serviceId);
 
   const [serviceData, setServiceData] = useState<Record<string, any>>({});
@@ -45,6 +45,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
   const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
   const [showCopyToast, setShowCopyToast] = useState(false);
   const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
+  const [requireRouteReg, setRequireRouteReg] = useState(false);
   const [wantsMalazem, setWantsMalazem] = useState(false);
   const [missingFieldNames, setMissingFieldNames] = useState<string[]>([]);
   const [formAttempted, setFormAttempted] = useState(false);
@@ -53,6 +54,28 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     const unsubscribe = subscribeToServiceSettings(setServiceSettings);
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToAdminPreferences((p) => setRequireRouteReg(!!p?.requireRouteRegistration));
+    return unsub;
+  }, []);
+
+  const routeGateSatisfied =
+    student?.routeRegistrationCompleted === true ||
+    serviceRequests.some(r => String(r.serviceId) === '1');
+
+  useEffect(() => {
+    if (!student?.id || !service) return;
+    if (serviceId === '1') return;
+    if (!requireRouteReg) return;
+    if (routeGateSatisfied) return;
+    try {
+      sessionStorage.setItem('route_gate_snackbar', '1');
+    } catch {
+      // ignore
+    }
+    onBack();
+  }, [student?.id, serviceId, service, requireRouteReg, routeGateSatisfied, onBack]);
 
   const getDisabledFields = (serviceId: string) => {
     const setting = serviceSettings[serviceId];

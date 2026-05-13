@@ -114,7 +114,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   onRequestsClick,
   onNewsClick
 }) => {
-  const { student } = useStudent();
+  const { student, serviceRequests } = useStudent();
   const [isAdmin, setIsAdmin] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [greeting, setGreeting] = useState('');
@@ -172,6 +172,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [latestNewsData, setLatestNewsData] = useState<any>(null);
   const [quickNotification, setQuickNotification] = useState<{ content: string; id: string } | null>(null);
   const [showQuickNotify, setShowQuickNotify] = useState(false);
+  const [routeGateSnack, setRouteGateSnack] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToLatestNews((news) => {
@@ -215,6 +216,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       unsubscribe();
       unsubscribeQuick();
     };
+  }, []);
+
+  useEffect(() => {
+    if (sessionStorage.getItem('route_gate_snackbar') === '1') {
+      sessionStorage.removeItem('route_gate_snackbar');
+      setRouteGateSnack(true);
+      const t = window.setTimeout(() => setRouteGateSnack(false), 7000);
+      return () => window.clearTimeout(t);
+    }
   }, []);
 
   const handleCloseNewsPopup = () => {
@@ -295,6 +305,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       behavior: 'smooth'
     });
   };
+
+  const routeGateLocked =
+    adminPrefs.requireRouteRegistration === true &&
+    !(student?.routeRegistrationCompleted === true ||
+      serviceRequests.some(r => String(r.serviceId) === '1'));
 
 
 
@@ -489,6 +504,43 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="title-decoration"></div>
         </div>
 
+        {routeGateLocked && (
+          <div
+            style={{
+              margin: '0 auto 24px',
+              maxWidth: '900px',
+              padding: '20px 22px',
+              borderRadius: '16px',
+              border: '1px solid #fbbf24',
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fff7ed 100%)',
+              direction: 'rtl',
+              boxShadow: '0 4px 20px rgba(251, 191, 36, 0.15)'
+            }}
+          >
+            <p style={{ margin: '0 0 10px', fontSize: '17px', color: '#78350f', fontWeight: 800 }}>مطلوب: إكمال «سجل بياناتك»</p>
+            <p style={{ margin: '0 0 18px', fontSize: '15px', color: '#92400e', lineHeight: 1.65 }}>
+              تم تفعيل وضع يتطلب تسجيل بياناتك الأساسية على المنصة مرة واحدة قبل فتح باقي الخدمات. اضغط الزر أدناه وأكمل النموذج — لا يمكن تخطي هذه الخطوة أثناء تفعيل الإدارة لهذا الوضع.
+            </p>
+            <button
+              type="button"
+              onClick={() => onServiceClick('1')}
+              style={{
+                padding: '12px 22px',
+                borderRadius: '10px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                color: '#fff',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: '15px',
+                boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)'
+              }}
+            >
+              الذهاب إلى سجل بياناتك
+            </button>
+          </div>
+        )}
+
         <div className="services-grid">
 
           {
@@ -503,20 +555,30 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               .map((service) => {
                 const setting = serviceSettings[service.id];
                 const isActive = typeof setting === 'boolean' ? setting : (setting?.active !== false);
-                const isClickable = isActive;
+                const isRegisterService = service.id === '1';
+                const isBlockedByGate = routeGateLocked && !isRegisterService;
+                const isClickable = isRegisterService ? isActive : (isActive && !routeGateLocked);
 
                 return (
                   <div
                     key={service.id}
-                    className={`service-card-premium ${!isActive ? 'service-disabled' : ''}`}
-                    onClick={() => isClickable && onServiceClick(service.id)}
+                    className={`service-card-premium ${!isClickable ? 'service-disabled' : ''}`}
+                    onClick={() => {
+                      if (!isActive) return;
+                      if (isBlockedByGate) {
+                        setRouteGateSnack(true);
+                        window.setTimeout(() => setRouteGateSnack(false), 7000);
+                        return;
+                      }
+                      onServiceClick(service.id);
+                    }}
                     onMouseEnter={() => isClickable && setHoveredServiceId(service.id)}
                     onMouseLeave={() => setHoveredServiceId(null)}
                     style={{
-                      '--card-color': isActive ? service.color : '#94a3b8',
-                      cursor: isClickable ? 'pointer' : 'not-allowed',
-                      filter: !isActive ? 'grayscale(1)' : 'none',
-                      opacity: !isActive ? 0.8 : 1
+                      '--card-color': isClickable ? service.color : '#94a3b8',
+                      cursor: isActive ? 'pointer' : 'not-allowed',
+                      filter: !isClickable ? 'grayscale(1)' : 'none',
+                      opacity: !isClickable ? 0.78 : 1
                     } as React.CSSProperties}
                   >
                     <div className="service-icon mb-4 transform transition-transform duration-300 group-hover:scale-110">
@@ -526,10 +588,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                     <p className="card-desc">{service.descriptionAr}</p>
 
                     <div className="card-action-oval">
-                      {isActive ? (
+                      {isClickable ? (
                         <>بدء الخدمة <ChevronRight size={16} /></>
                       ) : (
-                        <span>الخدمة ستتوفر قريبا</span>
+                        <span>{routeGateLocked && !isRegisterService ? 'أكمل سجل بياناتك أولاً' : 'الخدمة ستتوفر قريبا'}</span>
                       )}
                     </div>
                   </div>
@@ -751,6 +813,33 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               }
             `).join('')}
           `}</style>
+        </div>
+      )}
+
+      {routeGateSnack && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 28,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10001,
+            maxWidth: 'min(440px, 92vw)',
+            padding: '14px 22px',
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            color: '#f8fafc',
+            borderRadius: '14px',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.28)',
+            fontSize: '15px',
+            fontWeight: 600,
+            textAlign: 'center',
+            direction: 'rtl',
+            lineHeight: 1.55,
+            border: '1px solid rgba(255,255,255,0.08)'
+          }}
+        >
+          يرجى إكمال «سجل بياناتك» أولاً — من القسم أعلاه أو من البطاقة البرتقالية، ثم ستُفتح لك كل الخدمات.
         </div>
       )}
 

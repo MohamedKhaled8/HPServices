@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 export interface GridSelection {
   tableId: string;
@@ -149,34 +149,65 @@ export function useSpreadsheetGrid() {
 
   const getSort = useCallback((tableId: string) => sortState[tableId] ?? null, [sortState]);
 
-  return {
-    activeTableId,
-    setActiveTableId,
-    selection,
-    setSelectionRange,
-    selectCell,
-    selectRange,
-    selectRow,
-    selectColumn,
-    clearSelection,
-    isCellSelected,
-    editingCell,
-    isCellEditing,
-    startEditing,
-    stopEditing,
-    copyToClipboard,
-    getClipboard,
-    clearClipboardAfterPaste,
-    columnWidths,
-    setColumnWidth,
-    getColumnWidth,
-    hiddenColumns,
-    hideColumn,
-    isColumnHidden,
-    setSort,
-    getSort,
-    isSelectingRef
-  };
+  /** مرجع مستقر: بدونه كل رسم للأب ينتج كائن gridApi جديد ويعيد تسجيل مستمعات window/document بلا داعٍ */
+  return useMemo(
+    () => ({
+      activeTableId,
+      setActiveTableId,
+      selection,
+      setSelectionRange,
+      selectCell,
+      selectRange,
+      selectRow,
+      selectColumn,
+      clearSelection,
+      isCellSelected,
+      editingCell,
+      isCellEditing,
+      startEditing,
+      stopEditing,
+      copyToClipboard,
+      getClipboard,
+      clearClipboardAfterPaste,
+      columnWidths,
+      setColumnWidth,
+      getColumnWidth,
+      hiddenColumns,
+      hideColumn,
+      isColumnHidden,
+      setSort,
+      getSort,
+      isSelectingRef
+    }),
+    [
+      activeTableId,
+      setActiveTableId,
+      selection,
+      setSelectionRange,
+      selectCell,
+      selectRange,
+      selectRow,
+      selectColumn,
+      clearSelection,
+      isCellSelected,
+      editingCell,
+      isCellEditing,
+      startEditing,
+      stopEditing,
+      copyToClipboard,
+      getClipboard,
+      clearClipboardAfterPaste,
+      columnWidths,
+      setColumnWidth,
+      getColumnWidth,
+      hiddenColumns,
+      hideColumn,
+      isColumnHidden,
+      setSort,
+      getSort,
+      isSelectingRef
+    ]
+  );
 }
 
 export type SpreadsheetGridAPI = ReturnType<typeof useSpreadsheetGrid>;

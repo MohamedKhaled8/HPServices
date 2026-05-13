@@ -40,6 +40,8 @@ export interface StudentData {
   educational_specialization_other?: string;
   track_category?: string;
   track_name?: string;
+  /** أكمل إجبار «سجل بياناتك» (يُضبط تلقائياً بعد طلب الخدمة 1) */
+  routeRegistrationCompleted?: boolean;
 }
 
 export interface Service {
@@ -66,6 +68,14 @@ export interface ServiceField {
   defaultValue?: string; // القيمة الافتراضية من بيانات المستخدم
 }
 
+/** حالة سير الطلب في لوحة الأدمن (تُحفظ في Firestore مع الطلب) */
+export type ServiceRequestWorkflowStatus =
+  | 'pending'
+  | 'submitted'
+  | 'receipt_sent'
+  | 'completed'
+  | 'rejected';
+
 export interface ServiceRequest {
   id?: string;
   studentId: string;
@@ -73,7 +83,7 @@ export interface ServiceRequest {
   data: Record<string, any>;
   documents: UploadedFile[];
   paymentMethod?: string;
-  status: 'pending' | 'completed' | 'rejected';
+  status: ServiceRequestWorkflowStatus;
   createdAt?: string;
 }
 

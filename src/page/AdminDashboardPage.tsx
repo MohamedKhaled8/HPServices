@@ -53,7 +53,7 @@ import {
   prepareAutomationPostBody,
   parseAutomationApiJsonResponse
 } from '../utils/automationApi';
-import { ServiceRequest, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
+import { ServiceRequest, ServiceRequestWorkflowStatus, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
 import {
   LogOut,
   Package,
@@ -310,7 +310,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       if (!sid) continue;
       if (!m[sid]) m[sid] = { pending: 0, total: 0 };
       m[sid].total += 1;
-      if (r.status === 'pending') m[sid].pending += 1;
+      if (r.status !== 'completed' && r.status !== 'rejected') m[sid].pending += 1;
     }
     return m;
   }, [serviceRequests]);
@@ -431,7 +431,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gridApi.activeTableId, gridApi.selection, gridApi, scrollActiveCellIntoView]);
+  }, [gridApi, scrollActiveCellIntoView]);
 
   /* Mouse drag to select range + auto-scroll while dragging */
   useEffect(() => {
@@ -476,7 +476,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [gridApi]);
+  }, [gridApi.selectRange]);
 
   /* إلغاء التحديد عند النقر في أي نقطة خارج خلايا الجدول القابلة للتحديد */
   useEffect(() => {
@@ -495,7 +495,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
-  }, [gridApi]);
+  }, [gridApi.activeTableId, gridApi.selection, gridApi.clearSelection]);
 
   /* إعادة تعيين / تحميل ترتيب الأعمدة عند تغيير الخدمة */
   useEffect(() => {
@@ -530,7 +530,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         // ignore
       }
     },
-    [gridApi, selectedServiceId]
+    [gridApi.setSort, selectedServiceId]
   );
 
   useEffect(() => {
@@ -550,7 +550,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     } catch {
       // ignore
     }
-  }, [gridApi, selectedServiceId]);
+  }, [gridApi.setSort, selectedServiceId]);
 
   /* إغلاق قائمة نسخ الخلية عند النقر خارجها أو Escape أو التمرير خارج القائمة */
   useEffect(() => {
@@ -693,9 +693,29 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   });
 
+  const toggledFlagsRef = React.useRef(toggledFlags);
+  toggledFlagsRef.current = toggledFlags;
+
   useEffect(() => {
-    localStorage.setItem('admin_toggled_flags', JSON.stringify(toggledFlags));
+    const id = window.setTimeout(() => {
+      try {
+        localStorage.setItem('admin_toggled_flags', JSON.stringify(toggledFlags));
+      } catch {
+        // ignore
+      }
+    }, 320);
+    return () => window.clearTimeout(id);
   }, [toggledFlags]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        localStorage.setItem('admin_toggled_flags', JSON.stringify(toggledFlagsRef.current));
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
   const toggleFlag = (key: string, index: 1 | 2 | 3) => {
     setToggledFlags(prev => ({
@@ -1226,7 +1246,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return () => unsubscribe();
   }, [isLoading, activeTab, searchTerm]);
 
-  const handleStatusChange = async (requestId: string, status: 'pending' | 'completed' | 'rejected', serviceId: string) => {
+  const handleStatusChange = async (requestId: string, status: ServiceRequestWorkflowStatus, serviceId: string) => {
     try {
       await updateServiceRequestStatus(requestId, status, serviceId);
 
@@ -2135,12 +2155,45 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     });
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const normalizeWorkflowStatus = (s: string | undefined): ServiceRequestWorkflowStatus => {
+    const v = String(s || '').trim();
+    if (v === 'submitted' || v === 'receipt_sent' || v === 'completed' || v === 'rejected') return v;
+    return 'pending';
+  };
+
+  const workflowStatusLabelAr = (s: string | undefined) => {
+    switch (normalizeWorkflowStatus(s)) {
+      case 'pending': return 'قيد الانتظار';
+      case 'submitted': return 'تم التقديم';
+      case 'receipt_sent': return 'تم إرسال الإيصال';
+      case 'completed': return 'مكتمل';
+      case 'rejected': return 'مرفوض';
+      default: return 'قيد الانتظار';
+    }
+  };
+
+  const workflowStatusRank = (s: string | undefined) => {
+    const order: Record<ServiceRequestWorkflowStatus, number> = {
+      pending: 0,
+      submitted: 1,
+      receipt_sent: 2,
+      completed: 3,
+      rejected: 4
+    };
+    return order[normalizeWorkflowStatus(s)] ?? 0;
+  };
+
+  const getStatusBadge = (status: string | undefined) => {
+    const n = normalizeWorkflowStatus(status);
+    switch (n) {
       case 'completed':
         return <span className="status-badge status-completed"><CheckCircle size={14} /> مكتمل</span>;
       case 'rejected':
         return <span className="status-badge status-rejected"><XCircle size={14} /> مرفوض</span>;
+      case 'submitted':
+        return <span style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', fontSize: '12px', width: 'fit-content', margin: '0 auto' }}><FileCheck size={14} /> تم التقديم</span>;
+      case 'receipt_sent':
+        return <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #6ee7b7', borderRadius: '12px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', fontSize: '12px', width: 'fit-content', margin: '0 auto' }}><FileText size={14} /> تم إرسال الإيصال</span>;
       default:
         return <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #fcd34d', borderRadius: '12px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', fontSize: '12px', width: 'fit-content', margin: '0 auto' }}><Clock size={14} /> قيد الانتظار</span>;
     }
@@ -2795,8 +2848,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           if (studentData.email?.toLowerCase().includes(term)) return true;
                         }
 
-                        const statusAr = request.status === 'completed' ? 'مكتمل' :
-                          request.status === 'rejected' ? 'مرفوض' : 'قيد الانتظار';
+                        const statusAr = workflowStatusLabelAr(request.status);
                         if (statusAr.includes(term)) return true;
 
                         if (request.createdAt) {
@@ -3038,9 +3090,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                           // فرز حسب الحالة (عمود الحالة رقم 2)
                           if (c === 2) {
-                            const sa = a.status || '';
-                            const sb = b.status || '';
-                            return sa.localeCompare(sb, 'ar') * (sortState.dir === 'asc' ? 1 : -1);
+                            const ra = workflowStatusRank(a.status);
+                            const rb = workflowStatusRank(b.status);
+                            return (ra - rb) * (sortState.dir === 'asc' ? 1 : -1);
                           }
 
                           // الأعمدة قبل رقم 3 ليست جزءاً من بيانات الطلب
@@ -3103,7 +3155,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       if (!request) return '';
                       if (col === 0) return String(row + 1);
                       if (col === 1) return '';
-                      if (col === 2) return request.status || '';
+                      if (col === 2) return workflowStatusLabelAr(request.status);
                       if (col >= 3 && col < 3 + dataColumnCount) {
                         const visualPos = col - 3;
                         const localIdx = orderedDataIndices[visualPos];
@@ -3149,7 +3201,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       displayRequests.forEach((req, rowIdx) => {
                         const row: any[] = [];
                         row.push(rowIdx + 1);
-                        row.push(req.status || '');
+                        row.push(workflowStatusLabelAr(req.status));
                         orderedDataIndices.forEach(localIdx => {
                           if (localIdx < allColumns.length) {
                             row.push(allColumns[localIdx].getValue(req));
@@ -3376,8 +3428,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   }
                                 ).length;
                                 const isDuplicate = userRequestsCount > 1;
-                                const rowFlags = mergedRequestMarks(toggledFlags, request);
-                                const isAnyFlagged = rowFlags.f1 || rowFlags.f2 || rowFlags.f3;
                                 const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
 
                                 // Define values list to match headers
@@ -3512,78 +3562,154 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       data-col={1}
                                       className="spreadsheet-cell spreadsheet-cell-actions"
                                       onMouseDown={(e) => e.stopPropagation()}
-                                      style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'top' }}
+                                      style={{
+                                        padding: '7px 5px',
+                                        border: '1px solid #cbd5e1',
+                                        textAlign: 'center',
+                                        whiteSpace: 'nowrap',
+                                        verticalAlign: 'middle',
+                                        minWidth: '214px',
+                                        maxWidth: '240px'
+                                      }}
                                     >
                                       <div
                                         style={{
                                           display: 'flex',
                                           flexDirection: 'column',
-                                          gap: '4px',
-                                          alignItems: 'center',
-                                          justifyContent: 'center'
+                                          gap: '5px',
+                                          alignItems: 'stretch',
+                                          justifyContent: 'center',
+                                          width: '100%'
                                         }}
+                                        role="group"
+                                        aria-label="مرحلة الطلب والإجراءات"
                                       >
-                                        {/* الصف الأول: 5 عناصر (3 شيك بوكس + العين + التحميل) */}
-                                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequestMarks(request, 1); }}
-                                            title={rowFlags.f1 ? 'إلغاء علامة (بدء بالحل)' : 'تمييز: بدء بالحل'}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f1 ? '#2563eb' : '#94a3b8' }}
-                                          >
-                                            {rowFlags.f1 ? <CheckSquare size={18} /> : <Square size={18} />}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequestMarks(request, 2); }}
-                                            title={rowFlags.f2 ? 'إلغاء علامة (قيد المتابعة)' : 'تمييز: قيد المتابعة'}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f2 ? '#16a34a' : '#a3a3a3' }}
-                                          >
-                                            {rowFlags.f2 ? <CheckSquare size={18} /> : <Square size={18} />}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequestMarks(request, 3); }}
-                                            title={rowFlags.f3 ? 'إلغاء علامة (تمت المراجعة)' : 'تمييز: تمت المراجعة'}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: rowFlags.f3 ? '#eab308' : '#a3a3a3' }}
-                                          >
-                                            {rowFlags.f3 ? <CheckSquare size={18} /> : <Square size={18} />}
-                                          </button>
+                                        {/* صف 1: مراحل الحالة — أفقي دون لف */}
+                                        <div
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'row',
+                                            flexWrap: 'nowrap',
+                                            gap: '3px',
+                                            justifyContent: 'center',
+                                            alignItems: 'center'
+                                          }}
+                                        >
+                                            {(() => {
+                                              const cur = normalizeWorkflowStatus(request.status);
+                                              const rid = request.id || '';
+                                              const sid = request.serviceId;
+                                              const baseBtn: React.CSSProperties = {
+                                                padding: '4px',
+                                                borderRadius: '5px',
+                                                border: '1px solid',
+                                                cursor: rid ? 'pointer' : 'not-allowed',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                flex: '0 0 auto',
+                                                minWidth: '28px',
+                                                minHeight: '28px',
+                                                transition: 'background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease',
+                                                opacity: rid ? 1 : 0.45
+                                              };
+                                              const inactive: React.CSSProperties = {
+                                                ...baseBtn,
+                                                background: '#f8fafc',
+                                                borderColor: '#e2e8f0',
+                                                color: '#94a3b8',
+                                                boxShadow: 'none'
+                                              };
+                                              const steps: {
+                                                key: ServiceRequestWorkflowStatus;
+                                                title: string;
+                                                Icon: typeof Clock;
+                                                active: React.CSSProperties;
+                                              }[] = [
+                                                {
+                                                  key: 'pending',
+                                                  title: 'قيد الانتظار',
+                                                  Icon: Clock,
+                                                  active: { background: '#fffbeb', borderColor: '#fcd34d', color: '#d97706', boxShadow: '0 1px 2px rgba(245, 158, 11, 0.2)' }
+                                                },
+                                                {
+                                                  key: 'submitted',
+                                                  title: 'تم التقديم',
+                                                  Icon: Send,
+                                                  active: { background: '#eff6ff', borderColor: '#93c5fd', color: '#2563eb', boxShadow: '0 1px 2px rgba(37, 99, 235, 0.15)' }
+                                                },
+                                                {
+                                                  key: 'receipt_sent',
+                                                  title: 'تم إرسال الإيصال',
+                                                  Icon: FileText,
+                                                  active: { background: '#ecfdf5', borderColor: '#6ee7b7', color: '#047857', boxShadow: '0 1px 2px rgba(5, 150, 105, 0.15)' }
+                                                },
+                                                {
+                                                  key: 'completed',
+                                                  title: 'مكتمل',
+                                                  Icon: CheckCircle,
+                                                  active: { background: '#f0fdf4', borderColor: '#86efac', color: '#166534', boxShadow: '0 1px 2px rgba(22, 101, 52, 0.12)' }
+                                                },
+                                                {
+                                                  key: 'rejected',
+                                                  title: 'مرفوض',
+                                                  Icon: XCircle,
+                                                  active: { background: '#fef2f2', borderColor: '#fecaca', color: '#dc2626', boxShadow: '0 1px 2px rgba(220, 38, 38, 0.12)' }
+                                                }
+                                              ];
+                                              return steps.map(({ key, title, Icon, active: activeStyle }) => {
+                                                const isOn = cur === key;
+                                                const style: React.CSSProperties = isOn ? { ...baseBtn, ...activeStyle } : inactive;
+                                                return (
+                                                  <button
+                                                    key={key}
+                                                    type="button"
+                                                    title={title}
+                                                    disabled={!rid}
+                                                    onClick={(e) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      if (!rid) return;
+                                                      if (isOn && key !== 'pending') {
+                                                        handleStatusChange(rid, 'pending', sid);
+                                                      } else if (!isOn) {
+                                                        handleStatusChange(rid, key, sid);
+                                                      }
+                                                    }}
+                                                    style={style}
+                                                  >
+                                                    <Icon size={14} strokeWidth={isOn ? 2.25 : 1.75} />
+                                                  </button>
+                                                );
+                                              });
+                                            })()}
+                                        </div>
+                                        {/* صف 2: عرض، تحميل، تعديل، حذف — صف واحد */}
+                                        <div
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'row',
+                                            flexWrap: 'nowrap',
+                                            gap: '3px',
+                                            justifyContent: 'center',
+                                            alignItems: 'center'
+                                          }}
+                                        >
                                           <button
                                             type="button"
                                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); viewDocuments(request); }}
                                             title="عرض المستندات"
-                                            style={{ padding: '6px', background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5', borderRadius: '6px' }}
+                                            style={{ padding: '4px', background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '28px', minHeight: '28px' }}
                                           >
-                                            <Eye size={16} />
+                                            <Eye size={14} />
                                           </button>
                                           <button
                                             type="button"
                                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDownloadAll(request); }}
                                             title="تنزيل جميع الصور"
-                                            style={{ padding: '6px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #dbeafe', borderRadius: '6px' }}
+                                            style={{ padding: '4px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #dbeafe', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '28px', minHeight: '28px' }}
                                           >
-                                            <Download size={16} />
-                                          </button>
-                                        </div>
-
-                                        {/* الصف الثاني: 4 أيقونات (قبول، رفض، تعديل، حذف) */}
-                                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleStatusChange(request.id || '', 'completed', request.serviceId); }}
-                                            title="قبول"
-                                            style={{ padding: '6px', background: '#f0fdf4', color: '#166534', border: '1px solid #dcfce7', borderRadius: '6px' }}
-                                          >
-                                            <CheckCircle size={16} />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleStatusChange(request.id || '', 'rejected', request.serviceId); }}
-                                            title="رفض"
-                                            style={{ padding: '6px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fee2e2', borderRadius: '6px' }}
-                                          >
-                                            <XCircle size={16} />
+                                            <Download size={14} />
                                           </button>
                                           <button
                                             type="button"
@@ -3596,17 +3722,17 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                               setIsEditingRequestModalOpen(true);
                                             }}
                                             title="تعديل"
-                                            style={{ padding: '6px', background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe', borderRadius: '6px' }}
+                                            style={{ padding: '4px', background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '28px', minHeight: '28px' }}
                                           >
-                                            <Edit2 size={16} />
+                                            <Edit2 size={14} />
                                           </button>
                                           <button
                                             type="button"
                                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteRequest(request.id || '', request.serviceId); }}
                                             title="حذف"
-                                            style={{ padding: '6px', background: '#fff1f2', color: '#e11d48', border: '1px solid #ffe4e6', borderRadius: '6px' }}
+                                            style={{ padding: '4px', background: '#fff1f2', color: '#e11d48', border: '1px solid #ffe4e6', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '28px', minHeight: '28px' }}
                                           >
-                                            <Trash2 size={16} />
+                                            <Trash2 size={14} />
                                           </button>
                                         </div>
                                       </div>
@@ -3615,7 +3741,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       data-row={index}
                                       data-col={2}
                                       className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 2) ? ' selected' : ''}`}
-                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 2 }; gridApi.selectCell('requests', index, 2); }}
+                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 2 }; gridApi.selectCell('requests', index, 2); }}
                                       style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', verticalAlign: 'top' }}
                                     >{getStatusBadge(request.status)}</td>
 
@@ -4803,6 +4929,45 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <div className="admin-content">
             <div className="section-header">
               <h2>إدارة الخدمات (تفعيل/تعطيل)</h2>
+            </div>
+            <div
+              style={{
+                marginBottom: '24px',
+                padding: '18px 20px',
+                background: 'linear-gradient(135deg, #fefce8 0%, #fff7ed 100%)',
+                borderRadius: '14px',
+                border: '1px solid #fcd34d',
+                maxWidth: '720px'
+              }}
+            >
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', cursor: 'pointer', fontSize: '15px', color: '#0f172a', lineHeight: 1.5 }}>
+                <input
+                  type="checkbox"
+                  checked={!!adminPrefs.requireRouteRegistration}
+                  onChange={async (e) => {
+                    const v = e.target.checked;
+                    const next = { ...adminPrefs, requireRouteRegistration: v };
+                    setAdminPrefs(next);
+                    try {
+                      await updateAdminPreferences(next);
+                      setToastState({
+                        message: v
+                          ? 'تم تفعيل إجبار «سجل بياناتك» قبل باقي الخدمات.'
+                          : 'تم إلغاء الإجبار — يمكن للطلاب استخدام كل الخدمات دون هذا الشرط.',
+                        type: 'success',
+                        duration: 4500
+                      });
+                    } catch {
+                      setToastState({ message: 'فشل حفظ الإعداد في السحابة', type: 'error', duration: 4000 });
+                    }
+                  }}
+                  style={{ width: '18px', height: '18px', marginTop: '4px', accentColor: '#ea580c', flexShrink: 0 }}
+                />
+                <span>
+                  <strong style={{ display: 'block', marginBottom: '6px' }}>إجبار إكمال «سجل بياناتك» أولاً</strong>
+                  عند التفعيل، لا يفتح الطالب أي خدمة غير «سجل بياناتك» حتى يُرسل طلبًا لهذه الخدمة مرة واحدة على الأقل. عند إلغاء التفعيل يعود الوضع طبيعيًا للجميع.
+                </span>
+              </label>
             </div>
             <div className="admin-services-grid" style={{
               display: 'grid',

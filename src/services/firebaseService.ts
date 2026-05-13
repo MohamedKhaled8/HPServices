@@ -35,7 +35,7 @@ import { auth, db, storage, firebaseConfig } from '../config/firebase';
 import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
 import { uploadMultipleToCloudStorage, CloudProvider } from './cloudStorageService';
-import { StudentData, ServiceRequest, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings } from '../types';
+import { StudentData, ServiceRequest, ServiceRequestWorkflowStatus, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings } from '../types';
 import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
 
@@ -1448,6 +1448,17 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
 
     // Save request - only links, no base64, optimized and secure
     await setDoc(requestRef, requestData);
+    if (String(request.serviceId) === '1' && request.studentId) {
+      try {
+        await setDoc(
+          doc(db, 'students', request.studentId),
+          { routeRegistrationCompleted: true, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      } catch (e) {
+        logger.error('routeRegistrationCompleted update failed', e);
+      }
+    }
     return requestRef.id;
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء إضافة الطلب');
@@ -1654,7 +1665,7 @@ export const subscribeToAllServiceRequests = (
 
 export const updateServiceRequestStatus = async (
   requestId: string,
-  status: 'pending' | 'completed' | 'rejected',
+  status: ServiceRequestWorkflowStatus,
   serviceId: string
 ): Promise<void> => {
   try {
