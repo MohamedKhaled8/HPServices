@@ -1638,36 +1638,6 @@ export const getAllServiceRequests = async (): Promise<ServiceRequest[]> => {
   }
 };
 
-/** جلب لقطة من كل مجموعات الطلبات بالتوازي. يستدعي onProgress بعد اكتمال كل مجموعة لعرض تدريجي في الواجهة. */
-export const fetchAllServiceRequestsOnce = async (
-  onProgress?: (merged: ServiceRequest[], servicesCompleted: number) => void
-): Promise<ServiceRequest[]> => {
-  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const;
-  const perService: Record<string, ServiceRequest[]> = Object.fromEntries(
-    serviceIds.map((id) => [id, [] as ServiceRequest[]])
-  ) as Record<string, ServiceRequest[]>;
-
-  let completed = 0;
-  await Promise.all(
-    serviceIds.map(async (serviceId) => {
-      const querySnapshot = await getDocs(query(collection(db, `serviceRequests_${serviceId}`)));
-      const requests: ServiceRequest[] = querySnapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          ...data,
-          id: docSnap.id,
-          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
-        } as ServiceRequest;
-      });
-      perService[serviceId] = requests;
-      completed += 1;
-      const merged = serviceIds.flatMap((id) => perService[id]);
-      onProgress?.(merged, completed);
-    })
-  );
-  return serviceIds.flatMap((id) => perService[id]);
-};
-
 export const subscribeToAllServiceRequests = (
   callback: (requests: ServiceRequest[]) => void
 ): (() => void) => {

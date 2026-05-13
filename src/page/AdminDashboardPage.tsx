@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, startTransition } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, startTransition, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
 import {
   subscribeToAllServiceRequests,
-  fetchAllServiceRequestsOnce,
   updateServiceRequestStatus,
   updateServiceRequestData,
   deleteServiceRequest,
@@ -173,30 +172,64 @@ function buildAdminCodesLookup(dtCodes: any[], epCodes: any[]) {
   return { dtLatestByStudent, epLatestByStudent, epLatestByNational, epLatestByPhone };
 }
 
-/** كان يُحسب داخل كل صف (O(n³)) — مرة واحدة لكل لقطة جدول */
+/** مفاتيح حقول data الشائعة — Set لاستبعاد O(n) لكل مفتاح داخل الحلقات */
+const REQUEST_SPREADSHEET_STANDARD_KEYS = new Set<string>([
+  'full_name_arabic', 'full_name', 'student_names', 'names', 'student_names_array',
+  'national_id', 'nationalID',
+  'whatsapp_number', 'phone_whatsapp', 'leader_whatsapp', 'phone', 'whatsappNumber',
+  'email',
+  'address', 'address_details', 'deliveryAddress',
+  'diploma_type', 'diplomaType', 'diploma_year', 'diplomaYear',
+  'track', 'track_category', 'track_name', 'track_other', 'educational_specialization', 'faculty', 'department',
+  'receiptUrl', 'receipt_upload', 'selectedCertificate', 'selectedExamLanguage', 'names_array', 'tracks_array',
+  'notes', 'status', 'createdAt', 'updatedAt', 'id', 'studentId', 'serviceId'
+]);
+
+/** كان O(n²) — يصبح تقريباً O(n + مجموع أحجام المجموعات) عبر فهارس */
 function computeRequestDuplicateCounts(rows: ServiceRequest[], students: Record<string, StudentData>): number[] {
   const n = rows.length;
-  const counts = new Array<number>(n);
+  const byStudent = new Map<string, number[]>();
+  const byEmail = new Map<string, number[]>();
+  const byNat = new Map<string, number[]>();
+  const studentKey = (id: string | undefined) => (id != null && String(id) !== '' ? String(id) : '__no_student__');
+
   for (let i = 0; i < n; i++) {
     const request = rows[i];
     const studentData = students[request.studentId];
+    const sk = studentKey(request.studentId);
+    if (!byStudent.has(sk)) byStudent.set(sk, []);
+    byStudent.get(sk)!.push(i);
+
     const rEmail = (request.data?.email || studentData?.email || '').toLowerCase().trim();
-    const rNationalID = String(request.data?.national_id || studentData?.nationalID || '');
-    let c = 0;
-    for (let j = 0; j < n; j++) {
-      const r = rows[j];
-      const rStudentData = students[r.studentId];
-      const testNationalID = r.data?.national_id || rStudentData?.nationalID;
-      const testEmail = r.data?.email || rStudentData?.email;
-      if (
-        r.studentId === request.studentId ||
-        (testEmail && rEmail && String(testEmail).toLowerCase() === rEmail) ||
-        (testNationalID && rNationalID && testNationalID === rNationalID)
-      ) {
-        c++;
-      }
+    if (rEmail) {
+      if (!byEmail.has(rEmail)) byEmail.set(rEmail, []);
+      byEmail.get(rEmail)!.push(i);
     }
-    counts[i] = c;
+    const rNationalID = String(request.data?.national_id || studentData?.nationalID || '');
+    if (rNationalID) {
+      if (!byNat.has(rNationalID)) byNat.set(rNationalID, []);
+      byNat.get(rNationalID)!.push(i);
+    }
+  }
+
+  const counts = new Array<number>(n);
+  const merged = new Set<number>();
+  for (let i = 0; i < n; i++) {
+    merged.clear();
+    const request = rows[i];
+    const studentData = students[request.studentId];
+    const sk = studentKey(request.studentId);
+    for (const j of byStudent.get(sk) || []) merged.add(j);
+
+    const rEmail = (request.data?.email || studentData?.email || '').toLowerCase().trim();
+    if (rEmail) {
+      for (const j of byEmail.get(rEmail) || []) merged.add(j);
+    }
+    const rNationalID = String(request.data?.national_id || studentData?.nationalID || '');
+    if (rNationalID) {
+      for (const j of byNat.get(rNationalID) || []) merged.add(j);
+    }
+    counts[i] = merged.size;
   }
   return counts;
 }
@@ -247,6 +280,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const [isLoading, setIsLoading] = useState(true);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  /** يتبع اختيار الكارد بلا تأخيرة — الجدول الثقيل يقرأ القيمة المؤجلة لتفادي التجميد والوميض */
+  const deferredRequestsServiceId = useDeferredValue(selectedServiceId);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const requestsSectionRef = React.useRef<HTMLDivElement>(null);
@@ -457,6 +492,17 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       const id = r.studentId;
       if (!id) continue;
       m.set(id, (m.get(id) ?? 0) + 1);
+    }
+    return m;
+  }, [serviceRequests]);
+
+  /** طلبات مجمّعة حسب serviceId — تجنّب .filter على كل الطلبات عند كل تغيير كارد */
+  const requestsByServiceId = useMemo(() => {
+    const m: Record<string, ServiceRequest[]> = {};
+    for (const r of serviceRequests) {
+      const sid = String(r.serviceId ?? '');
+      if (!sid) continue;
+      (m[sid] ??= []).push(r);
     }
     return m;
   }, [serviceRequests]);
@@ -816,18 +862,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return keys[key] || key;
   };
 
-  useLayoutEffect(() => {
+  /** تمرير بعد الرسم — لا يعطل الضغط على الكروت؛ block: nearest أخف من start */
+  useEffect(() => {
     if (!selectedServiceId || !requestsSectionRef.current) return;
-    let cancelled = false;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (cancelled || !requestsSectionRef.current) return;
-        requestsSectionRef.current.scrollIntoView({ behavior: 'instant', block: 'start', inline: 'nearest' });
-      });
+    const id = window.requestAnimationFrame(() => {
+      requestsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => window.cancelAnimationFrame(id);
   }, [selectedServiceId]);
 
   // Final Review states
@@ -1006,77 +1047,45 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     let cancelled = false;
     let studentFetchTimer: number | undefined;
-    let progressRaf = 0;
     let unsubscribe: (() => void) | undefined;
-    let subscribeTimer: number | undefined;
 
-    // لقطة أولية: تحديث الواجهة بعد كل مجموعة تكتمل (بدل انتظار الـ 11 معاً)
-    (async () => {
-      try {
-        const initial = await fetchAllServiceRequestsOnce((merged) => {
-          if (cancelled) return;
-          cancelAnimationFrame(progressRaf);
-          progressRaf = requestAnimationFrame(() => {
-            if (cancelled) return;
-            setServiceRequests(merged);
-            setDataReady(true);
-          });
-        });
-        if (!cancelled) {
-          cancelAnimationFrame(progressRaf);
-          setServiceRequests(initial);
-          setDataReady(true);
-        }
-      } catch (e) {
-        logger.error('Admin: fetchAllServiceRequestsOnce failed', e);
-        if (!cancelled) {
-          setDataReady(true);
-        }
-      }
-    })();
-
-    // تأجيل تسجيل الـ 11 مستمعًا قليلاً يقلل التصادم مع أول getDocs ويُحسّن استجابة أول رسم
-    subscribeTimer = window.setTimeout(() => {
-      if (cancelled) return;
-      unsubscribe = subscribeToAllServiceRequests((requests) => {
-        if (!dataReadyRef.current) {
+    // الاعتماد على onSnapshot فقط — تجنّب getDocs المكرر على الـ 11 مجموعة (كان يضاعف القراءات ويبطئ التحميل دقيقة+)
+    unsubscribe = subscribeToAllServiceRequests((requests) => {
+      if (!dataReadyRef.current) {
+        setServiceRequests(requests);
+        setDataReady(true);
+      } else {
+        startTransition(() => {
           setServiceRequests(requests);
-          setDataReady(true);
-        } else {
-          startTransition(() => {
-            setServiceRequests(requests);
-          });
-        }
+        });
+      }
 
-        latestServiceRequestsRef.current = requests;
-        if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
-        studentFetchTimer = window.setTimeout(() => {
-          if (cancelled) return;
-          const reqs = latestServiceRequestsRef.current;
-          const uniqueStudentIds = [...new Set(reqs.map((r) => r.studentId).filter(Boolean))] as string[];
-          const prev = studentsRef.current;
-          const missingIds = uniqueStudentIds.filter(
-            (id) => id && !prev[id] && !studentIdsInFlightRef.current.has(id)
-          );
-          if (missingIds.length === 0) return;
-          missingIds.forEach((id) => studentIdsInFlightRef.current.add(id));
-          void getStudentsByIds(missingIds)
-            .then((fetched) => {
-              if (cancelled) return;
-              missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
-              setStudents((current) => ({ ...current, ...fetched }));
-            })
-            .catch(() => {
-              missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
-            });
-        }, 550);
-      });
-    }, 100);
+      latestServiceRequestsRef.current = requests;
+      if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
+      studentFetchTimer = window.setTimeout(() => {
+        if (cancelled) return;
+        const reqs = latestServiceRequestsRef.current;
+        const uniqueStudentIds = [...new Set(reqs.map((r) => r.studentId).filter(Boolean))] as string[];
+        const prev = studentsRef.current;
+        const missingIds = uniqueStudentIds.filter(
+          (id) => id && !prev[id] && !studentIdsInFlightRef.current.has(id)
+        );
+        if (missingIds.length === 0) return;
+        missingIds.forEach((id) => studentIdsInFlightRef.current.add(id));
+        void getStudentsByIds(missingIds)
+          .then((fetched) => {
+            if (cancelled) return;
+            missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+            setStudents((current) => ({ ...current, ...fetched }));
+          })
+          .catch(() => {
+            missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+          });
+      }, 550);
+    });
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(progressRaf);
-      if (subscribeTimer !== undefined) window.clearTimeout(subscribeTimer);
       if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
       studentIdsInFlightRef.current.clear();
       unsubscribe?.();
@@ -2435,12 +2444,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return order[normalizeWorkflowStatus(s)] ?? 0;
   };
 
+  /** أثناء انتقال الكارد: لا نحسب جدول الخدمة الجديدة حتى يتزامن deferred — يُبقي الـ UI خفيفاً */
+  const isRequestsTableSwitchPending = Boolean(
+    selectedServiceId && dataReady && deferredRequestsServiceId !== selectedServiceId
+  );
+
   /** فلترة + فرز الطلبات للخدمة المختارة — useMemo يمنع إعادة الحساب الثقيلة عند كل رسم للصفحة */
   const adminRequestsFilteredSorted = useMemo(() => {
-    if (!selectedServiceId || !dataReady) return [];
+    if (!dataReady || !selectedServiceId) return [];
+    if (selectedServiceId !== deferredRequestsServiceId) return [];
+    const pool = requestsByServiceId[selectedServiceId] ?? [];
     const term = serviceSearchTerm.toLowerCase().trim();
-    return serviceRequests
-      .filter((r) => r.serviceId === selectedServiceId)
+    return pool
       .filter((request) => {
         if (!term) return true;
         const studentData = students[request.studentId];
@@ -2482,7 +2497,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         ).toLowerCase();
         return nameA.localeCompare(nameB, 'ar');
       });
-  }, [dataReady, selectedServiceId, serviceRequests, serviceSearchTerm, students]);
+  }, [dataReady, selectedServiceId, deferredRequestsServiceId, requestsByServiceId, serviceSearchTerm, students]);
 
   const getStatusBadge = (status: string | undefined) => {
     const n = normalizeWorkflowStatus(status);
@@ -3062,6 +3077,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       );
                     }
 
+                    if (isRequestsTableSwitchPending) {
+                      return (
+                        <div className="admin-requests-table-switching" role="status" aria-live="polite">
+                          <div className="loader-spinner admin-requests-table-switching-spinner" />
+                          <p className="admin-requests-table-switching-text">جاري تحضير الجدول…</p>
+                        </div>
+                      );
+                    }
+
                     if (filteredRequests.length === 0) {
                       return (
                         <div className="no-requests-message">
@@ -3070,25 +3094,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       );
                     }
 
-                    // Standard keys to exclude from dynamic columns
-                    const STANDARD_KEYS = [
-                      'full_name_arabic', 'full_name', 'student_names', 'names', 'student_names_array',
-                      'national_id', 'nationalID',
-                      'whatsapp_number', 'phone_whatsapp', 'leader_whatsapp', 'phone', 'whatsappNumber',
-                      'email',
-                      'address', 'address_details', 'deliveryAddress',
-                      'diploma_type', 'diplomaType', 'diploma_year', 'diplomaYear',
-                      'track', 'track_category', 'track_name', 'track_other', 'educational_specialization', 'faculty', 'department',
-                      'receiptUrl', 'receipt_upload', 'selectedCertificate', 'selectedExamLanguage', 'names_array', 'tracks_array',
-                      'notes', 'status', 'createdAt', 'updatedAt', 'id', 'studentId', 'serviceId'
-                    ];
-
                     const allDataKeys = new Set<string>();
                     filteredRequests.forEach(req => {
                       Object.entries(req.data || {}).forEach(([key, value]) => {
                         const stringValue = String(value || '').trim();
                         if (
-                          !STANDARD_KEYS.includes(key) &&
+                          !REQUEST_SPREADSHEET_STANDARD_KEYS.has(key) &&
                           typeof value !== 'object' &&
                           stringValue &&
                           stringValue !== 'undefined' &&
@@ -3674,7 +3685,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 return (
                                   <tr
                                     key={request.id ? `${request.serviceId}-${request.id}` : `row-${index}-${request.studentId}-${request.createdAt || ''}`}
-                                    style={{ background: rowBg, transition: 'all 0.2s ease' }}
+                                    style={{ background: rowBg, transition: 'background-color 0.12s ease' }}
                                   >
                                     <td
                                       data-row={index}

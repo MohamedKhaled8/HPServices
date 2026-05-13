@@ -181,23 +181,24 @@
   justify-content: center;
   padding: 30px 20px;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
+  /* حد ثابت 2px يمنع قفز التخطيط عند التحديد (كان 1px ثم 2px) */
+  border: 2px solid transparent;
   border-radius: 16px;
   cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
   position: relative;
   overflow: hidden;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .service-file:hover {
-  border-color: rgba(37, 99, 235, 0.45);
+  border-color: rgba(37, 99, 235, 0.35);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .service-file.selected {
   background: #ffffff;
-  border: 2px solid #2563eb;
+  border-color: #2563eb;
   box-shadow: 0 2px 10px rgba(37, 99, 235, 0.12);
 }
 
@@ -761,6 +762,49 @@
 .cancel-button:active {
   transform: translateY(0);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* أثناء تبديل خدمة الجدول — ظهور خفيف دون إعادة رسم الجدول الثقيل */
+.admin-requests-table-switching {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 220px;
+  padding: 32px 20px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border: 1px dashed #cbd5e1;
+  animation: admin-requests-fade-in 0.22s ease-out;
+}
+
+.admin-requests-table-switching-spinner {
+  margin: 0;
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+.admin-requests-table-switching-text {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+@keyframes admin-requests-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Selected Service Requests — بدون أنيميشن (الجدول ثقيل؛ أي حركة تسبب تهنيج) */
