@@ -254,7 +254,7 @@ body {
   position: relative;
   height: 480px;
   /* Balanced default height */
-  clip-path: polygon(0 0, 100% 0, 100% 92%, 50% 100%, 0 92%);
+  clip-path: ellipse(125% 100% at 50% 0%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -272,7 +272,7 @@ body {
   .hero-pure {
     height: 650px;
     /* Adjusted height for laptop screens */
-    clip-path: polygon(0 0, 100% 0, 100% 90%, 50% 100%, 0 90%);
+    clip-path: ellipse(112% 100% at 50% 0%);
   }
 
   .hero-content {
@@ -889,7 +889,7 @@ body {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   filter: none !important;
-  padding: 80px 5% 80px;
+  padding: 30px 5% 80px;
   max-width: 1400px;
   margin: 0 auto;
 }
@@ -2121,7 +2121,7 @@ html {
 @media (max-width: 768px) {
   .hero-pure {
     height: 160px;
-    clip-path: polygon(0 0, 100% 0, 100% 95%, 50% 100%, 0 95%);
+    clip-path: ellipse(125% 100% at 50% 0%);
   }
 
   .hero-title {

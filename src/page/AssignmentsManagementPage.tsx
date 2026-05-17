@@ -1217,6 +1217,12 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                         </thead>
                         <tbody>
                           {visibleFolders.map((folder) => {
+                            const filesInFolder = (trackFiles[openedTrack] || []).filter((f: any) => {
+                              const fp = String(f.folderPath || '');
+                              return fp === folder.path || fp.startsWith(`${folder.path}/`);
+                            });
+                            const isFolderChecked = filesInFolder.length > 0 && filesInFolder.every((f: any) => selectedFileIds[openedTrack]?.has(f.id));
+
                             const deletingThis =
                               !!folderDeleteLoading &&
                               folderDeleteLoading.scope === 'track' &&
@@ -1224,7 +1230,30 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                               folderDeleteLoading.folderPath === folder.path;
                             return (
                             <tr key={`folder-${folder.id}`}>
-                              <td />
+                              <td>
+                                <label className="checkbox-label">
+                                  <input
+                                    type="checkbox"
+                                    checked={isFolderChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedFileIds(prev => {
+                                          const allIds = new Set(prev[openedTrack] || []);
+                                          filesInFolder.forEach((f: any) => allIds.add(f.id));
+                                          return { ...prev, [openedTrack]: allIds };
+                                        });
+                                      } else {
+                                        setSelectedFileIds(prev => {
+                                          const allIds = new Set(prev[openedTrack] || []);
+                                          filesInFolder.forEach((f: any) => allIds.delete(f.id));
+                                          return { ...prev, [openedTrack]: allIds };
+                                        });
+                                      }
+                                    }}
+                                  />
+                                  <span className="checkbox-custom" />
+                                </label>
+                              </td>
                               <td>
                                 <button
                                   type="button"
@@ -1466,13 +1495,42 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                     </thead>
                     <tbody>
                       {visibleFolders.map((folder) => {
+                        const filesInFolder = unified130Files.filter((f: any) => {
+                          const fp = String(f.folderPath || '');
+                          return fp === folder.path || fp.startsWith(`${folder.path}/`);
+                        });
+                        const isFolderChecked = filesInFolder.length > 0 && filesInFolder.every((f: any) => selected130FileIds.has(f.id));
+
                         const deletingThis =
                           !!folderDeleteLoading &&
                           folderDeleteLoading.scope === 'unified130' &&
                           folderDeleteLoading.folderPath === folder.path;
                         return (
                         <tr key={`folder-130-${folder.id}`}>
-                          <td />
+                          <td>
+                            <label className="checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={isFolderChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelected130FileIds(prev => {
+                                      const s = new Set(prev);
+                                      filesInFolder.forEach((f: any) => s.add(f.id));
+                                      return s;
+                                    });
+                                  } else {
+                                    setSelected130FileIds(prev => {
+                                      const s = new Set(prev);
+                                      filesInFolder.forEach((f: any) => s.delete(f.id));
+                                      return s;
+                                    });
+                                  }
+                                }}
+                              />
+                              <span className="checkbox-custom" />
+                            </label>
+                          </td>
                           <td>
                             <button
                               type="button"
