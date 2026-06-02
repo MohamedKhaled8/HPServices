@@ -291,19 +291,24 @@ export const subscribeToStudentData = (
 };
 
 /** جلب عدة طلاب دفعة واحدة (أسرع من استدعاء getStudentData لكل واحد) */
-const FIRESTORE_IN_LIMIT = 10;
+const FIRESTORE_IN_LIMIT = 30;
 export const getStudentsByIds = async (userIds: string[]): Promise<Record<string, StudentData>> => {
   const result: Record<string, StudentData> = {};
   const uniqueIds = [...new Set(userIds.filter(Boolean))];
   if (uniqueIds.length === 0) return result;
   try {
+    const promises: Promise<any>[] = [];
     for (let i = 0; i < uniqueIds.length; i += FIRESTORE_IN_LIMIT) {
       const chunk = uniqueIds.slice(i, i + FIRESTORE_IN_LIMIT);
       const q = query(
         collection(db, 'students'),
         where(documentId(), 'in', chunk)
       );
-      const snapshot = await getDocs(q);
+      promises.push(getDocs(q));
+    }
+    
+    const snapshots = await Promise.all(promises);
+    snapshots.forEach(snapshot => {
       snapshot.docs.forEach(docSnap => {
         const data = docSnap.data();
         result[docSnap.id] = {
@@ -312,7 +317,7 @@ export const getStudentsByIds = async (userIds: string[]): Promise<Record<string
           createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
         } as StudentData;
       });
-    }
+    });
     return result;
   } catch (error: any) {
     logger.error('Error getting students by ids:', error);

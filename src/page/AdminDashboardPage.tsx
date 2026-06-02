@@ -119,6 +119,9 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import AdminServicesFilesGrid from '../components/admin/AdminServicesFilesGrid';
+import AdminNewsTab from '../components/admin/AdminNewsTab';
+import AdminStatisticsTab from '../components/admin/AdminStatisticsTab';
+import AdminUsersTab from '../components/admin/AdminUsersTab';
 
 
 interface AdminDashboardPageProps {
@@ -233,6 +236,12 @@ function computeRequestDuplicateCounts(rows: ServiceRequest[], students: Record<
   }
   return counts;
 }
+
+const normalizeWorkflowStatus = (s: string | undefined): ServiceRequestWorkflowStatus => {
+  const v = String(s || '').trim();
+  if (v === 'submitted' || v === 'receipt_sent' || v === 'completed' || v === 'rejected') return v;
+  return 'pending';
+};
 
 const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBack, onAssignmentsClick }) => {
   const { student } = useStudent();
@@ -480,7 +489,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       if (!sid) continue;
       if (!m[sid]) m[sid] = { pending: 0, total: 0 };
       m[sid].total += 1;
-      if (r.status !== 'completed' && r.status !== 'rejected') m[sid].pending += 1;
+      if (normalizeWorkflowStatus(r.status) === 'pending') m[sid].pending += 1;
     }
     return m;
   }, [serviceRequests]);
@@ -1478,6 +1487,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         if (cancelled) return;
         accumulated = first.students;
         setAllStudents(accumulated);
+        
+        // Also update the students lookup map cache
+        const firstMap: Record<string, StudentData> = {};
+        first.students.forEach(s => {
+          if (s.id) firstMap[s.id] = s;
+        });
+        setStudents(prev => ({ ...prev, ...firstMap }));
+
         setUsersDirectoryLoading(false);
         lastSnap = first.lastSnapshot;
 
@@ -1488,6 +1505,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           if (cancelled) return;
           accumulated = [...accumulated, ...next.students];
           setAllStudents(accumulated);
+          
+          // Also update the students lookup map cache
+          const nextMap: Record<string, StudentData> = {};
+          next.students.forEach(s => {
+            if (s.id) nextMap[s.id] = s;
+          });
+          setStudents(prev => ({ ...prev, ...nextMap }));
+
           lastSnap = next.lastSnapshot;
           hasMore = next.hasMore;
         }
@@ -1642,17 +1667,25 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       phone: payload.phone || '',
                       examLanguage: payload.examLanguage || '',
                       serialNumber: String(row.serialNumber ?? '') || '',
-                      name: String(row.name ?? '') || '',
+                      name: String(row.name ?? '') || payload.fullNameArabic || '',
                       fawryCode,
-                      mobile: String(row.mobile ?? '') || '',
+                      mobile: String(row.mobile ?? '') || payload.phone || '',
                       whatsapp: String(row.whatsapp ?? '') || '',
-                      type: String(row.type ?? '') || '',
-                      value: String(row.value ?? '') || '',
+                      type: String(row.type ?? '') || rd.transformation_type || '',
+                      transformationType: rd.transformation_type || '',
+                      value: String(row.value ?? '') || (rd.totalPrice ? String(rd.totalPrice) : '') || '',
+                      totalPrice: rd.totalPrice || '',
                       status: String(row.status ?? '') || '',
                       createdAt: new Date().toISOString()
                     };
 
                     await saveDigitalTransformationCode(codeData);
+                    // Also save fawryCode back to the service request so it's available from both sources
+                    try {
+                      await updateServiceRequestData(requestId, '7', { ...rd, fawryCode, serialNumber: String(row.serialNumber ?? '') });
+                    } catch (e) {
+                      logger.warn('Could not update request with fawryCode (non-fatal)', e);
+                    }
                     setToastState({
                       message: `تم الحفظ — كود فوري: ${fawryCode || '—'}`,
                       type: 'success',
@@ -2416,12 +2449,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     });
   };
 
-  const normalizeWorkflowStatus = (s: string | undefined): ServiceRequestWorkflowStatus => {
-    const v = String(s || '').trim();
-    if (v === 'submitted' || v === 'receipt_sent' || v === 'completed' || v === 'rejected') return v;
-    return 'pending';
-  };
-
   const workflowStatusLabelAr = (s: string | undefined) => {
     switch (normalizeWorkflowStatus(s)) {
       case 'pending': return 'قيد الانتظار';
@@ -2871,72 +2898,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       </div>
 
       {activeTab === 'news' && (
-        <div className="admin-content">
-          <div className="config-section premium-news-editor">
-            <div className="section-header-compact">
-              <div className="header-icon-hex">
-                <Bell size={24} color="#F59E0B" />
-              </div>
-              <div>
-                <h2>إدارة أخر الأخبار</h2>
-                <p>هذا النص سيظهر لجميع المستخدمين في صفحة "أخر الأخبار" بشكل مميز.</p>
-              </div>
-            </div>
-
-            <div className="news-editor-container" style={{ marginTop: '24px' }}>
-              <div className="form-group-full">
-                <label>محتوى الخبر (يمكنك كتابة أي نص بأي طول)</label>
-                <textarea
-                  className="premium-textarea"
-                  value={latestNews}
-                  onChange={(e) => setLatestNews(e.target.value)}
-                  placeholder="اكتب الخبر هنا... سوف يظهر للطلاب فور الحفظ."
-                  style={{ minHeight: '300px', lineHeight: '1.8' }}
-                />
-              </div>
-
-              <div className="action-row-end">
-                <button
-                  className="quick-message-button-premium"
-                  onClick={handleSendQuickMessage}
-                  disabled={isSendingQuickMessage}
-                >
-                  {isSendingQuickMessage ? (
-                    'جاري الإرسال...'
-                  ) : (
-                    <>
-                      <Zap size={18} />
-                      إرسال رسالة سريعة
-                    </>
-                  )}
-                </button>
-
-                <button
-                  className="publish-button-premium"
-                  onClick={handlePublishNews}
-                  disabled={isPublishingNews}
-                >
-                  {isPublishingNews ? (
-                    'جاري الحفظ...'
-                  ) : (
-                    <>
-                      <Send size={18} style={{ marginLeft: '8px' }} />
-                      نشر وحفظ الخبر
-                    </>
-                  )}
-                </button>
-
-                <button
-                  className="stop-button-premium"
-                  onClick={handleStopPublishing}
-                >
-                  <X size={18} />
-                  إيقاف النشر
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <AdminNewsTab showAlert={showAlert} showConfirm={showConfirm} />
       )}
 
       {activeTab === 'requests' && (
@@ -4834,8 +4796,32 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         )
       }
 
-      {
-        activeTab === 'users' && (
+      {activeTab === 'users' && (
+        <AdminUsersTab
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          filteredAdminStudents={filteredAdminStudents}
+          usersDirectoryLoading={usersDirectoryLoading}
+          studentsTotalCount={studentsTotalCount}
+          studentsRestLoading={studentsRestLoading}
+          usersListPage={usersListPage}
+          setUsersListPage={setUsersListPage}
+          adminUsersTotalPages={adminUsersTotalPages}
+          displayedAdminStudents={displayedAdminStudents}
+          requestCountByStudentId={requestCountByStudentId}
+          toggledFlags={toggledFlags}
+          toggleFlag={toggleFlag}
+          showPasswords={showPasswords}
+          setShowPasswords={setShowPasswords}
+          setViewingStudentRequests={setViewingStudentRequests}
+          handleEditStudent={handleEditStudent}
+          deleteStudentData={deleteStudentData}
+          showAlert={showAlert}
+          setToastState={setToastState}
+          ADMIN_USERS_PAGE_SIZE={ADMIN_USERS_PAGE_SIZE}
+        />
+      )}
+      {false && (
           <div className="admin-content">
             <div className="section-header">
               <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -4847,7 +4833,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     <Loader2 size={18} className="spinning-loader-small" style={{ flexShrink: 0, color: '#64748b' }} />
                     جاري التحميل
                     {typeof studentsTotalCount === 'number' && (
-                      <span style={{ color: '#94a3b8' }}>({studentsTotalCount.toLocaleString('ar-EG')})</span>
+                      <span style={{ color: '#94a3b8' }}>({(studentsTotalCount as number).toLocaleString('ar-EG')})</span>
                     )}
                   </span>
                 ) : (
@@ -4855,9 +4841,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     <span style={{ color: '#64748b', fontWeight: 700 }}>({filteredAdminStudents.length})</span>
                     {studentsRestLoading &&
                       typeof studentsTotalCount === 'number' &&
-                      studentsTotalCount > filteredAdminStudents.length && (
+                      (studentsTotalCount as number) > filteredAdminStudents.length && (
                         <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: '0.9em' }}>
-                          — {filteredAdminStudents.length.toLocaleString('ar-EG')} / {studentsTotalCount.toLocaleString('ar-EG')}
+                          — {filteredAdminStudents.length.toLocaleString('ar-EG')} / {(studentsTotalCount as number).toLocaleString('ar-EG')}
                         </span>
                       )}
                   </span>
@@ -4893,7 +4879,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         <span>جاري تحميل المستخدمين…</span>
                         {typeof studentsTotalCount === 'number' && (
                           <span style={{ color: '#94a3b8', fontSize: '13px' }}>
-                            ({studentsTotalCount.toLocaleString('ar-EG')} في السحابة)
+                            ({(studentsTotalCount as number).toLocaleString('ar-EG')} في السحابة)
                           </span>
                         )}
                       </span>
@@ -4902,18 +4888,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         إجمالي المستخدمين المعروضين: {filteredAdminStudents.length.toLocaleString('ar-EG')}
                         {typeof studentsTotalCount === 'number' &&
                           studentsRestLoading &&
-                          studentsTotalCount > filteredAdminStudents.length && (
+                          (studentsTotalCount as number) > filteredAdminStudents.length && (
                             <span style={{ color: '#94a3b8', marginRight: '8px', fontSize: '13px' }}>
                               — جاري إكمال القائمة ({filteredAdminStudents.length.toLocaleString('ar-EG')} /{' '}
-                              {studentsTotalCount.toLocaleString('ar-EG')})
+                              {(studentsTotalCount as number).toLocaleString('ar-EG')})
                             </span>
                           )}
                         {typeof studentsTotalCount === 'number' &&
-                          !(studentsRestLoading && studentsTotalCount > filteredAdminStudents.length) &&
-                          studentsTotalCount !== filteredAdminStudents.length &&
+                          !(studentsRestLoading && (studentsTotalCount as number) > filteredAdminStudents.length) &&
+                          (studentsTotalCount as number) !== filteredAdminStudents.length &&
                           !searchTerm.trim() && (
                             <span style={{ color: '#94a3b8', marginRight: '8px', fontSize: '13px' }}>
-                              — في السحابة: {studentsTotalCount.toLocaleString('ar-EG')}
+                              — في السحابة: {(studentsTotalCount as number).toLocaleString('ar-EG')}
                             </span>
                           )}
                         {filteredAdminStudents.length > ADMIN_USERS_PAGE_SIZE && (
@@ -6130,15 +6116,164 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
             <div className="table-container" style={{ userSelect: 'text', WebkitUserSelect: 'text', MozUserSelect: 'text', overflowX: 'auto', maxWidth: '100%' }}>
               {(() => {
-                const filteredDtCodes = dtCodes.filter(code => {
+                // === BUILD FAST INDEXES from service 7 requests ===
+                const s7Requests = serviceRequests.filter(r => r.serviceId === '7');
+                const s7ByRequestId = new Map<string, typeof s7Requests[0]>();
+                const s7ByStudentId = new Map<string, typeof s7Requests[0]>();
+                const s7ByEmail = new Map<string, typeof s7Requests[0]>();
+                const s7ByPhone = new Map<string, typeof s7Requests[0]>();
+                const s7ByName = new Map<string, typeof s7Requests[0]>();
+                for (const r of s7Requests) {
+                  if (r.id) s7ByRequestId.set(r.id, r);
+                  if (r.studentId) s7ByStudentId.set(r.studentId, r);
+                  const em = (r.data.email || '').toLowerCase().trim();
+                  if (em) s7ByEmail.set(em, r);
+                  const ph = (r.data.whatsapp_number || r.data.phone || r.data.phone_whatsapp || '').replace(/\D/g, '');
+                  if (ph.length >= 8) s7ByPhone.set(ph.slice(-10), r);
+                  const nm = (r.data.full_name_arabic || r.data.full_name || '').trim();
+                  if (nm) s7ByName.set(nm, r);
+                }
+
+                // === BUILD INDEXES from dtCodes for fawryCode/value lookup ===
+                const dtByStudentId = new Map<string, any>();
+                const dtByEmail = new Map<string, any>();
+                const dtByPhone = new Map<string, any>();
+                const dtByName = new Map<string, any>();
+                for (const c of dtCodes) {
+                  // Only index entries that have useful data (fawryCode or value)
+                  const hasFawry = c.fawryCode && c.fawryCode !== '' && c.fawryCode !== 'undefined' && c.fawryCode !== 'null';
+                  const hasValue = c.value && c.value !== '' && c.value !== 'undefined' && c.value !== 'null';
+                  if (!hasFawry && !hasValue) continue;
+                  if (c.studentId && !dtByStudentId.has(c.studentId)) dtByStudentId.set(c.studentId, c);
+                  const cem = (c.email || '').toLowerCase().trim();
+                  if (cem && !dtByEmail.has(cem)) dtByEmail.set(cem, c);
+                  const cph = (c.mobile || c.phone || '').replace(/\D/g, '');
+                  if (cph.length >= 8 && !dtByPhone.has(cph.slice(-10))) dtByPhone.set(cph.slice(-10), c);
+                  const cnm = (c.name || c.fullNameArabic || '').trim();
+                  if (cnm && !dtByName.has(cnm)) dtByName.set(cnm, c);
+                }
+
+                // Helper: find linked service request for a code entry
+                const findLinkedRequest = (code: any) => {
+                  if (code.requestId) {
+                    const r = s7ByRequestId.get(code.requestId);
+                    if (r) return r;
+                  }
+                  if (code.studentId) {
+                    const r = s7ByStudentId.get(code.studentId);
+                    if (r) return r;
+                  }
+                  const codeEmail = (code.email || '').toLowerCase().trim();
+                  if (codeEmail) {
+                    const r = s7ByEmail.get(codeEmail);
+                    if (r) return r;
+                  }
+                  const codePhone = (code.mobile || code.phone || code.whatsapp || '').replace(/\D/g, '');
+                  if (codePhone.length >= 8) {
+                    const r = s7ByPhone.get(codePhone.slice(-10));
+                    if (r) return r;
+                  }
+                  // Last resort: match by Arabic name
+                  const codeName = (code.name || code.fullNameArabic || '').trim();
+                  if (codeName) {
+                    const r = s7ByName.get(codeName);
+                    if (r) return r;
+                  }
+                  return undefined;
+                };
+
+                // Helper: find fawryCode from dtCodes entries for a given code
+                const findFawryFromDtCodes = (code: any): string | null => {
+                  if (code.studentId) {
+                    const c = dtByStudentId.get(code.studentId);
+                    if (c?.fawryCode) return c.fawryCode;
+                  }
+                  const em = (code.email || '').toLowerCase().trim();
+                  if (em) {
+                    const c = dtByEmail.get(em);
+                    if (c?.fawryCode) return c.fawryCode;
+                  }
+                  const ph = (code.mobile || code.phone || '').replace(/\D/g, '');
+                  if (ph.length >= 8) {
+                    const c = dtByPhone.get(ph.slice(-10));
+                    if (c?.fawryCode) return c.fawryCode;
+                  }
+                  const nm = (code.name || code.fullNameArabic || '').trim();
+                  if (nm) {
+                    const c = dtByName.get(nm);
+                    if (c?.fawryCode) return c.fawryCode;
+                  }
+                  return null;
+                };
+
+                // Helper: find value from dtCodes entries for a given code
+                const findValueFromDtCodes = (code: any): string | null => {
+                  if (code.studentId) {
+                    const c = dtByStudentId.get(code.studentId);
+                    if (c?.value && c.value !== 'undefined') return c.value;
+                    if (c?.totalPrice) return String(c.totalPrice);
+                  }
+                  const em = (code.email || '').toLowerCase().trim();
+                  if (em) {
+                    const c = dtByEmail.get(em);
+                    if (c?.value && c.value !== 'undefined') return c.value;
+                    if (c?.totalPrice) return String(c.totalPrice);
+                  }
+                  return null;
+                };
+
+                // Find service 7 requests that are NOT already in dtCodes
+                const dtCodesFromRequests = s7Requests
+                  .filter(r => {
+                    const requestId = r.id;
+                    const studentId = r.studentId;
+                    const em = (r.data.email || '').toLowerCase().trim();
+                    const ph = (r.data.whatsapp_number || r.data.phone || '').replace(/\D/g, '');
+                    const ph10 = ph.length >= 10 ? ph.slice(-10) : ph;
+                    const nm = (r.data.full_name_arabic || r.data.full_name || '').trim();
+                    return !dtCodes.some(c => {
+                      if (requestId && c.requestId === requestId) return true;
+                      if (studentId && c.studentId === studentId) return true;
+                      if (em && (c.email || '').toLowerCase().trim() === em) return true;
+                      const cPh = (c.mobile || c.phone || '').replace(/\D/g, '');
+                      const cPh10 = cPh.length >= 10 ? cPh.slice(-10) : cPh;
+                      if (ph10.length >= 8 && cPh10.length >= 8 && ph10 === cPh10) return true;
+                      // Match by name
+                      if (nm && (c.name || c.fullNameArabic || '').trim() === nm) return true;
+                      return false;
+                    });
+                  })
+                  .map(r => ({
+                    id: `req-${r.id}`,
+                    requestId: r.id,
+                    studentId: r.studentId,
+                    name: r.data.full_name_arabic || r.data.full_name || r.data.fullNameArabic || '',
+                    fullNameArabic: r.data.full_name_arabic || r.data.full_name || '',
+                    email: r.data.email || '',
+                    mobile: r.data.whatsapp_number || r.data.phone || '',
+                    type: r.data.transformation_type || r.data.selectedExamLanguage || r.data.exam_language || '',
+                    examLanguage: r.data.selectedExamLanguage || r.data.exam_language || '',
+                    transformationType: r.data.transformation_type || '',
+                    status: r.status,
+                    fawryCode: r.data.fawryCode || r.data.fawry_code || r.data.fawry_number || '',
+                    value: r.data.totalPrice ? String(r.data.totalPrice) : (r.data.price ? String(r.data.price) : ''),
+                    createdAt: r.createdAt,
+                    _fromRequest: true
+                  }));
+
+                const allDtCodes = [...dtCodes, ...dtCodesFromRequests];
+
+                const filteredDtCodes = allDtCodes.filter(code => {
                   if (!dtSearchTerm.trim()) return true;
                   const term = dtSearchTerm.toLowerCase().trim();
                   return (
                     code.name?.toLowerCase().includes(term) ||
+                    code.fullNameArabic?.toLowerCase().includes(term) ||
                     code.mobile?.includes(term) ||
                     code.phone?.includes(term) ||
                     code.email?.toLowerCase().includes(term) ||
                     code.type?.toLowerCase().includes(term) ||
+                    code.examLanguage?.toLowerCase().includes(term) ||
                     code.status?.toLowerCase().includes(term) ||
                     code.fawryCode?.includes(term) ||
                     code.value?.toString().includes(term)
@@ -6221,7 +6356,28 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredDtCodes.map((code, index) => (
+                      {filteredDtCodes.map((code, index) => {
+                        // Look up the linked service request for missing fields
+                        const linkedRequest = findLinkedRequest(code);
+                        
+                        const safeVal = (val: any) => {
+                          if (val === undefined || val === null || val === '' || val === 'undefined' || val === 'null') return null;
+                          return val;
+                        };
+                        
+                        // Resolve displayValue: code fields → other dtCodes → linked request
+                        const displayValue = safeVal(code.value) || safeVal(code.totalPrice) || safeVal(code.price) || safeVal(code.amount) 
+                          || findValueFromDtCodes(code)
+                          || (linkedRequest?.data?.totalPrice != null ? String(linkedRequest.data.totalPrice) : null)
+                          || (linkedRequest?.data?.selectedTransformationType?.price != null ? String(linkedRequest.data.selectedTransformationType.price) : null)
+                          || '-';
+                        
+                        // Resolve displayFawryCode: code fields → other dtCodes → linked request
+                        const displayFawryCode = safeVal(code.fawryCode) || safeVal(code.serialNumber) || safeVal(code.fawry_code) || safeVal(code.fawry_number) 
+                          || findFawryFromDtCodes(code)
+                          || safeVal(linkedRequest?.data?.fawryCode) || safeVal(linkedRequest?.data?.fawry_code) || safeVal(linkedRequest?.data?.fawry_number) || safeVal(linkedRequest?.data?.serialNumber)
+                          || '-';
+                        return (
                         <tr
                           key={code.id || index}
                           style={{
@@ -6232,27 +6388,27 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name}</td>
-                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile || code.phone}</td>
-                          <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email}</td>
-                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.type}</td>
-                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.value}</td>
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name || code.fullNameArabic || '-'}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile || code.phone || code.whatsapp || '-'}</td>
+                          <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email || '-'}</td>
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.type || code.examLanguage || code.transformationType || '-'}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{displayValue}</td>
                           <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>
                             <span style={{
                               padding: '4px 8px',
                               borderRadius: '12px',
                               fontSize: '0.85rem',
-                              background: code.status === 'NEW' ? '#dcfce7' : '#f1f5f9',
-                              color: code.status === 'NEW' ? '#166534' : '#64748b',
+                              background: (code.status || 'NEW') === 'NEW' ? '#dcfce7' : '#f1f5f9',
+                              color: (code.status || 'NEW') === 'NEW' ? '#166534' : '#64748b',
                               userSelect: 'text'
                             }}>
-                              {code.status}
+                              {code.status || 'NEW'}
                             </span>
                           </td>
                           <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b', userSelect: 'text', cursor: 'text' }}>
-                            {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : 'الان'}
+                            {code.updatedAt?.seconds ? new Date(code.updatedAt.seconds * 1000).toLocaleString('ar-EG') : (code.createdAt ? new Date(code.createdAt).toLocaleString('ar-EG') : 'الان')}
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.fawryCode}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{displayFawryCode}</td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
                             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
                               {(() => {
@@ -6290,7 +6446,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 );
@@ -6439,16 +6596,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name}</td>
-                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile}</td>
-                          <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email}</td>
-                          <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.nationalID}</td>
-                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.entity}</td>
-                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.serviceType}</td>
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.name || code.fullNameArabic || '-'}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', userSelect: 'text', cursor: 'text' }}>{code.mobile || code.phone || code.whatsapp || '-'}</td>
+                          <td style={{ padding: '12px', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.email || '-'}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', userSelect: 'text', cursor: 'text' }}>{code.nationalID || code.national_id || '-'}</td>
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.entity || '-'}</td>
+                          <td style={{ padding: '12px', userSelect: 'text', cursor: 'text' }}>{code.serviceType || code.service_type || '-'}</td>
                           <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: '#64748b', userSelect: 'text', cursor: 'text' }}>
                             {code.createdAt?.seconds
                               ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG')
-                              : (code.createdAt || 'الان')}
+                              : (code.createdAt ? new Date(code.createdAt).toLocaleString('ar-EG') : 'الان')}
                           </td>
                           <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.orderNumber}</td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
@@ -6498,7 +6655,22 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         )
       }
 
-      {activeTab === 'statistics' && (() => {
+      {activeTab === 'statistics' && (
+        <AdminStatisticsTab
+          serviceRequests={serviceRequests}
+          adminPrefs={adminPrefs}
+          setAdminPrefs={setAdminPrefs}
+          updateAdminPreferences={updateAdminPreferences}
+          statsDateRange={statsDateRange}
+          setStatsDateRange={setStatsDateRange}
+          isMobile={isMobile}
+          statsUnlocked={statsUnlocked}
+          lockStats={lockStats}
+          setStatsPasswordOpen={setStatsPasswordOpen}
+          setToastState={setToastState}
+        />
+      )}
+      {false && (() => {
         // --- STATISTICS CALCULATION ENGINE ---
         let totalRevenue = 0;
         let completedCount = 0;
