@@ -177,7 +177,7 @@ function buildAdminCodesLookup(dtCodes: any[], epCodes: any[]) {
 
 /** مفاتيح حقول data الشائعة — Set لاستبعاد O(n) لكل مفتاح داخل الحلقات */
 const REQUEST_SPREADSHEET_STANDARD_KEYS = new Set<string>([
-  'full_name_arabic', 'full_name', 'student_names', 'names', 'student_names_array',
+  'full_name_arabic', 'full_name', 'full_name_english', 'student_names', 'names', 'student_names_array',
   'national_id', 'nationalID',
   'whatsapp_number', 'phone_whatsapp', 'leader_whatsapp', 'phone', 'whatsappNumber',
   'email',
@@ -185,7 +185,8 @@ const REQUEST_SPREADSHEET_STANDARD_KEYS = new Set<string>([
   'diploma_type', 'diplomaType', 'diploma_year', 'diplomaYear',
   'track', 'track_category', 'track_name', 'track_other', 'educational_specialization', 'faculty', 'department',
   'receiptUrl', 'receipt_upload', 'selectedCertificate', 'selectedExamLanguage', 'names_array', 'tracks_array',
-  'notes', 'status', 'createdAt', 'updatedAt', 'id', 'studentId', 'serviceId'
+  'notes', 'status', 'createdAt', 'updatedAt', 'id', 'studentId', 'serviceId',
+  'fawryCode', 'fawry_code', 'fawry_number', 'serialNumber', 'orderNumber', 'transaction_id', 'totalPrice', 'price'
 ]);
 
 /** كان O(n²) — يصبح تقريباً O(n + مجموع أحجام المجموعات) عبر فهارس */
@@ -733,8 +734,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   useEffect(() => {
     if (!selectedServiceId) {
       setRequestsDataColumnOrder([]);
+      setLayoutsHistory([]);
       return;
     }
+    // Load column order
     try {
       const key = `hp_requests_col_order_${selectedServiceId}`;
       const raw = localStorage.getItem(key);
@@ -742,27 +745,51 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           setRequestsDataColumnOrder(parsed);
-          return;
+        } else {
+          setRequestsDataColumnOrder([]);
         }
+      } else {
+        setRequestsDataColumnOrder([]);
       }
     } catch (e) {
       console.error('Failed to load column order', e);
+      setRequestsDataColumnOrder([]);
     }
-    setRequestsDataColumnOrder([]);
+
+    // Load history
+    try {
+      const historyKey = `hp_requests_col_orders_history_${selectedServiceId}`;
+      const rawHistory = localStorage.getItem(historyKey);
+      if (rawHistory) {
+        setLayoutsHistory(JSON.parse(rawHistory));
+      } else {
+        setLayoutsHistory([]);
+      }
+    } catch (e) {
+      console.error('Failed to load layouts history', e);
+      setLayoutsHistory([]);
+    }
   }, [selectedServiceId]);
 
-  /* تحميل حالة ترتيب الصفوف (الفرز) من وإلى localStorage */
-  const setRequestsSort = React.useCallback(
-    (colIndex: number, dir: 'asc' | 'desc') => {
-      gridApi.setSort('requests', colIndex, dir);
-      const key = `hp_requests_sort_${selectedServiceId || 'all'}`;
-      try {
-        localStorage.setItem(key, JSON.stringify({ colIndex, dir }));
-      } catch {
-        // ignore
+  /* تحميل وحفظ حالة ترتيب الصفوف (الفرز) عبر معرّف العمود (colId) بدلاً من الفهرس الرقمي لتفادي الأخطاء عند تغيّر عدد الأعمدة */
+  const [requestsSort, setRequestsSortState] = useState<{ colId: string; dir: 'asc' | 'desc' } | null>(null);
+  const [showDefaultColumnsModal, setShowDefaultColumnsModal] = useState(false);
+  const [hasUnsavedLayout, setHasUnsavedLayout] = useState(false);
+  const [showCustomOrderInModal, setShowCustomOrderInModal] = useState(false);
+  const [layoutsHistory, setLayoutsHistory] = useState<any[]>([]);
+  const [activeLayoutDetailId, setActiveLayoutDetailId] = useState<string | null>(null);
+
+  const handleRequestsSort = React.useCallback(
+    (colId: string, dir: 'asc' | 'desc') => {
+      if (!colId) {
+        setRequestsSortState(null);
+        setHasUnsavedLayout(true);
+        return;
       }
+      setRequestsSortState({ colId, dir });
+      setHasUnsavedLayout(true);
     },
-    [gridApi.setSort, selectedServiceId]
+    [selectedServiceId]
   );
 
   useEffect(() => {
@@ -773,16 +800,60 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         const parsed = JSON.parse(raw);
         if (
           parsed &&
-          typeof parsed.colIndex === 'number' &&
+          typeof parsed.colId === 'string' &&
           (parsed.dir === 'asc' || parsed.dir === 'desc')
         ) {
-          gridApi.setSort('requests', parsed.colIndex, parsed.dir);
+          setRequestsSortState({ colId: parsed.colId, dir: parsed.dir });
+          setHasUnsavedLayout(false);
+          return;
         }
       }
     } catch {
       // ignore
     }
-  }, [gridApi.setSort, selectedServiceId]);
+    setRequestsSortState(null);
+    setHasUnsavedLayout(false);
+  }, [selectedServiceId]);
+
+  const handleSaveLayout = React.useCallback(() => {
+    if (!selectedServiceId) return;
+    try {
+      // 1. Save active layout
+      const colKey = `hp_requests_col_order_${selectedServiceId}`;
+      localStorage.setItem(colKey, JSON.stringify(requestsDataColumnOrder));
+
+      const sortKey = `hp_requests_sort_${selectedServiceId || 'all'}`;
+      if (requestsSort) {
+        localStorage.setItem(sortKey, JSON.stringify(requestsSort));
+      } else {
+        localStorage.removeItem(sortKey);
+      }
+
+      // 2. Save to history list
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = now.toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' });
+      
+      const newLayout = {
+        id: String(Date.now()),
+        name: `ترتيب مخصص (${dateStr}، الساعة ${timeStr})`,
+        columnOrder: [...requestsDataColumnOrder],
+        sort: requestsSort ? { ...requestsSort } : null,
+        timestamp: Date.now()
+      };
+
+      const historyKey = `hp_requests_col_orders_history_${selectedServiceId}`;
+      const updatedHistory = [newLayout, ...layoutsHistory];
+      localStorage.setItem(historyKey, JSON.stringify(updatedHistory));
+      setLayoutsHistory(updatedHistory);
+
+      setHasUnsavedLayout(false);
+      alert('تم حفظ وترخيص ترتيب الجدول الجديد بنجاح وإضافته للمحفوظات!');
+    } catch (e) {
+      console.error('Failed to save layout', e);
+      alert('فشل حفظ ترتيب الجدول.');
+    }
+  }, [selectedServiceId, requestsDataColumnOrder, requestsSort, layoutsHistory]);
 
   /* إغلاق قائمة نسخ الخلية عند النقر خارجها أو Escape أو التمرير خارج القائمة */
   useEffect(() => {
@@ -3227,46 +3298,72 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         ? requestsDataColumnOrder
                         : Array.from({ length: dataColumnCount }, (_, i) => i);
 
-                    // تطبيق الفرز مع مراعاة ترتيب الأعمدة الظاهر
-                    const sortState = gridApi.getSort('requests');
-                    const displayRequests = !sortState
+                    // دالة مساعدة للحصول على معرّف العمود (colId) من الفهرس الرقمي (colIndex)
+                    const getColIdFromIndex = (c: number): string | null => {
+                      if (c === 2) return 'status';
+                      if (c === 3 + dataColumnCount) return 'date';
+                      if (c >= 3 && c < 3 + dataColumnCount) {
+                        const visualPos = c - 3;
+                        const localIdx = orderedDataIndices[visualPos];
+                        if (localIdx < allColumns.length) {
+                          return allColumns[localIdx].id;
+                        }
+                        const key = extraKeys[localIdx - allColumns.length];
+                        return `extra_key_${key}`;
+                      }
+                      return null;
+                    };
+
+                    // تطبيق الفرز مع مراعاة ترتيب الأعمدة الظاهر ومعرّف العمود المستقر
+                    const displayRequests = !requestsSort
                       ? filteredRequests
                       : [...filteredRequests].sort((a, b) => {
-                          const c = sortState.colIndex;
+                          const id = requestsSort.colId;
+                          const dirSign = requestsSort.dir === 'asc' ? 1 : -1;
 
                           // فرز حسب الحالة (عمود الحالة رقم 2)
-                          if (c === 2) {
+                          if (id === 'status') {
                             const ra = workflowStatusRank(a.status);
                             const rb = workflowStatusRank(b.status);
-                            return (ra - rb) * (sortState.dir === 'asc' ? 1 : -1);
-                          }
-
-                          // الأعمدة قبل رقم 3 ليست جزءاً من بيانات الطلب
-                          if (c < 3) return 0;
-
-                          // أعمدة البيانات (تشمل الأعمدة الإضافية المستخرجة من data)
-                          if (c >= 3 && c < 3 + dataColumnCount) {
-                            const visualPos = c - 3;
-                            const localIdx = orderedDataIndices[visualPos];
-
-                            // ضمن الأعمدة المعرفة في allColumns
-                            if (localIdx < allColumns.length) {
-                              const v = allColumns[localIdx].getValue;
-                              return (v(a) || '').localeCompare(v(b) || '', 'ar') * (sortState.dir === 'asc' ? 1 : -1);
-                            }
-
-                            // الأعمدة القادمة من extraKeys
-                            const key = extraKeys[localIdx - allColumns.length];
-                            const va = String(a.data?.[key] ?? '');
-                            const vb = String(b.data?.[key] ?? '');
-                            return va.localeCompare(vb, 'ar') * (sortState.dir === 'asc' ? 1 : -1);
+                            return (ra - rb) * dirSign;
                           }
 
                           // فرز حسب التاريخ (آخر عمود ثابت)
-                          if (c === 3 + dataColumnCount) {
+                          if (id === 'date') {
                             const va = a.createdAt ? new Date(a.createdAt).getTime() : 0;
                             const vb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                            return (va - vb) * (sortState.dir === 'asc' ? 1 : -1);
+                            return (va - vb) * dirSign;
+                          }
+
+                          // ضمن الأعمدة المعرفة في allColumns (عبر id)
+                          const col = allColumns.find(c => c.id === id);
+                          if (col) {
+                            const v = col.getValue;
+                            return (v(a) || '').localeCompare(v(b) || '', 'ar') * dirSign;
+                          }
+
+                          // الأعمدة القادمة من extraKeys (عبر extra_key_)
+                          if (id.startsWith('extra_key_')) {
+                            const key = id.replace('extra_key_', '');
+                            const va = String(a.data?.[key] ?? '');
+                            const vb = String(b.data?.[key] ?? '');
+                            return va.localeCompare(vb, 'ar') * dirSign;
+                          }
+
+                          // احتياطي: البحث عبر label العمود (يُستخدم عند الترتيب من القائمة المنسدلة)
+                          if (id.startsWith('label_')) {
+                            const label = id.replace('label_', '');
+                            const colByLabel = allColumns.find(c => c.label === label);
+                            if (colByLabel) {
+                              return (colByLabel.getValue(a) || '').localeCompare(colByLabel.getValue(b) || '', 'ar') * dirSign;
+                            }
+                            // extraKey بالـ label
+                            const matchedKey = extraKeys.find(k => translateKey(k) === label);
+                            if (matchedKey) {
+                              const va = String(a.data?.[matchedKey] ?? '');
+                              const vb = String(b.data?.[matchedKey] ?? '');
+                              return va.localeCompare(vb, 'ar') * dirSign;
+                            }
                           }
 
                           return 0;
@@ -3363,7 +3460,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         row.push(req.createdAt ? new Date(req.createdAt).toLocaleDateString('ar-EG') : '');
                         const files = students[req.studentId]?.assignedFiles;
                         const count = Array.isArray(files) ? files.length : 0;
-                        row.push(count ? `${count} ملف` : 'مافيش');
+                        row.push(count ? `${count} ملف` : 'لا يوجد');
                         rows.push(row);
                       });
 
@@ -3376,29 +3473,98 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                     return (
                       <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px' }}>
-                          <div className="pagination-info" style={{ color: '#64748b', fontSize: '14px' }}>
-                            إجمالي طلبات الخدمة: {displayRequests.length} طلب
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <div className="pagination-info" style={{ color: '#64748b', fontSize: '14px' }}>
+                              إجمالي طلبات الخدمة: {displayRequests.length} طلب
+                            </div>
+                            {requestsSort ? (
+                              <button
+                                type="button"
+                                onClick={() => handleRequestsSort('', 'asc')}
+                                style={{
+                                  padding: '4px 10px',
+                                  fontSize: '12px',
+                                  color: '#dc2626',
+                                  background: '#fef2f2',
+                                  border: '1px solid #fee2e2',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontWeight: 600
+                                }}
+                                title="اضغط للرجوع للترتيب الافتراضي للموقع"
+                              >
+                                ↩️ إرجاع للترتيب الأساسي (القديم: أبجدياً بالاسم)
+                              </button>
+                            ) : null}
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleExportRequestsToExcel}
-                            style={{
-                              padding: '8px 14px',
-                              borderRadius: '8px',
-                              border: '1px solid #cbd5e1',
-                              background: '#f8fafc',
-                              color: '#0f172a',
-                              fontSize: '13px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <FileText size={14} />
-                            تحميل الجدول كملف Excel
-                          </button>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            {hasUnsavedLayout && (
+                              <button
+                                type="button"
+                                onClick={handleSaveLayout}
+                                style={{
+                                  padding: '8px 14px',
+                                  borderRadius: '8px',
+                                  border: 'none',
+                                  background: '#22c55e',
+                                  color: 'white',
+                                  fontSize: '13px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  cursor: 'pointer',
+                                  fontWeight: 'bold',
+                                  boxShadow: '0 0 12px rgba(34, 197, 94, 0.4)'
+                                }}
+                                title="اضغط لحفظ التغييرات التي قمت بها في ترتيب الجدول"
+                              >
+                                💾 حفظ الترتيب الجديد
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setShowDefaultColumnsModal(true)}
+                              style={{
+                                padding: '8px 14px',
+                                borderRadius: '8px',
+                                border: '1px solid #cbd5e1',
+                                background: '#f8fafc',
+                                color: '#475569',
+                                fontSize: '13px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: 'pointer',
+                                fontWeight: 600
+                              }}
+                              title="اضغط لعرض الترتيب الأصلي لأعمدة الجدول للرجوع إليه إذا نسيته"
+                            >
+                              📋 عرض ترتيب الجدول القديم
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleExportRequestsToExcel}
+                              style={{
+                                padding: '8px 14px',
+                                borderRadius: '8px',
+                                border: '1px solid #cbd5e1',
+                                background: '#f8fafc',
+                                color: '#0f172a',
+                                fontSize: '13px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <FileText size={14} />
+                              تحميل الجدول كملف Excel
+                            </button>
+                          </div>
                         </div>
 
                         <div
@@ -3435,17 +3601,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   data-col={2}
                                   style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9', cursor: 'pointer' }}
                                   onClick={() => {
-                                    const current = gridApi.getSort('requests');
-                                    const colIndex = 2;
                                     const nextDir: 'asc' | 'desc' =
-                                      current && current.colIndex === colIndex && current.dir === 'asc'
+                                      requestsSort && requestsSort.colId === 'status' && requestsSort.dir === 'asc'
                                         ? 'desc'
                                         : 'asc';
-                                    setRequestsSort(colIndex, nextDir);
+                                    handleRequestsSort('status', nextDir);
                                   }}
                                   title="اضغط للترتيب حسب الحالة"
                                 >
-                                  الحالة
+                                  الحالة {requestsSort && requestsSort.colId === 'status' && (requestsSort.dir === 'asc' ? '▲' : '▼')}
                                 </th>
 
                                 {orderedDataIndices.map((localIdx, displayPos) => {
@@ -3478,19 +3642,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       const [removed] = newOrder.splice(draggedColDisplayPos, 1);
                                       newOrder.splice(dropTargetColDisplayPos, 0, removed);
                                       setRequestsDataColumnOrder(newOrder);
-                                      if (selectedServiceId) {
-                                        try {
-                                          localStorage.setItem(
-                                            `hp_requests_col_order_${selectedServiceId}`,
-                                            JSON.stringify(newOrder)
-                                          );
-                                        } catch (e) {
-                                          console.error('Failed to save column order', e);
-                                        }
-                                      }
+                                      setHasUnsavedLayout(true);
                                       setDraggedColDisplayPos(null);
                                       setDropTargetColDisplayPos(null);
                                     };
+                                    const colId = col ? col.id : (key ? `extra_key_${key}` : '');
                                     return (
                                       <th
                                         key={`data-col-${localIdx}`}
@@ -3509,7 +3665,20 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       >
                                         <div className="spreadsheet-header-cell-inner" style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
                                           <GripVertical size={12} style={{ cursor: 'grab', color: '#94a3b8', flexShrink: 0 }} />
-                                          {label}
+                                          <span
+                                            title="اضغط للترتيب حسب هذا العمود"
+                                            style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                            onClick={(ev) => {
+                                              ev.stopPropagation();
+                                              const nextDir: 'asc' | 'desc' =
+                                                requestsSort && requestsSort.colId === colId && requestsSort.dir === 'asc'
+                                                  ? 'desc'
+                                                  : 'asc';
+                                              handleRequestsSort(colId, nextDir);
+                                            }}
+                                          >
+                                            {label} {requestsSort && requestsSort.colId === colId && (requestsSort.dir === 'asc' ? '▲' : '▼')}
+                                          </span>
                                           <span title="نسخ العمود" style={{ display: 'flex' }} onClick={(ev) => { ev.stopPropagation(); copyRequestsColumn(label, displayRequests, getValue); }}>
                                             <Copy size={13} style={{ cursor: 'pointer', color: '#3b82f6' }} />
                                           </span>
@@ -3525,17 +3694,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   data-col={3 + dataColumnCount}
                                   style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9', cursor: 'pointer' }}
                                   onClick={() => {
-                                    const current = gridApi.getSort('requests');
-                                    const colIndex = 3 + dataColumnCount;
                                     const nextDir: 'asc' | 'desc' =
-                                      current && current.colIndex === colIndex && current.dir === 'asc'
+                                      requestsSort && requestsSort.colId === 'date' && requestsSort.dir === 'asc'
                                         ? 'desc'
                                         : 'asc';
-                                    setRequestsSort(colIndex, nextDir);
+                                    handleRequestsSort('date', nextDir);
                                   }}
                                   title="اضغط للترتيب حسب التاريخ"
                                 >
-                                  التاريخ
+                                  التاريخ {requestsSort && requestsSort.colId === 'date' && (requestsSort.dir === 'asc' ? '▲' : '▼')}
                                 </th>
                                 <th
                                   className="spreadsheet-header-no-menu"
@@ -3963,7 +4130,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const files = studentData?.assignedFiles;
                                 const count = Array.isArray(files) ? files.length : 0;
                                 if (count === 0) {
-                                  return <span style={{ color: '#94a3b8', fontSize: '13px' }}>مافيش</span>;
+                                  return <span style={{ color: '#94a3b8', fontSize: '13px' }}>لا يوجد</span>;
                                 }
                                 return (
                                   <button
@@ -4005,6 +4172,353 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           </table>
                         </div>
                         </div>
+
+                        {showDefaultColumnsModal && (
+                          <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                            backdropFilter: 'blur(4px)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 9999,
+                            padding: '20px'
+                          }}>
+                            <div style={{
+                              borderRadius: '16px',
+                              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+                              width: '100%',
+                              maxWidth: '480px',
+                              background: 'white',
+                              border: '1px solid #e2e8f0',
+                              direction: 'rtl',
+                              overflow: 'hidden'
+                            }}>
+                              {/* Header */}
+                              <div style={{
+                                padding: '16px 20px',
+                                borderBottom: '1px solid #e2e8f0',
+                                background: '#f8fafc',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}>
+                                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
+                                  📋 خيارات ترتيب الجدول
+                                </h3>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowDefaultColumnsModal(false)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    fontSize: '20px',
+                                    color: '#64748b',
+                                    cursor: 'pointer',
+                                    padding: '4px'
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
+                              {/* Body */}
+                              <div style={{ padding: '20px', maxHeight: '420px', overflowY: 'auto' }}>
+                                {/* الترتيب الأصلي */}
+                                <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 800, color: '#334155' }}>
+                                  📌 الترتيب الأصلي الافتراضي:
+                                </h4>
+                                <div style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '6px',
+                                  background: '#f8fafc',
+                                  padding: '12px',
+                                  borderRadius: '12px',
+                                  border: '1px solid #e2e8f0',
+                                  maxHeight: '180px',
+                                  overflowY: 'auto'
+                                }}>
+                                  {(() => {
+                                    const defaultCols = [
+                                      '#',
+                                      'إجراءات',
+                                      'الحالة',
+                                      ...allColumns.map(c => c.label),
+                                      ...extraKeys.map(k => translateKey(k)),
+                                      'التاريخ',
+                                      'الملفات'
+                                    ];
+                                    return defaultCols.map((colLabel, i) => (
+                                      <div key={i} style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        padding: '6px 10px',
+                                        background: 'white',
+                                        borderRadius: '8px',
+                                        border: '1px solid #e2e8f0',
+                                        fontSize: '13px',
+                                        color: '#1e293b',
+                                        fontWeight: 600
+                                      }}>
+                                        <span style={{
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          borderRadius: '50%',
+                                          width: '18px',
+                                          height: '18px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontSize: '10px',
+                                          fontWeight: 800
+                                        }}>
+                                          {i + 1}
+                                        </span>
+                                        <span>{colLabel}</span>
+                                      </div>
+                                    ));
+                                  })()}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRequestsDataColumnOrder([]);
+                                    if (selectedServiceId) {
+                                      try {
+                                        localStorage.removeItem(`hp_requests_col_order_${selectedServiceId}`);
+                                      } catch (e) {
+                                        console.error(e);
+                                      }
+                                    }
+                                    setHasUnsavedLayout(false);
+                                    setShowDefaultColumnsModal(false);
+                                    alert('تم استعادة وحفظ الترتيب الأصلي الافتراضي للجدول بنجاح!');
+                                  }}
+                                  style={{
+                                    marginTop: '10px',
+                                    padding: '8px 16px',
+                                    backgroundColor: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    width: '100%'
+                                  }}
+                                >
+                                  إعادة تطبيق الترتيب الأصلي
+                                </button>
+
+                                {/* الترتيب المخصص الذي قمت بحفظه */}
+                                <div style={{ marginTop: '20px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowCustomOrderInModal(!showCustomOrderInModal)}
+                                    style={{
+                                      width: '100%',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      padding: '10px 12px',
+                                      background: '#f8fafc',
+                                      border: '1px solid #e2e8f0',
+                                      borderRadius: '8px',
+                                      cursor: 'pointer',
+                                      fontSize: '14px',
+                                      fontWeight: 700,
+                                      color: '#1e293b'
+                                    }}
+                                  >
+                                    <span>{showCustomOrderInModal ? '🔼 إخفاء الترتيبات المخصصة المحفوظة' : '🔽 عرض الترتيبات المخصصة المحفوظة'}</span>
+                                    <span style={{ fontSize: '12px' }}>{showCustomOrderInModal ? '▲' : '▼'}</span>
+                                  </button>
+
+                                  {showCustomOrderInModal && (
+                                    <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                      {layoutsHistory.length === 0 ? (
+                                        <div style={{ padding: '12px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
+                                          لا يوجد ترتيب مخصص محفوظ حالياً لهذه الخدمة.
+                                        </div>
+                                      ) : (
+                                        layoutsHistory.map((layoutItem) => {
+                                          const isExpanded = activeLayoutDetailId === layoutItem.id;
+                                          return (
+                                            <div
+                                              key={layoutItem.id}
+                                              style={{
+                                                background: '#f0fdf4',
+                                                padding: '12px',
+                                                borderRadius: '12px',
+                                                border: '1px solid #bbf7d0',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '8px'
+                                              }}
+                                            >
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#166534' }}>
+                                                  {layoutItem.name}
+                                                </span>
+                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setActiveLayoutDetailId(isExpanded ? null : layoutItem.id)}
+                                                    style={{
+                                                      background: '#e8f5e9',
+                                                      color: '#2e7d32',
+                                                      border: 'none',
+                                                      borderRadius: '6px',
+                                                      padding: '4px 8px',
+                                                      fontSize: '11px',
+                                                      cursor: 'pointer',
+                                                      fontWeight: 'bold'
+                                                    }}
+                                                  >
+                                                    {isExpanded ? '🔼 إخفاء' : '🔽 التفاصيل'}
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      if (confirm('هل أنت متأكد من حذف هذا الترتيب المحفوظ؟')) {
+                                                        const updated = layoutsHistory.filter(item => item.id !== layoutItem.id);
+                                                        const historyKey = `hp_requests_col_orders_history_${selectedServiceId}`;
+                                                        localStorage.setItem(historyKey, JSON.stringify(updated));
+                                                        setLayoutsHistory(updated);
+                                                      }
+                                                    }}
+                                                    title="حذف هذا الترتيب من السجل"
+                                                    style={{
+                                                      background: '#ffebee',
+                                                      color: '#c62828',
+                                                      border: 'none',
+                                                      borderRadius: '6px',
+                                                      padding: '4px 8px',
+                                                      fontSize: '11px',
+                                                      cursor: 'pointer',
+                                                      fontWeight: 'bold'
+                                                    }}
+                                                  >
+                                                    🗑️ حذف
+                                                  </button>
+                                                </div>
+                                              </div>
+
+                                              {/* تفاصيل الأعمدة */}
+                                              {isExpanded && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px', maxHeight: '150px', overflowY: 'auto', background: 'white', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                                  {(() => {
+                                                    const order = layoutItem.columnOrder || [];
+                                                    const labels = order.map((localIdx: number) => {
+                                                      const isFromColumns = localIdx < allColumns.length;
+                                                      const col = isFromColumns ? allColumns[localIdx] : null;
+                                                      const key = !isFromColumns ? extraKeys[localIdx - allColumns.length] : null;
+                                                      return col ? col.label : (key ? translateKey(key) : '');
+                                                    });
+                                                    const fullLabelsList = [
+                                                      '#',
+                                                      'إجراءات',
+                                                      'الحالة',
+                                                      ...labels,
+                                                      'التاريخ',
+                                                      'الملفات'
+                                                    ];
+                                                    return fullLabelsList.map((colLabel, idx) => (
+                                                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ background: '#22c55e', color: 'white', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 800 }}>
+                                                          {idx + 1}
+                                                        </span>
+                                                        <span>{colLabel}</span>
+                                                      </div>
+                                                    ));
+                                                  })()}
+                                                </div>
+                                              )}
+
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  // Apply columns
+                                                  setRequestsDataColumnOrder(layoutItem.columnOrder || []);
+                                                  
+                                                  // Apply sort if exists
+                                                  if (layoutItem.sort) {
+                                                    setRequestsSortState(layoutItem.sort);
+                                                    localStorage.setItem(`hp_requests_sort_${selectedServiceId || 'all'}`, JSON.stringify(layoutItem.sort));
+                                                  } else {
+                                                    setRequestsSortState(null);
+                                                    localStorage.removeItem(`hp_requests_sort_${selectedServiceId || 'all'}`);
+                                                  }
+
+                                                  // Save active columns layout to active key
+                                                  localStorage.setItem(`hp_requests_col_order_${selectedServiceId}`, JSON.stringify(layoutItem.columnOrder || []));
+
+                                                  setHasUnsavedLayout(false);
+                                                  setShowDefaultColumnsModal(false);
+                                                  alert(`تم تطبيق الترتيب "${layoutItem.name}" بنجاح!`);
+                                                }}
+                                                style={{
+                                                  marginTop: '6px',
+                                                  padding: '8px 16px',
+                                                  backgroundColor: '#22c55e',
+                                                  color: 'white',
+                                                  border: 'none',
+                                                  borderRadius: '8px',
+                                                  cursor: 'pointer',
+                                                  fontSize: '13px',
+                                                  fontWeight: 700,
+                                                  width: '100%'
+                                                }}
+                                              >
+                                                تطبيق هذا الترتيب
+                                              </button>
+                                            </div>
+                                          );
+                                        })
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Footer */}
+                              <div style={{
+                                padding: '16px 20px',
+                                borderTop: '1px solid #e2e8f0',
+                                background: '#f8fafc',
+                                display: 'flex',
+                                gap: '12px',
+                                justifyContent: 'flex-start'
+                              }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowDefaultColumnsModal(false)}
+                                  style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: 'transparent',
+                                    color: '#64748b',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    width: '100%',
+                                    textAlign: 'center'
+                                  }}
+                                >
+                                  إغلاق
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </>
                     );
                   })()}
@@ -7150,10 +7664,27 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 setToastState({ message: `تم نسخ عمود "${spreadsheetMenu.columnLabel}"`, type: 'success', duration: 2000 });
               }
             } else if (action === 'sortAtoZ' && spreadsheetMenu.columnIndex != null) {
-              setRequestsSort(spreadsheetMenu.columnIndex, 'asc');
+              // spreadsheetMenu.columnLabel is the stable human label; use it as a proxy
+              // to find the matching colId via handleRequestsSort with a column-label lookup
+              const menuColIdx = spreadsheetMenu.columnIndex;
+              const menuColLabel = spreadsheetMenu.columnLabel ?? '';
+              // colId for fixed columns
+              let resolvedColId: string | null =
+                menuColIdx === 2 ? 'status' :
+                menuColLabel === 'التاريخ' ? 'date' : null;
+              // if not a fixed column, resolve via label match (allColumns is in outer scope via closure won't work here)
+              // fallback: use label as colId key – handleRequestsSort will store it stably
+              if (!resolvedColId) resolvedColId = `label_${menuColLabel}`;
+              handleRequestsSort(resolvedColId, 'asc');
               setToastState({ message: 'ترتيب من أ إلى ي', type: 'success', duration: 1500 });
             } else if (action === 'sortZtoA' && spreadsheetMenu.columnIndex != null) {
-              setRequestsSort(spreadsheetMenu.columnIndex, 'desc');
+              const menuColIdx = spreadsheetMenu.columnIndex;
+              const menuColLabel = spreadsheetMenu.columnLabel ?? '';
+              let resolvedColId: string | null =
+                menuColIdx === 2 ? 'status' :
+                menuColLabel === 'التاريخ' ? 'date' : null;
+              if (!resolvedColId) resolvedColId = `label_${menuColLabel}`;
+              handleRequestsSort(resolvedColId, 'desc');
               setToastState({ message: 'ترتيب من ي إلى أ', type: 'success', duration: 1500 });
             } else if (action === 'removeFilter') {
               setServiceSearchTerm('');
