@@ -309,7 +309,7 @@ export const getStudentsByIds = async (userIds: string[]): Promise<Record<string
     
     const snapshots = await Promise.all(promises);
     snapshots.forEach(snapshot => {
-      snapshot.docs.forEach(docSnap => {
+      snapshot.docs.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => {
         const data = docSnap.data();
         result[docSnap.id] = {
           ...data,
