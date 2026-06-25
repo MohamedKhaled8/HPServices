@@ -9,16 +9,17 @@ import {
   validateEmail,
   validatePassword,
 } from '../utils/validation';
-import { GOVERNORATES, DIPLOMA_YEARS, COURSES, DIPLOMA_TYPES } from '../constants/services';
+import { GOVERNORATES, DIPLOMA_YEARS, COURSES, DIPLOMA_TYPES, COLLEGES, DEPARTMENTS, GRADES } from '../constants/services';
+import { calculateTrack, getAvailableTracks } from '../utils/trackUtils';
 import { useStudent } from '../context';
-import { registerUser } from '../services/firebaseService';
+import { registerUser, addServiceRequest } from '../services/firebaseService';
 import { AlertCircle, Eye, EyeOff, ChevronLeft, ChevronRight, Check, User, BookOpen, MapPin, Lock } from 'lucide-react';
 import '../styles/LoginPage.css';
 import '../styles/RegisterPage.css';
 
 const STEPS = [
   { label: 'بيانات شخصية', icon: <User size={15} /> },
-  { label: 'الدبلوم والشعبة', icon: <BookOpen size={15} /> },
+  { label: 'الدراسة والمسار', icon: <BookOpen size={15} /> },
   { label: 'العنوان والحساب', icon: <Lock size={15} /> },
 ];
 
@@ -79,12 +80,31 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
     setSubmitAttempted(false);
   }, [step]);
 
+  // Recalculate track dynamically when college, department, or grade changes
+  useEffect(() => {
+    const computedCollege = formData.college === 'Other' ? formData.college_other : formData.college;
+    const computedDept = formData.department === 'Other' ? formData.department_other : formData.department;
+    const calc = calculateTrack(computedCollege, computedDept, formData.grade);
+    
+    if (calc) {
+      setFormData(prev => {
+        if (prev.track === calc) return prev;
+        return { ...prev, track: calc };
+      });
+    } else {
+      setFormData(prev => {
+        if (prev.track === '') return prev;
+        return { ...prev, track: '' };
+      });
+    }
+  }, [formData.college, formData.college_other, formData.department, formData.department_other, formData.grade]);
+
   const getFieldError = (fieldName: string) => {
     // Determine the step this field belongs to
     let fieldStep = 0;
     if (['fullNameArabic', 'vehicleNameEnglish', 'whatsappNumber', 'nationalID'].includes(fieldName)) {
       fieldStep = 0;
-    } else if (['diplomaYear', 'diplomaType', 'course'].includes(fieldName)) {
+    } else if (['diplomaYear', 'diplomaType', 'course', 'college', 'college_other', 'department', 'department_other', 'grade', 'track'].includes(fieldName)) {
       fieldStep = 1;
     } else if (fieldName.startsWith('address.') || ['email', 'password'].includes(fieldName)) {
       fieldStep = 2;
@@ -175,7 +195,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
 
     const stepFields: Record<number, string[]> = {
       0: ['fullNameArabic', 'vehicleNameEnglish', 'whatsappNumber', 'nationalID'],
-      1: ['diplomaYear', 'diplomaType', 'course'],
+      1: ['diplomaYear', 'diplomaType', 'course', 'college', 'department', 'grade', 'track'],
     };
     const allErrors: ValidationError[] = [];
     const fields = stepFields[s];
@@ -191,6 +211,16 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           allErrors.push({ field: f, message: 'هذا الحقل مطلوب' });
       }
     });
+
+    // Custom validations for "Other" options in step 1
+    if (s === 1) {
+      if (formData.college === 'Other' && (!formData.college_other || formData.college_other.trim() === '')) {
+        allErrors.push({ field: 'college_other', message: 'هذا الحقل مطلوب' });
+      }
+      if (formData.department === 'Other' && (!formData.department_other || formData.department_other.trim() === '')) {
+        allErrors.push({ field: 'department_other', message: 'هذا الحقل مطلوب' });
+      }
+    }
 
     // Additional validation for step 0: Arabic name must be 4 words in Arabic
     if (s === 0 && formData.fullNameArabic && formData.fullNameArabic.trim() !== '') {
@@ -261,14 +291,24 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
     // Mark all steps as attempted on final submission
     setStepAttempted([true, true, true]);
 
-    if (!validateStep()) return;
+    if (!validateStep(0) || !validateStep(1)) {
+      if (!validateStep(0)) {
+        setStep(0);
+        setSubmitError('يرجى مراجعة البيانات الشخصية في الخطوة الأولى');
+      } else {
+        setStep(1);
+        setSubmitError('يرجى مراجعة بيانات الدراسة والمسار في الخطوة الثانية');
+      }
+      setIsSubmitting(false);
+      return;
+    }
 
     const allErrors = validateStudentData(formData as StudentData);
     if (allErrors.length > 0) {
       setErrors(allErrors);
       // Auto-navigate to the first step that has an error
       const step0Fields = ['fullNameArabic', 'vehicleNameEnglish', 'whatsappNumber', 'nationalID'];
-      const step1Fields = ['diplomaYear', 'diplomaType', 'course'];
+      const step1Fields = ['diplomaYear', 'diplomaType', 'course', 'college', 'department', 'grade', 'track'];
       const hasStep0Error = allErrors.some(err => step0Fields.includes(err.field));
       const hasStep1Error = allErrors.some(err => step1Fields.includes(err.field));
       if (hasStep0Error) {
@@ -276,7 +316,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
         setSubmitError('يرجى مراجعة البيانات الشخصية في الخطوة الأولى');
       } else if (hasStep1Error) {
         setStep(1);
-        setSubmitError('يرجى مراجعة بيانات الدبلوم في الخطوة الثانية');
+        setSubmitError('يرجى مراجعة بيانات الدراسة والمسار في الخطوة الثانية');
       } else {
         setSubmitError('يرجى مراجعة الحقول المطلوبة');
       }
@@ -298,9 +338,46 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
         course: formData.course || '',
         email,
         password,
+        college: formData.college || '',
+        college_other: formData.college === 'Other' ? formData.college_other || '' : '',
+        department: formData.department || '',
+        department_other: formData.department === 'Other' ? formData.department_other || '' : '',
+        grade: formData.grade || '',
+        track: formData.track || '',
+        routeRegistrationCompleted: true,
       };
+      
       const user = await registerUser(email, password, studentData);
-      setStudent({ ...studentData, id: user.uid, createdAt: new Date().toISOString() });
+
+      // Auto-submit Service 1 (سجل بياناتك) request
+      try {
+        const addressString = `${studentData.address.governorate || ''}, ${studentData.address.city || ''}, ${studentData.address.street || ''}, ${studentData.address.building || ''}, ${studentData.address.siteNumber || ''}${studentData.address.landmark ? `, ${studentData.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',');
+        const service1Request = {
+          studentId: user.uid,
+          serviceId: '1',
+          data: {
+            full_name: studentData.fullNameArabic,
+            national_id: studentData.nationalID,
+            address: addressString,
+            email: studentData.email,
+            whatsapp_number: studentData.whatsappNumber,
+            college: studentData.college,
+            college_other: studentData.college_other,
+            department: studentData.department,
+            department_other: studentData.department_other,
+            grade: studentData.grade,
+            track: studentData.track
+          },
+          paymentMethod: '',
+          status: 'pending' as const,
+          documents: []
+        };
+        await addServiceRequest(service1Request);
+      } catch (reqError) {
+        console.error("Auto-submitting Service 1 request failed:", reqError);
+      }
+
+      setStudent({ ...studentData, id: user.uid, routeRegistrationCompleted: true, createdAt: new Date().toISOString() });
       onRegistrationSuccess();
     } catch (error: any) {
       setSubmitError(error.message || 'حدث خطأ أثناء التسجيل. يرجى المحاولة مرة أخرى.');
@@ -447,6 +524,120 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
         )}
         {getFieldError('course') && <div className="field-error"><AlertCircle size={12} />{getFieldError('course')}</div>}
       </div>
+
+      <p className="auth-section-title" style={{ marginTop: '20px' }}><BookOpen size={17} /> المؤهل الأساسي والمسار</p>
+
+      <div className="auth-row">
+        <div className="auth-field">
+          <label htmlFor="college">الكلية او المعهد المتخرج منه <span className="req">*</span></label>
+          <select
+            id="college"
+            value={formData.college || ''}
+            onChange={(e) => handleInputChange('college', e.target.value)}
+            onBlur={() => markTouched('college')}
+            className={getFieldError('college') ? 'has-error' : ''}
+          >
+            <option value="">اختر الكلية أو المعهد</option>
+            {COLLEGES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {getFieldError('college') && <div className="field-error"><AlertCircle size={12} />{getFieldError('college')}</div>}
+        </div>
+
+        <div className="auth-field">
+          <label htmlFor="grade">التقدير العام في الشهادة <span className="req">*</span></label>
+          <select
+            id="grade"
+            value={formData.grade || ''}
+            onChange={(e) => handleInputChange('grade', e.target.value)}
+            onBlur={() => markTouched('grade')}
+            className={getFieldError('grade') ? 'has-error' : ''}
+          >
+            <option value="">اختر التقدير</option>
+            {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+          {getFieldError('grade') && <div className="field-error"><AlertCircle size={12} />{getFieldError('grade')}</div>}
+        </div>
+      </div>
+
+      {formData.college === 'Other' && (
+        <div className="auth-field">
+          <label htmlFor="college_other">اسم الكلية أو المعهد المتخرج منه <span className="req">*</span></label>
+          <input
+            id="college_other"
+            type="text"
+            placeholder="اكتب اسم الكلية أو المعهد بالتفصيل كما بالشهادة"
+            value={formData.college_other || ''}
+            onChange={(e) => handleInputChange('college_other', e.target.value)}
+            onBlur={() => markTouched('college_other')}
+            className={getFieldError('college_other') ? 'has-error' : ''}
+          />
+          {getFieldError('college_other') && <div className="field-error"><AlertCircle size={12} />{getFieldError('college_other')}</div>}
+        </div>
+      )}
+
+      <div className="auth-row">
+        <div className="auth-field">
+          <label htmlFor="department">القسم او الشعبة في المؤهل الاساسي <span className="req">*</span></label>
+          <select
+            id="department"
+            value={formData.department || ''}
+            onChange={(e) => handleInputChange('department', e.target.value)}
+            onBlur={() => markTouched('department')}
+            className={getFieldError('department') ? 'has-error' : ''}
+          >
+            <option value="">اختر القسم أو الشعبة</option>
+            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          {getFieldError('department') && <div className="field-error"><AlertCircle size={12} />{getFieldError('department')}</div>}
+        </div>
+
+        <div className="auth-field">
+          <label htmlFor="track">المسار الدراسي <span className="req">*</span></label>
+          {(() => {
+            const computedCollege = formData.college === 'Other' ? formData.college_other : formData.college;
+            const computedDept = formData.department === 'Other' ? formData.department_other : formData.department;
+            const calculatedTrack = calculateTrack(computedCollege, computedDept, formData.grade);
+            const availableTracks = getAvailableTracks(calculatedTrack);
+            
+            return (
+              <select
+                id="track"
+                value={formData.track || ''}
+                onChange={(e) => handleInputChange('track', e.target.value)}
+                onBlur={() => markTouched('track')}
+                disabled={!calculatedTrack}
+                className={getFieldError('track') ? 'has-error' : ''}
+              >
+                {!calculatedTrack ? (
+                  <option value="">سيتم تحديد المسار بعد ملء البيانات الأكاديمية</option>
+                ) : (
+                  <>
+                    <option value="">اختر المسار (المسار المحسوب: {calculatedTrack})</option>
+                    {availableTracks.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </>
+                )}
+              </select>
+            );
+          })()}
+          {getFieldError('track') && <div className="field-error"><AlertCircle size={12} />{getFieldError('track')}</div>}
+        </div>
+      </div>
+
+      {formData.department === 'Other' && (
+        <div className="auth-field">
+          <label htmlFor="department_other">اسم القسم أو الشعبة <span className="req">*</span></label>
+          <input
+            id="department_other"
+            type="text"
+            placeholder="اكتب اسم القسم أو الشعبة بالتفصيل كما بالشهادة"
+            value={formData.department_other || ''}
+            onChange={(e) => handleInputChange('department_other', e.target.value)}
+            onBlur={() => markTouched('department_other')}
+            className={getFieldError('department_other') ? 'has-error' : ''}
+          />
+          {getFieldError('department_other') && <div className="field-error"><AlertCircle size={12} />{getFieldError('department_other')}</div>}
+        </div>
+      )}
     </div>
   );
 

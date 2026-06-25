@@ -6302,6 +6302,64 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     </div>
                   </div>
 
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>الكلية أو المعهد المتخرج منه</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.college || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          college: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>القسم أو الشعبة</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.department || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          department: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>التقدير العام</label>
+                      <input
+                        type="text"
+                        value={editedStudentData.grade || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          grade: e.target.value
+                        })}
+                        className="form-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>المسار الدراسي</label>
+                      <select
+                        value={editedStudentData.track || ''}
+                        onChange={(e) => setEditedStudentData({
+                          ...editedStudentData,
+                          track: e.target.value
+                        })}
+                        className="form-input"
+                      >
+                        <option value="">اختر المسار</option>
+                        <option value="الأول">الأول</option>
+                        <option value="الثاني">الثاني</option>
+                        <option value="الثالث">الثالث</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="modal-footer">
                     <button type="button" onClick={handleSaveStudent} className="save-button" disabled={isSaving === 'student'}>
                       <Save size={18} />
