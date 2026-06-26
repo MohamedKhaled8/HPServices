@@ -1999,6 +1999,321 @@ app.get('/api/automation-health', (req, res) => {
     });
 });
 
+// =====================================================
+// NEW: WhatsApp Wapilot API Proxy & Notifications
+// =====================================================
+const https = require('https');
+
+function normalizeWhatsAppNumber(num) {
+    let clean = String(num || '').trim().replace(/[^\d+]/g, '');
+    if (clean.startsWith('+')) {
+        clean = clean.slice(1);
+    }
+    // If it starts with 0 and has 11 digits (e.g. 01012345678)
+    if (clean.startsWith('0') && clean.length === 11) {
+        clean = '20' + clean.slice(1);
+    }
+    // If it starts with 1 and has 10 digits (e.g. 1012345678)
+    if (clean.startsWith('1') && clean.length === 10) {
+        clean = '20' + clean;
+    }
+    return clean;
+}
+
+function callWapilotApi(endpoint, token, method = 'GET', body = null) {
+    return new Promise((resolve, reject) => {
+        const url = `https://api.wapilot.net/api/v2/${endpoint}`;
+        const u = new URL(url);
+        const options = {
+            hostname: u.hostname,
+            path: u.pathname + u.search,
+            method: method,
+            headers: {
+                'token': token,
+                'Content-Type': 'application/json'
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch (e) {
+                    resolve({ success: false, raw: data, error: 'Invalid JSON response from Wapilot' });
+                }
+            });
+        });
+
+        req.on('error', (err) => {
+            reject(err);
+        });
+
+        if (body) {
+            req.write(JSON.stringify(body));
+        }
+        req.end();
+    });
+}
+
+/**
+ * Middleware: Verify Firebase Bearer ID Token.
+ * Allows access to authenticated users (admin or student).
+ */
+async function requireAdminOrSelf(req, res, next) {
+    if (!firebaseAutomationAuthReady) {
+        return next();
+    }
+    if (process.env.AUTOMATION_SKIP_AUTH === '1') {
+        return next();
+    }
+    const authHeader = req.headers.authorization || '';
+    const m = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!m || !m[1]) {
+        return res.status(401).json({ success: false, error: 'غير مصرح: يرجى تسجيل الدخول.' });
+    }
+    try {
+        const decoded = await admin.auth().verifyIdToken(m[1]);
+        req.user = decoded; // { uid, email, ... }
+        return next();
+    } catch (e) {
+        return res.status(401).json({ success: false, error: 'رمز الدخول غير صالح أو منتهٍ.' });
+    }
+}
+
+// 1. Get available WhatsApp instances
+app.post('/api/whatsapp/instances', requireAutomationAdmin, async (req, res) => {
+    const { token } = req.body;
+    if (!token) {
+        return res.status(400).json({ success: false, error: 'مفتاح الـ API مطلوب.' });
+    }
+    try {
+        const data = await callWapilotApi('instances', token, 'GET');
+        return res.json(data);
+    } catch (error) {
+        console.error('[WhatsApp] Instances error:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 2. Get connection status of an instance
+app.post('/api/whatsapp/status', requireAutomationAdmin, async (req, res) => {
+    const { token, instanceId } = req.body;
+    if (!token || !instanceId) {
+        return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
+    }
+    try {
+        const data = await callWapilotApi(`instances/${instanceId}/status`, token, 'GET');
+        return res.json(data);
+    } catch (error) {
+        console.error('[WhatsApp] Status error:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 3. Get connection QR code of an instance
+app.post('/api/whatsapp/qr-code', requireAutomationAdmin, async (req, res) => {
+    const { token, instanceId } = req.body;
+    if (!token || !instanceId) {
+        return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
+    }
+    try {
+        const data = await callWapilotApi(`instances/${instanceId}/qr-code`, token, 'GET');
+        return res.json(data);
+    } catch (error) {
+        console.error('[WhatsApp] QR Code error:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 4. Start instance session
+app.post('/api/whatsapp/start', requireAutomationAdmin, async (req, res) => {
+    const { token, instanceId } = req.body;
+    if (!token || !instanceId) {
+        return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
+    }
+    try {
+        const data = await callWapilotApi(`instances/${instanceId}/start`, token, 'POST');
+        return res.json(data);
+    } catch (error) {
+        console.error('[WhatsApp] Start session error:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 5. Logout instance session
+app.post('/api/whatsapp/logout', requireAutomationAdmin, async (req, res) => {
+    const { token, instanceId } = req.body;
+    if (!token || !instanceId) {
+        return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
+    }
+    try {
+        const data = await callWapilotApi(`instances/${instanceId}/logout`, token, 'POST');
+        return res.json(data);
+    } catch (error) {
+        console.error('[WhatsApp] Logout session error:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 6. Send direct text message
+app.post('/api/whatsapp/send-message', requireAutomationAdmin, async (req, res) => {
+    const { token, instanceId, chatId, text } = req.body;
+    if (!token || !instanceId || !chatId || !text) {
+        return res.status(400).json({ success: false, error: 'البيانات المدخلة غير كاملة.' });
+    }
+    try {
+        const cleanChatId = normalizeWhatsAppNumber(chatId);
+        const data = await callWapilotApi(`${instanceId}/send-message`, token, 'POST', {
+            chat_id: cleanChatId,
+            text: text
+        });
+        return res.json(data);
+    } catch (error) {
+        console.error('[WhatsApp] Send message error:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 7. Send automated status notifications (highly secure, no token exposed)
+app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
+    const { requestId, serviceId, status } = req.body;
+    if (!requestId || !serviceId || !status) {
+        return res.status(400).json({ success: false, error: 'بيانات الطلب والحالة مطلوبة.' });
+    }
+
+    try {
+        // Firebase Auth UID
+        const uid = req.user ? req.user.uid : null;
+
+        // Check if user is admin
+        let isAdmin = false;
+        if (firebaseAutomationAuthReady && uid) {
+            const adminSnap = await admin.firestore().doc(`admins/${uid}`).get();
+            isAdmin = adminSnap.exists && adminSnap.data()?.isAdmin === true;
+        } else if (!firebaseAutomationAuthReady) {
+            // Dev environment fallback
+            isAdmin = true;
+        }
+
+        // Fetch request data
+        const requestSnap = await admin.firestore().doc(`serviceRequests_${serviceId}/${requestId}`).get();
+        if (!requestSnap.exists) {
+            return res.status(404).json({ success: false, error: 'الطلب غير موجود.' });
+        }
+        const requestData = requestSnap.data();
+
+        // Security check: must be admin or the request owner
+        if (!isAdmin && requestData.studentId !== uid) {
+            return res.status(403).json({ success: false, error: 'غير مصرح لك بإرسال تنبيه لهذا الطلب.' });
+        }
+
+        // Fetch admin preferences for Wapilot settings
+        const prefsSnap = await admin.firestore().doc('config/adminPreferences').get();
+        const prefs = prefsSnap.exists ? prefsSnap.data() : {};
+
+        const token = prefs.wapilotToken || 'P4VNqf576wkKpew05rKOtdtr24Ug89nEQ4kzslhhs7';
+        const instanceId = prefs.wapilotInstanceId;
+        const globalEnabled = prefs.wapilotEnabled !== false;
+
+        if (!globalEnabled || !token || !instanceId) {
+            return res.json({ success: false, code: 'DISABLED', message: 'خدمة الواتساب معطلة أو لم يتم إعدادها بعد من لوحة التحكم.' });
+        }
+
+        // Check service automated replies settings
+        const serviceReplies = prefs.serviceReplies || {};
+        const serviceConfig = serviceReplies[serviceId] || {};
+
+        if (!serviceConfig.enabled) {
+            return res.json({ success: false, code: 'SERVICE_DISABLED', message: `الرد التلقائي معطل لهذه الخدمة (${serviceId}).` });
+        }
+
+        // Select template by status
+        let template = '';
+        if (status === 'pending' || status === 'submitted') {
+            template = serviceConfig.pendingTemplate || '';
+        } else if (status === 'completed') {
+            template = serviceConfig.completedTemplate || '';
+        } else if (status === 'rejected') {
+            template = serviceConfig.rejectedTemplate || '';
+        } else if (status === 'receipt_sent') {
+            template = serviceConfig.receiptSentTemplate || '';
+        }
+
+        if (!template || !template.trim()) {
+            return res.json({ success: false, code: 'NO_TEMPLATE', message: `لا يوجد قالب رسالة مهيأ لهذه الحالة (${status}).` });
+        }
+
+        // Fetch student details
+        const studentSnap = await admin.firestore().doc(`students/${requestData.studentId}`).get();
+        if (!studentSnap.exists) {
+            return res.status(404).json({ success: false, error: 'بيانات الطالب غير موجودة.' });
+        }
+        const studentData = studentSnap.data();
+        const whatsappNumber = studentData.whatsappNumber || '';
+
+        if (!whatsappNumber) {
+            return res.status(400).json({ success: false, error: 'رقم واتساب الطالب غير مسجل.' });
+        }
+
+        // Normalize phone number
+        const cleanNumber = normalizeWhatsAppNumber(whatsappNumber);
+
+        // Service names static lookup
+        const servicesMap = {
+            '1': 'سجل بياناتك',
+            '2': 'العميل المميز',
+            '3': 'شحن الكتب الدراسية',
+            '4': 'دفع المصروفات الدراسية',
+            '5': 'حل وتسليم تكليفات',
+            '6': 'شهادات اونلاين',
+            '7': 'التقديم علي التحول الرقمي',
+            '8': 'المراجعة النهائية',
+            '9': 'مشروع التخرج',
+            '10': 'استخراج شهادة التخرج',
+            '11': 'استلام و شحن التحول الرقمي'
+        };
+        const serviceNameAr = servicesMap[serviceId] || `خدمة رقم ${serviceId}`;
+
+        // Status names lookup
+        const statusLabels = {
+            'pending': 'قيد الانتظار',
+            'submitted': 'تم التقديم',
+            'receipt_sent': 'تم إرسال الإيصال',
+            'completed': 'مكتمل / مقبول',
+            'rejected': 'مرفوض'
+        };
+        const statusLabel = statusLabels[status] || status;
+
+        // Replace placeholders
+        let messageText = template;
+        const placeholders = {
+            '{name}': studentData.fullNameArabic || '',
+            '{service}': serviceNameAr,
+            '{status}': statusLabel,
+            '{id}': requestId,
+            '{nationalId}': studentData.nationalID || ''
+        };
+        for (const [key, val] of Object.entries(placeholders)) {
+            messageText = messageText.replace(new RegExp(key, 'g'), val);
+        }
+
+        // Send message
+        const result = await callWapilotApi(`${instanceId}/send-message`, token, 'POST', {
+            chat_id: cleanNumber,
+            text: messageText
+        });
+
+        return res.json({ success: true, result });
+    } catch (error) {
+        console.error('[WhatsApp] Auto notify error:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 app.listen(PORT, HOST, () => {

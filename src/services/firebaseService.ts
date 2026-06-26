@@ -42,6 +42,7 @@ import { StudentData, ServiceRequest, ServiceRequestWorkflowStatus, UploadedFile
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
+import { triggerWhatsAppNotification } from '../utils/whatsapp';
 
 const MAX_FILE_SIZE_MB = 10; // Max 10MB per file
 const MAX_DOC_SIZE_KB = 1024; // 1MB Firestore doc limit warning
@@ -1511,6 +1512,14 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
         logger.error('routeRegistrationCompleted update failed', e);
       }
     }
+
+    // إرسال إشعار واتساب تلقائي عند تقديم طلب جديد
+    try {
+      triggerWhatsAppNotification(requestRef.id, request.serviceId, request.status || 'pending');
+    } catch (e) {
+      logger.error('Error triggering WhatsApp notification on request creation:', e);
+    }
+
     return requestRef.id;
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء إضافة الطلب');

@@ -122,6 +122,9 @@ import AdminServicesFilesGrid from '../components/admin/AdminServicesFilesGrid';
 import AdminNewsTab from '../components/admin/AdminNewsTab';
 import AdminStatisticsTab from '../components/admin/AdminStatisticsTab';
 import AdminUsersTab from '../components/admin/AdminUsersTab';
+import AdminWhatsAppTab from '../components/admin/AdminWhatsAppTab';
+import { triggerWhatsAppNotification } from '../utils/whatsapp';
+import { MessageSquare } from 'lucide-react';
 
 
 interface AdminDashboardPageProps {
@@ -262,7 +265,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [students]);
 
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp'>('requests');
   const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
   const [selectedDTColumns, setSelectedDTColumns] = useState<Set<number>>(new Set());
   const [selectedEPRows, setSelectedEPRows] = useState<Set<number>>(new Set());
@@ -1608,6 +1611,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const handleStatusChange = async (requestId: string, status: ServiceRequestWorkflowStatus, serviceId: string) => {
     try {
       await updateServiceRequestStatus(requestId, status, serviceId);
+
+      // إرسال إشعار واتساب تلقائي عند تغيير حالة الطلب
+      triggerWhatsAppNotification(requestId, serviceId, status);
 
       // Trigger Automation Service (Node.js Backend) - Digital Transformation
       if (String(serviceId) === '7' && status === 'completed') {
@@ -2965,6 +2971,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         >
           <Users size={18} />
           المستخدمين
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'whatsapp' ? 'active' : ''}`}
+          onClick={() => setActiveTab('whatsapp')}
+        >
+          <MessageSquare size={18} />
+          الواتساب
         </button>
       </div>
 
@@ -5333,6 +5346,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           showAlert={showAlert}
           setToastState={setToastState}
           ADMIN_USERS_PAGE_SIZE={ADMIN_USERS_PAGE_SIZE}
+        />
+      )}
+      {activeTab === 'whatsapp' && (
+        <AdminWhatsAppTab
+          showAlert={showAlert}
+          showConfirm={showConfirm}
+          adminPrefs={adminPrefs}
+          updateAdminPreferences={updateAdminPreferences}
+          students={students}
         />
       )}
       {false && (
