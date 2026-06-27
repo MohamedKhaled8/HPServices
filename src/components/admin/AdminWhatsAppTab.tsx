@@ -28,6 +28,7 @@ const PLACEHOLDER_TAGS = [
   { tag: '{status}',    label: 'الحالة' },
   { tag: '{id}',        label: 'رقم الطلب' },
   { tag: '{nationalId}',label: 'الرقم القومي' },
+  { tag: '{address}',   label: 'العنوان' },
 ];
 
 
@@ -53,6 +54,7 @@ const TemplateField: React.FC<TemplateFieldProps> = ({ id, label, placeholder, v
     '{status}': 'مكتمل',
     '{id}': 'REQ-001',
     '{nationalId}': '29901234567890',
+    '{address}': 'القاهرة، مصر',
   };
 
   // Insert a tag at the current cursor position of the textarea

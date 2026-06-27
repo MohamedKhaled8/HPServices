@@ -1618,6 +1618,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       let whatsappNumber = '';
       let nationalID = '';
       let serviceName = '';
+      let address = '';
 
       if (request) {
         let studentData: StudentData | null = students[request.studentId] ?? null;
@@ -1632,6 +1633,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           studentName = studentData.fullNameArabic || '';
           whatsappNumber = studentData.whatsappNumber || '';
           nationalID = studentData.nationalID || '';
+          address = studentData.address || '';
+        }
+        if (request.data) {
+          address = request.data.address || request.data.address_details || request.data.deliveryAddress || address;
         }
         const service = SERVICES.find(s => s.id === serviceId);
         if (service) {
@@ -1645,6 +1650,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         whatsappNumber,
         nationalID,
         serviceName,
+        address,
         wapilotToken: adminPrefs?.wapilotToken,
         wapilotInstanceId: adminPrefs?.wapilotInstanceId,
         wapilotEnabled: adminPrefs?.wapilotEnabled,

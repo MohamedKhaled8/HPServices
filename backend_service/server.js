@@ -36,12 +36,17 @@ try {
     console.warn('⚠️ فشل تهيئة Firebase Admin:', e.message);
 }
 
+// ضمان عدم حدوث أي تعارض: إذا لم يتم تهيئة التطبيق الفعلي، يجب أن يظل العلم false دائماً
+if (!admin.apps || admin.apps.length === 0) {
+    firebaseAutomationAuthReady = false;
+}
+
 /**
  * يحمي POST الأتمتة: Bearer ID token من Firebase Auth + مستند admins/{uid}.isAdmin === true
  * بدون أسرار Firebase على السيرفر يُتخطّى التحقق (السلوك القديم).
  */
 async function requireAutomationAdmin(req, res, next) {
-    if (!firebaseAutomationAuthReady) {
+    if (!firebaseAutomationAuthReady || !admin.apps || admin.apps.length === 0) {
         return next();
     }
     if (process.env.AUTOMATION_SKIP_AUTH === '1') {
@@ -2064,7 +2069,7 @@ function callWapilotApi(endpoint, token, method = 'GET', body = null) {
  * Allows access to authenticated users (admin or student).
  */
 async function requireAdminOrSelf(req, res, next) {
-    if (!firebaseAutomationAuthReady) {
+    if (!firebaseAutomationAuthReady || !admin.apps || admin.apps.length === 0) {
         return next();
     }
     if (process.env.AUTOMATION_SKIP_AUTH === '1') {
@@ -2191,17 +2196,17 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
 
         // Check if user is admin
         let isAdmin = false;
-        if (firebaseAutomationAuthReady && uid) {
+        if (firebaseAutomationAuthReady && admin.apps && admin.apps.length > 0 && uid) {
             const adminSnap = await admin.firestore().doc(`admins/${uid}`).get();
             isAdmin = adminSnap.exists && adminSnap.data()?.isAdmin === true;
-        } else if (!firebaseAutomationAuthReady) {
+        } else if (!firebaseAutomationAuthReady || !admin.apps || admin.apps.length === 0) {
             // Dev environment fallback
             isAdmin = true;
         }
 
         // Fetch admin preferences for Wapilot settings
         let prefs = {};
-        if (firebaseAutomationAuthReady) {
+        if (firebaseAutomationAuthReady && admin.apps && admin.apps.length > 0) {
             const prefsSnap = await admin.firestore().doc('config/adminPreferences').get();
             prefs = prefsSnap.exists ? prefsSnap.data() : {};
         }
@@ -2210,33 +2215,21 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
         const instanceId = prefs.wapilotInstanceId || req.body.wapilotInstanceId;
         const globalEnabled = prefs.wapilotEnabled !== false && req.body.wapilotEnabled !== false;
 
-        // VIP Customer (serviceId=2) completed → always bypass global/service enable checks
-        const isVipCompleted = String(serviceId) === '2' && status === 'completed';
-
-        if (!isVipCompleted && (!globalEnabled || !token || !instanceId)) {
-            return res.json({ success: false, code: 'DISABLED', message: 'خدمة الواتساب معطلة أو لم يتم إعدادها بعد من لوحة التحكم.' });
-        }
-
-        // Even VIP must have token + instanceId to be able to call Wapilot
+        // التحقق من وجود بيانات الاتصال الأساسية
         if (!token || !instanceId) {
             return res.json({ success: false, code: 'MISSING_CREDENTIALS', message: 'الرجاء إعداد Wapilot Token و Instance ID من لوحة تحكم الواتساب أولاً.' });
         }
 
-        // Check service automated replies settings
+        // جلب إعدادات القوالب لكل خدمة
         const serviceReplies = prefs.serviceReplies || req.body.serviceReplies || {};
         const serviceConfig = serviceReplies[serviceId] || {};
 
-        if (!isVipCompleted && !serviceConfig.enabled) {
-            return res.json({ success: false, code: 'SERVICE_DISABLED', message: `الرد التلقائي معطل لهذه الخدمة (${serviceId}).` });
-        }
-
-        // Select template by status
+        // اختيار القالب المناسب حسب الحالة
         let template = '';
         if (status === 'pending' || status === 'submitted') {
             template = serviceConfig.pendingTemplate || '';
         } else if (status === 'completed') {
-            // VIP: use custom template if set, otherwise use default Arabic completion message
-            template = serviceConfig.completedTemplate || (isVipCompleted ? 'عزيزي {name}، تم اكتمال طلبك في خدمة {service} بنجاح ✅' : '');
+            template = serviceConfig.completedTemplate || '';
         } else if (status === 'rejected') {
             template = serviceConfig.rejectedTemplate || '';
         } else if (status === 'receipt_sent') {
@@ -2251,8 +2244,9 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
         let whatsappNumber = req.body.whatsappNumber || '';
         let studentName = req.body.studentName || '';
         let nationalID = req.body.nationalID || '';
+        let address = req.body.address || '';
 
-        if (firebaseAutomationAuthReady) {
+        if (firebaseAutomationAuthReady && admin.apps && admin.apps.length > 0) {
             // Fetch request data
             const requestSnap = await admin.firestore().doc(`serviceRequests_${serviceId}/${requestId}`).get();
             if (requestSnap.exists) {
@@ -2267,6 +2261,7 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
                     whatsappNumber = studentData.whatsappNumber || whatsappNumber;
                     studentName = studentData.fullNameArabic || studentName;
                     nationalID = studentData.nationalID || nationalID;
+                    address = studentData.address || address;
                 }
             }
         }
@@ -2311,10 +2306,11 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
             '{service}': serviceNameAr,
             '{status}': statusLabel,
             '{id}': requestId,
-            '{nationalId}': nationalID
+            '{nationalId}': nationalID,
+            '{address}': address
         };
         for (const [key, val] of Object.entries(placeholders)) {
-            messageText = messageText.replace(new RegExp(key, 'g'), val);
+            messageText = messageText.replace(new RegExp(key.replace(/[{}]/g, '\\$&'), 'g'), val || '');
         }
 
         // Send message
