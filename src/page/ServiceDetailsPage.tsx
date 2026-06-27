@@ -696,66 +696,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // Simulate progress for better UX (faster)
+      // Simulate progress for better UX
       setUploadProgress({ uploading: true, progress: 30 });
       await new Promise(resolve => setTimeout(resolve, 75));
       setUploadProgress({ uploading: true, progress: 60 });
 
       await addServiceRequest(request);
 
-      const serviceNameForMsg =
-        service.id === '3' && bookConfig
-          ? bookConfig.serviceName
-          : service.id === '5' && assignmentsConfig
-            ? assignmentsConfig.serviceName
-            : service.id === '8' && finalReviewConfig
-              ? finalReviewConfig.serviceName
-              : service.id === '9' && graduationProjectConfig
-                ? graduationProjectConfig.serviceName
-                : service.nameAr;
-
-      const submitterName = String(
-        requestData.full_name_arabic || requestData.full_name || student?.fullNameArabic || ''
-      ).trim() || '—';
-      const submitterNational = String(requestData.national_id || student?.nationalID || '').trim() || '—';
-      const submitterPhone = String(
-        requestData.whatsapp_number ||
-          requestData.phone_whatsapp ||
-          requestData.phone ||
-          requestData.leader_whatsapp ||
-          student?.whatsappNumber ||
-          ''
-      ).trim() || '—';
-      const rawPrice = requestData.totalPrice;
-      const priceLine =
-        rawPrice != null && rawPrice !== ''
-          ? `${Number(rawPrice).toLocaleString('ar-EG')} ج.م`
-          : '—';
-
-      const waBody = [
-        'السلام عليكم ورحمة الله وبركاته،',
-        '',
-        `تم التقديم على خدمة: ${serviceNameForMsg}`,
-        `الاسم: ${submitterName}`,
-        `الرقم القومي: ${submitterNational}`,
-        `رقم الهاتف / واتساب: ${submitterPhone}`,
-        `المبلغ: ${priceLine}`,
-      ].join('\n');
-
-      const waUrl = `https://wa.me/${POST_SUBMIT_WHATSAPP_MSISDN}?text=${encodeURIComponent(waBody)}`;
-      try {
-        window.open(waUrl, '_blank', 'noopener,noreferrer');
-      } catch {
-        // ignore — المتصفح قد يمنع النافذة الجديدة
-      }
-
       setUploadProgress({ uploading: true, progress: 100 });
       await new Promise(resolve => setTimeout(resolve, 75));
-
-      setSubmitMessage({
-        type: 'success',
-        text: 'تم تقديم الطلب بنجاح!'
-      });
 
       // Special handling for Service 1 (Register Data)
       if (service.id === '1') {
@@ -763,34 +712,21 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         const department = serviceData['department'];
         const grade = serviceData['grade'];
 
-        // Calculate Track
         const calculatedTrack = calculateTrack(college, department, grade);
 
         if (calculatedTrack && student.id) {
-          // Use edited track from serviceData if available, otherwise use calculated track
           const finalTrack = serviceData['track'] || calculatedTrack;
-
-          // Update Student Profile with track
-          const updatedStudentData = {
-            college,
-            department,
-            grade,
-            track: finalTrack
-          };
-
+          const updatedStudentData = { college, department, grade, track: finalTrack };
           await updateStudentData(student.id, updatedStudentData);
-
-          // Update local context immediately to reflect changes
-          setStudent({
-            ...student,
-            ...updatedStudentData
-          });
+          setStudent({ ...student, ...updatedStudentData });
         }
       }
 
-      setTimeout(() => {
-        onSubmitSuccess();
-      }, 2000);
+      // Show success modal — user must click OK to go back to dashboard
+      setSubmitMessage({
+        type: 'success',
+        text: 'تم تقديم الطلب بنجاح!'
+      });
     } catch (error: any) {
       setSubmitMessage({
         type: 'error',
@@ -1967,11 +1903,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         // Show stylish toast instead of alert
                         setShowCopyToast(true);
                         setTimeout(() => setShowCopyToast(false), 3000);
-
-                        // Open InstaPay in new tab
-                        if (method === 'instaPay') {
-                          window.open("https://ipn.eg/S/raoufpk97/instapay/3jZFKt", '_blank', 'noopener,noreferrer');
-                        }
                       }
                     }}>
                       <input
@@ -2083,16 +2014,38 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
           <div className="loading-modal-wrapper">
             <div className={`loading-modal ${submitMessage?.type === 'success' ? 'success-state' : ''}`}>
               {submitMessage?.type === 'success' ? (
-                <div key="success-view" style={{ width: '100%' }}>
+                <div key="success-view" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                   <div className="success-animation-container">
                     <CheckCircle className="success-icon-animated" size={80} />
                   </div>
                   <h3 className="loading-title">
-                    <span>تم بنجاح!</span>
+                    <span>تم تقديم طلبك بنجاح!</span>
                   </h3>
                   <p className="loading-subtitle">
-                    <span>تم إرسال طلبك بنجاح. جاري فتح واتساب للمتابعة — إن لم يفتح، اسمح بالنوافذ المنبثقة للموقع.</span>
+                    <span>تم رفع البيانات وحفظ طلبك بنجاح وجاري مراجعته الآن.</span>
                   </p>
+                  <button
+                    onClick={onSubmitSuccess}
+                    style={{
+                      marginTop: '24px',
+                      padding: '12px 40px',
+                      background: '#10b981',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '10px',
+                      fontSize: '15px',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(16,185,129,0.35)',
+                      transition: 'background 0.2s, transform 0.1s',
+                      width: '100%',
+                      maxWidth: '220px'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#059669'; e.currentTarget.style.transform = 'scale(1.03)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = '#10b981'; e.currentTarget.style.transform = 'scale(1)'; }}
+                  >
+                    موافق
+                  </button>
                 </div>
               ) : (
                 <div key="loading-view" style={{ width: '100%' }}>

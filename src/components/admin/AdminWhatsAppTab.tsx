@@ -721,10 +721,18 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                           <TemplateField
                             id={`tpl-${service.id}-pending`}
-                            label="📨 رسالة التقديم (قيد المراجعة / الانتظار)"
-                            placeholder={`مرحباً {name}، تلقينا طلبك لخدمة {service} بنجاح. رقم الطلب: {id}. وهو قيد المراجعة الآن.`}
+                            label="📨 رسالة قيد الانتظار (قيد المراجعة / الانتظار)"
+                            placeholder={`مرحباً {name}، طلبك لخدمة {service} قيد الانتظار والمراجعة الآن. رقم الطلب: {id}.`}
                             value={config.pendingTemplate || ''}
                             onChange={v => handleTemplateChange(service.id, 'pendingTemplate', v)}
+                            serviceName={service.nameAr}
+                          />
+                          <TemplateField
+                            id={`tpl-${service.id}-submitted`}
+                            label="📨 رسالة تم التقديم (تم تقديم الطلب)"
+                            placeholder={`مرحباً {name}، تم تقديم طلبك لخدمة {service} بنجاح. رقم الطلب: {id}. وسنباشر العمل عليه.`}
+                            value={config.submittedTemplate || ''}
+                            onChange={v => handleTemplateChange(service.id, 'submittedTemplate', v)}
                             serviceName={service.nameAr}
                           />
                           <TemplateField

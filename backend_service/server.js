@@ -2226,8 +2226,10 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
 
         // اختيار القالب المناسب حسب الحالة
         let template = '';
-        if (status === 'pending' || status === 'submitted') {
+        if (status === 'pending') {
             template = serviceConfig.pendingTemplate || '';
+        } else if (status === 'submitted') {
+            template = serviceConfig.submittedTemplate || '';
         } else if (status === 'completed') {
             template = serviceConfig.completedTemplate || '';
         } else if (status === 'rejected') {
