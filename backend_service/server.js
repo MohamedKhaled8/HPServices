@@ -2227,7 +2227,9 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
         const serviceReplies = prefs.serviceReplies || {};
         const serviceConfig = serviceReplies[serviceId] || {};
 
-        if (!serviceConfig.enabled) {
+        const isVipCompleted = String(serviceId) === '2' && status === 'completed';
+
+        if (!serviceConfig.enabled && !isVipCompleted) {
             return res.json({ success: false, code: 'SERVICE_DISABLED', message: `الرد التلقائي معطل لهذه الخدمة (${serviceId}).` });
         }
 
@@ -2236,7 +2238,7 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
         if (status === 'pending' || status === 'submitted') {
             template = serviceConfig.pendingTemplate || '';
         } else if (status === 'completed') {
-            template = serviceConfig.completedTemplate || '';
+            template = serviceConfig.completedTemplate || (isVipCompleted ? 'تم اكتمال طلبك بنجاح' : '');
         } else if (status === 'rejected') {
             template = serviceConfig.rejectedTemplate || '';
         } else if (status === 'receipt_sent') {
