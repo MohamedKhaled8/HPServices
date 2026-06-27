@@ -1515,7 +1515,15 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
 
     // إرسال إشعار واتساب تلقائي عند تقديم طلب جديد
     try {
-      triggerWhatsAppNotification(requestRef.id, request.serviceId, request.status || 'pending');
+      const rd = request.data || {};
+      const whatsappNumber = rd.whatsapp_number || rd.phone_whatsapp || '';
+      const studentName = rd.full_name_arabic || rd.full_name || '';
+      const nationalID = rd.national_id || '';
+      triggerWhatsAppNotification(requestRef.id, request.serviceId, request.status || 'pending', {
+        whatsappNumber,
+        studentName,
+        nationalID
+      });
     } catch (e) {
       logger.error('Error triggering WhatsApp notification on request creation:', e);
     }

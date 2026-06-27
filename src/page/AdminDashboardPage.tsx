@@ -1612,8 +1612,44 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     try {
       await updateServiceRequestStatus(requestId, status, serviceId);
 
+      // جلب بيانات الطالب والخدمة لإرسالها مباشرة كدعم إضافي للسيرفر المحلي
+      const request = serviceRequests.find(r => r.id === requestId);
+      let studentName = '';
+      let whatsappNumber = '';
+      let nationalID = '';
+      let serviceName = '';
+
+      if (request) {
+        let studentData: StudentData | null = students[request.studentId] ?? null;
+        if (!studentData) {
+          try {
+            studentData = await getStudentData(request.studentId);
+          } catch (e) {
+            logger.error('Error fetching student data', e);
+          }
+        }
+        if (studentData) {
+          studentName = studentData.fullNameArabic || '';
+          whatsappNumber = studentData.whatsappNumber || '';
+          nationalID = studentData.nationalID || '';
+        }
+        const service = SERVICES.find(s => s.id === serviceId);
+        if (service) {
+          serviceName = service.nameAr;
+        }
+      }
+
       // إرسال إشعار واتساب تلقائي عند تغيير حالة الطلب
-      triggerWhatsAppNotification(requestId, serviceId, status);
+      triggerWhatsAppNotification(requestId, serviceId, status, {
+        studentName,
+        whatsappNumber,
+        nationalID,
+        serviceName,
+        wapilotToken: adminPrefs?.wapilotToken,
+        wapilotInstanceId: adminPrefs?.wapilotInstanceId,
+        wapilotEnabled: adminPrefs?.wapilotEnabled,
+        serviceReplies: adminPrefs?.serviceReplies
+      });
 
       // Trigger Automation Service (Node.js Backend) - Digital Transformation
       if (String(serviceId) === '7' && status === 'completed') {

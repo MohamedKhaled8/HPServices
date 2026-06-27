@@ -47,7 +47,8 @@ export async function callWhatsAppApi(endpoint: string, body?: any): Promise<any
 export async function triggerWhatsAppNotification(
   requestId: string,
   serviceId: string,
-  status: string
+  status: string,
+  extraData?: Record<string, any>
 ): Promise<any> {
   try {
     logger.log(`Triggering WhatsApp notification: Request=${requestId}, Service=${serviceId}, Status=${status}`);
@@ -55,6 +56,7 @@ export async function triggerWhatsAppNotification(
       requestId,
       serviceId,
       status,
+      ...extraData
     });
     logger.log('WhatsApp notification result:', res);
     return res;

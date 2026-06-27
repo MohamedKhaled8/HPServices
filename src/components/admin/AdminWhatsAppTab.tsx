@@ -12,14 +12,109 @@ import {
   Settings, 
   Play, 
   LogOut,
-  Copy,
-  Check,
   Smartphone
 } from 'lucide-react';
 import { SERVICES } from '../../constants/services';
 import { StudentData } from '../../types';
 import { callWhatsAppApi } from '../../utils/whatsapp';
 import { logger } from '../../utils/logger';
+
+// ─── TemplateField: stable component (must be OUTSIDE AdminWhatsAppTab) ──────
+// Defined here so React never re-mounts it on parent re-render,
+// which would reset the textarea cursor on every keystroke.
+const PLACEHOLDER_TAGS = [
+  { tag: '{name}',       label: 'اسم الطالب' },
+  { tag: '{service}',   label: 'اسم الخدمة' },
+  { tag: '{status}',    label: 'الحالة' },
+  { tag: '{id}',        label: 'رقم الطلب' },
+  { tag: '{nationalId}',label: 'الرقم القومي' },
+];
+
+
+
+
+interface TemplateFieldProps {
+  id: string;
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (val: string) => void;
+  serviceName?: string; // real service name for live preview
+  show?: boolean;
+}
+
+const TemplateField: React.FC<TemplateFieldProps> = ({ id, label, placeholder, value, onChange, serviceName, show = true }) => {
+  if (!show) return null;
+
+  // Build sample map — use real serviceName if provided
+  const sample: Record<string, string> = {
+    '{name}': 'محمد أحمد',
+    '{service}': serviceName || 'الخدمة',
+    '{status}': 'مكتمل',
+    '{id}': 'REQ-001',
+    '{nationalId}': '29901234567890',
+  };
+
+  // Insert a tag at the current cursor position of the textarea
+  const insert = (tag: string) => {
+    const el = document.getElementById(id) as HTMLTextAreaElement | null;
+    if (el) {
+      const s = el.selectionStart ?? value.length;
+      const e = el.selectionEnd ?? value.length;
+      const next = value.slice(0, s) + tag + value.slice(e);
+      onChange(next);
+      setTimeout(() => { el.focus(); el.setSelectionRange(s + tag.length, s + tag.length); }, 0);
+    } else {
+      onChange(value + tag);
+    }
+  };
+
+  // Build live preview
+  const preview = value.trim()
+    ? Object.entries(sample).reduce((msg, [k, v]) =>
+        msg.replace(new RegExp(k.replace(/[{}]/g, '\\$&'), 'g'), v), value)
+    : null;
+
+  return (
+    <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: '#fafafa', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <label style={{ fontSize: '12px', fontWeight: '700', color: '#334155' }}>{label}</label>
+
+      {/* Insert-tag buttons */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+        {PLACEHOLDER_TAGS.map(({ tag, label: tLabel }) => (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => insert(tag)}
+            style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: '11px', fontWeight: '700', cursor: 'pointer', fontFamily: 'monospace' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background='#2563eb'; (e.currentTarget as HTMLButtonElement).style.color='#fff'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background='#eff6ff'; (e.currentTarget as HTMLButtonElement).style.color='#1e40af'; }}
+          >
+            + {tag} <span style={{ opacity: 0.65, fontFamily: 'inherit' }}>({tLabel})</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Textarea */}
+      <textarea
+        id={id}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ width: '100%', minHeight: '80px', padding: '8px 12px', borderRadius: '8px', background: '#fff', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '13px', lineHeight: '1.6', resize: 'vertical', boxSizing: 'border-box' }}
+      />
+
+      {/* Live preview */}
+      {preview && (
+        <div style={{ padding: '10px 14px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+          <span style={{ fontSize: '11px', fontWeight: '700', color: '#15803d', display: 'block', marginBottom: '4px' }}>👁 معاينة (ببيانات تجريبية):</span>
+          <span style={{ fontSize: '12px', color: '#166534', lineHeight: '1.7', whiteSpace: 'pre-wrap', display: 'block' }}>{preview}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface AdminWhatsAppTabProps {
   showAlert: (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
@@ -612,71 +707,50 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                       </div>
                     </div>
 
-                    {/* Card Templates Body */}
+                    {/* Card Templates Body — uses stable <TemplateField> defined outside this component */}
                     {isExpanded && (
                       <div style={{ padding: '16px', background: '#ffffff', borderTop: '1px solid #e2e8f0' }}>
-                        
-                        {/* Placeholder Help */}
-                        <div style={{ padding: '10px 14px', background: '#eff6ff', borderRadius: '6px', marginBottom: '16px', border: '1px solid #bfdbfe' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#1e40af', display: 'block', marginBottom: '4px' }}>💡 الاختصارات المتاحة في القالب:</span>
-                          <span style={{ fontSize: '11px', color: '#1e3a8a', lineHeight: '1.6' }}>
-                            <code style={{ background: '#dbeafe', padding: '2px 6px', borderRadius: '4px', margin: '0 2px', color: '#1e40af', fontWeight: '600' }}>{`{name}`}</code>: اسم الطالب | 
-                            <code style={{ background: '#dbeafe', padding: '2px 6px', borderRadius: '4px', margin: '0 2px', color: '#1e40af', fontWeight: '600' }}>{`{service}`}</code>: اسم الخدمة | 
-                            <code style={{ background: '#dbeafe', padding: '2px 6px', borderRadius: '4px', margin: '0 2px', color: '#1e40af', fontWeight: '600' }}>{`{status}`}</code>: حالة الطلب | 
-                            <code style={{ background: '#dbeafe', padding: '2px 6px', borderRadius: '4px', margin: '0 2px', color: '#1e40af', fontWeight: '600' }}>{`{id}`}</code>: رقم الطلب | 
-                            <code style={{ background: '#dbeafe', padding: '2px 6px', borderRadius: '4px', margin: '0 2px', color: '#1e40af', fontWeight: '600' }}>{`{nationalId}`}</code>: الرقم القومي
-                          </span>
+
+                        {/* Placeholder info bar */}
+                        <div style={{ padding: '8px 14px', background: '#eff6ff', borderRadius: '8px', marginBottom: '14px', border: '1px solid #bfdbfe', fontSize: '11px', color: '#1e40af' }}>
+                          💡 اضغط على الأزرار أدناه لإضافة متغير في مكان المؤشر — يُستبدل تلقائياً ببيانات الطالب عند الإرسال
                         </div>
 
-                        {/* Form Textareas */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                          <div className="form-group-full">
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#334155', fontWeight: '600' }}>الرسالة عند التقديم (قيد المراجعة / الانتظار)</label>
-                            <textarea
-                              className="premium-textarea"
-                              value={config.pendingTemplate || ''}
-                              onChange={e => handleTemplateChange(service.id, 'pendingTemplate', e.target.value)}
-                              placeholder={`مرحباً {name}، لقد تلقينا طلبك لخدمة {service} بنجاح. رقم الطلب الخاص بك هو: {id}. وهو قيد المراجعة الآن.`}
-                              style={{ width: '100%', minHeight: '80px', padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '13px' }}
-                            />
-                          </div>
-
-                          {service.paymentMethods && service.paymentMethods.length > 0 && (
-                            <div className="form-group-full">
-                              <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#334155', fontWeight: '600' }}>الرسالة عند إرسال إيصال الدفع (تم إرسال الإيصال)</label>
-                              <textarea
-                                className="premium-textarea"
-                                value={config.receiptSentTemplate || ''}
-                                onChange={e => handleTemplateChange(service.id, 'receiptSentTemplate', e.target.value)}
-                                placeholder={`مرحباً {name}، تم إرسال إيصال الدفع الخاص بطلبك ({service}) بنجاح. سنقوم بالتحقق من التحويل وتأكيد طلبك قريباً.`}
-                                style={{ width: '100%', minHeight: '80px', padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '13px' }}
-                              />
-                            </div>
-                          )}
-
-                          <div className="form-group-full">
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#334155', fontWeight: '600' }}>الرسالة عند اكتمال الطلب (مقبول / مكتمل)</label>
-                            <textarea
-                              className="premium-textarea"
-                              value={config.completedTemplate || ''}
-                              onChange={e => handleTemplateChange(service.id, 'completedTemplate', e.target.value)}
-                              placeholder={`عزيزي {name}، يسعدنا إبلاغك بأن طلبك لخدمة {service} قد اكتمل وتم بنجاح! شكراً لتعاملك معنا.`}
-                              style={{ width: '100%', minHeight: '80px', padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '13px' }}
-                            />
-                          </div>
-
-                          <div className="form-group-full">
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#334155', fontWeight: '600' }}>الرسالة عند رفض الطلب (مرفوض)</label>
-                            <textarea
-                              className="premium-textarea"
-                              value={config.rejectedTemplate || ''}
-                              onChange={e => handleTemplateChange(service.id, 'rejectedTemplate', e.target.value)}
-                              placeholder={`مرحباً {name}، نود إعلامك بأنه تم رفض طلبك لخدمة {service}. يرجى مراجعة اللوحة أو التواصل مع الدعم لتعديل البيانات المرفوضة.`}
-                              style={{ width: '100%', minHeight: '80px', padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '13px' }}
-                            />
-                          </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <TemplateField
+                            id={`tpl-${service.id}-pending`}
+                            label="📨 رسالة التقديم (قيد المراجعة / الانتظار)"
+                            placeholder={`مرحباً {name}، تلقينا طلبك لخدمة {service} بنجاح. رقم الطلب: {id}. وهو قيد المراجعة الآن.`}
+                            value={config.pendingTemplate || ''}
+                            onChange={v => handleTemplateChange(service.id, 'pendingTemplate', v)}
+                            serviceName={service.nameAr}
+                          />
+                          <TemplateField
+                            id={`tpl-${service.id}-receipt`}
+                            label="🧾 رسالة إيصال الدفع (تم إرسال الإيصال)"
+                            placeholder={`مرحباً {name}، تم إرسال إيصال الدفع لطلبك ({service}) بنجاح. سنتحقق ونؤكد قريباً.`}
+                            value={config.receiptSentTemplate || ''}
+                            onChange={v => handleTemplateChange(service.id, 'receiptSentTemplate', v)}
+                            serviceName={service.nameAr}
+                            show={!!(service.paymentMethods && service.paymentMethods.length > 0)}
+                          />
+                          <TemplateField
+                            id={`tpl-${service.id}-completed`}
+                            label="✅ رسالة الاكتمال (مقبول / مكتمل)"
+                            placeholder={`عزيزي {name}، يسعدنا إبلاغك بأن طلبك لخدمة {service} قد اكتمل بنجاح!`}
+                            value={config.completedTemplate || ''}
+                            onChange={v => handleTemplateChange(service.id, 'completedTemplate', v)}
+                            serviceName={service.nameAr}
+                          />
+                          <TemplateField
+                            id={`tpl-${service.id}-rejected`}
+                            label="❌ رسالة الرفض (مرفوض)"
+                            placeholder={`مرحباً {name}، نود إعلامك بأن طلبك لخدمة {service} قد تم رفضه. يرجى التواصل مع الدعم.`}
+                            value={config.rejectedTemplate || ''}
+                            onChange={v => handleTemplateChange(service.id, 'rejectedTemplate', v)}
+                            serviceName={service.nameAr}
+                          />
                         </div>
-
                       </div>
                     )}
                   </div>

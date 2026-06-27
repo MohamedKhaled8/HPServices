@@ -2199,37 +2199,34 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
             isAdmin = true;
         }
 
-        // Fetch request data
-        const requestSnap = await admin.firestore().doc(`serviceRequests_${serviceId}/${requestId}`).get();
-        if (!requestSnap.exists) {
-            return res.status(404).json({ success: false, error: 'الطلب غير موجود.' });
-        }
-        const requestData = requestSnap.data();
-
-        // Security check: must be admin or the request owner
-        if (!isAdmin && requestData.studentId !== uid) {
-            return res.status(403).json({ success: false, error: 'غير مصرح لك بإرسال تنبيه لهذا الطلب.' });
-        }
-
         // Fetch admin preferences for Wapilot settings
-        const prefsSnap = await admin.firestore().doc('config/adminPreferences').get();
-        const prefs = prefsSnap.exists ? prefsSnap.data() : {};
+        let prefs = {};
+        if (firebaseAutomationAuthReady) {
+            const prefsSnap = await admin.firestore().doc('config/adminPreferences').get();
+            prefs = prefsSnap.exists ? prefsSnap.data() : {};
+        }
 
-        const token = prefs.wapilotToken || 'P4VNqf576wkKpew05rKOtdtr24Ug89nEQ4kzslhhs7';
-        const instanceId = prefs.wapilotInstanceId;
-        const globalEnabled = prefs.wapilotEnabled !== false;
+        const token = prefs.wapilotToken || req.body.wapilotToken || 'P4VNqf576wkKpew05rKOtdtr24Ug89nEQ4kzslhhs7';
+        const instanceId = prefs.wapilotInstanceId || req.body.wapilotInstanceId;
+        const globalEnabled = prefs.wapilotEnabled !== false && req.body.wapilotEnabled !== false;
 
-        if (!globalEnabled || !token || !instanceId) {
+        // VIP Customer (serviceId=2) completed → always bypass global/service enable checks
+        const isVipCompleted = String(serviceId) === '2' && status === 'completed';
+
+        if (!isVipCompleted && (!globalEnabled || !token || !instanceId)) {
             return res.json({ success: false, code: 'DISABLED', message: 'خدمة الواتساب معطلة أو لم يتم إعدادها بعد من لوحة التحكم.' });
         }
 
+        // Even VIP must have token + instanceId to be able to call Wapilot
+        if (!token || !instanceId) {
+            return res.json({ success: false, code: 'MISSING_CREDENTIALS', message: 'الرجاء إعداد Wapilot Token و Instance ID من لوحة تحكم الواتساب أولاً.' });
+        }
+
         // Check service automated replies settings
-        const serviceReplies = prefs.serviceReplies || {};
+        const serviceReplies = prefs.serviceReplies || req.body.serviceReplies || {};
         const serviceConfig = serviceReplies[serviceId] || {};
 
-        const isVipCompleted = String(serviceId) === '2' && status === 'completed';
-
-        if (!serviceConfig.enabled && !isVipCompleted) {
+        if (!isVipCompleted && !serviceConfig.enabled) {
             return res.json({ success: false, code: 'SERVICE_DISABLED', message: `الرد التلقائي معطل لهذه الخدمة (${serviceId}).` });
         }
 
@@ -2238,7 +2235,8 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
         if (status === 'pending' || status === 'submitted') {
             template = serviceConfig.pendingTemplate || '';
         } else if (status === 'completed') {
-            template = serviceConfig.completedTemplate || (isVipCompleted ? 'تم اكتمال طلبك بنجاح' : '');
+            // VIP: use custom template if set, otherwise use default Arabic completion message
+            template = serviceConfig.completedTemplate || (isVipCompleted ? 'عزيزي {name}، تم اكتمال طلبك في خدمة {service} بنجاح ✅' : '');
         } else if (status === 'rejected') {
             template = serviceConfig.rejectedTemplate || '';
         } else if (status === 'receipt_sent') {
@@ -2250,12 +2248,28 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
         }
 
         // Fetch student details
-        const studentSnap = await admin.firestore().doc(`students/${requestData.studentId}`).get();
-        if (!studentSnap.exists) {
-            return res.status(404).json({ success: false, error: 'بيانات الطالب غير موجودة.' });
+        let whatsappNumber = req.body.whatsappNumber || '';
+        let studentName = req.body.studentName || '';
+        let nationalID = req.body.nationalID || '';
+
+        if (firebaseAutomationAuthReady) {
+            // Fetch request data
+            const requestSnap = await admin.firestore().doc(`serviceRequests_${serviceId}/${requestId}`).get();
+            if (requestSnap.exists) {
+                const requestData = requestSnap.data();
+                // Security check: must be admin or the request owner
+                if (!isAdmin && requestData.studentId !== uid) {
+                    return res.status(403).json({ success: false, error: 'غير مصرح لك بإرسال تنبيه لهذا الطلب.' });
+                }
+                const studentSnap = await admin.firestore().doc(`students/${requestData.studentId}`).get();
+                if (studentSnap.exists) {
+                    const studentData = studentSnap.data();
+                    whatsappNumber = studentData.whatsappNumber || whatsappNumber;
+                    studentName = studentData.fullNameArabic || studentName;
+                    nationalID = studentData.nationalID || nationalID;
+                }
+            }
         }
-        const studentData = studentSnap.data();
-        const whatsappNumber = studentData.whatsappNumber || '';
 
         if (!whatsappNumber) {
             return res.status(400).json({ success: false, error: 'رقم واتساب الطالب غير مسجل.' });
@@ -2278,14 +2292,14 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
             '10': 'استخراج شهادة التخرج',
             '11': 'استلام و شحن التحول الرقمي'
         };
-        const serviceNameAr = servicesMap[serviceId] || `خدمة رقم ${serviceId}`;
+        const serviceNameAr = req.body.serviceName || servicesMap[serviceId] || `خدمة رقم ${serviceId}`;
 
         // Status names lookup
         const statusLabels = {
             'pending': 'قيد الانتظار',
             'submitted': 'تم التقديم',
             'receipt_sent': 'تم إرسال الإيصال',
-            'completed': 'مكتمل / مقبول',
+            'completed': 'مكتمل',
             'rejected': 'مرفوض'
         };
         const statusLabel = statusLabels[status] || status;
@@ -2293,11 +2307,11 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
         // Replace placeholders
         let messageText = template;
         const placeholders = {
-            '{name}': studentData.fullNameArabic || '',
+            '{name}': studentName,
             '{service}': serviceNameAr,
             '{status}': statusLabel,
             '{id}': requestId,
-            '{nationalId}': studentData.nationalID || ''
+            '{nationalId}': nationalID
         };
         for (const [key, val] of Object.entries(placeholders)) {
             messageText = messageText.replace(new RegExp(key, 'g'), val);
