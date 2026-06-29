@@ -124,6 +124,35 @@ const TemplateField: React.FC<TemplateFieldProps> = ({ id, label, placeholder, v
   );
 };
 // ─────────────────────────────────────────────────────────────────────────────
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'قيد الانتظار' },
+  { value: 'submitted', label: 'تم التقديم' },
+  { value: 'receipt_sent', label: 'تم إرسال الإيصال' },
+  { value: 'completed', label: 'مكتمل' },
+  { value: 'rejected', label: 'مرفوض' }
+];
+
+const getStudentDetailsForRequest = (request: any, students: Record<string, any>) => {
+  const studentData = request.studentId ? students[request.studentId] : null;
+  
+  let name = '';
+  let phone = '';
+  
+  if (studentData) {
+    name = studentData.fullNameArabic || '';
+    phone = studentData.whatsappNumber || '';
+  }
+  
+  if (request.data) {
+    name = request.data.full_name_arabic || request.data.full_name || request.data.student_names || request.data.names || name;
+    phone = request.data.whatsapp_number || request.data.phone_whatsapp || request.data.leader_whatsapp || request.data.phone || phone;
+  }
+  
+  return {
+    fullNameArabic: name || 'طالب مسجل',
+    whatsappNumber: phone || ''
+  };
+};
 
 interface AdminWhatsAppTabProps {
   showAlert: (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
@@ -131,6 +160,7 @@ interface AdminWhatsAppTabProps {
   adminPrefs: any;
   updateAdminPreferences: (prefs: any) => Promise<void>;
   students: Record<string, StudentData>;
+  serviceRequests: any[];
 }
 
 const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
@@ -138,7 +168,8 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
   showConfirm,
   adminPrefs,
   updateAdminPreferences,
-  students
+  students,
+  serviceRequests
 }) => {
   // Sub-tabs
   const [subTab, setSubTab] = useState<'config' | 'campaign'>('config');
@@ -167,13 +198,17 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
 
   // Direct send/Campaign state
-  const [campaignTarget, setCampaignTarget] = useState<'selected' | 'all' | 'custom'>('selected');
+  const [campaignTarget, setCampaignTarget] = useState<'selected' | 'all' | 'custom' | 'filter'>('selected');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [campaignMessage, setCampaignMessage] = useState('');
   const [isSendingCampaign, setIsSendingCampaign] = useState(false);
   const [campaignProgress, setCampaignProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
   const [campaignLogs, setCampaignLogs] = useState<string[]>([]);
+
+  // Filtering states for Service / Status campaign target
+  const [selectedFilterServiceId, setSelectedFilterServiceId] = useState<string>('');
+  const [selectedFilterStatus, setSelectedFilterStatus] = useState<string>('');
 
   // Custom (external) numbers state
   const [customNumbers, setCustomNumbers] = useState<string[]>([]);
@@ -631,6 +666,36 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
     );
   }, [studentList, searchTerm]);
 
+  // UseMemos for filtering service/status targets
+  const filteredCampaignTargets = useMemo(() => {
+    const reqs = serviceRequests || [];
+    const filtered = reqs.filter(req => {
+      const matchesService = !selectedFilterServiceId || String(req.serviceId) === String(selectedFilterServiceId);
+      const matchesStatus = !selectedFilterStatus || req.status === selectedFilterStatus;
+      return matchesService && matchesStatus;
+    });
+
+    const seen = new Set<string>();
+    const list: { fullNameArabic: string; whatsappNumber: string }[] = [];
+    
+    filtered.forEach(req => {
+      const details = getStudentDetailsForRequest(req, students);
+      if (details.whatsappNumber) {
+        const clean = details.whatsappNumber.trim();
+        if (!seen.has(clean)) {
+          seen.add(clean);
+          list.push(details);
+        }
+      }
+    });
+    
+    return list;
+  }, [serviceRequests, selectedFilterServiceId, selectedFilterStatus, students]);
+
+  const filteredCampaignTargetsCount = useMemo(() => {
+    return filteredCampaignTargets.length;
+  }, [filteredCampaignTargets]);
+
   const handleSelectAllFiltered = () => {
     const updated = new Set(selectedStudentIds);
     filteredStudents.forEach(s => {
@@ -675,6 +740,8 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
         .map(s => ({ fullNameArabic: s.fullNameArabic || 'طالب مسجل', whatsappNumber: s.whatsappNumber }));
     } else if (campaignTarget === 'custom') {
       targets = customNumbers.map(num => ({ fullNameArabic: `رقم خارجي (${num})`, whatsappNumber: num }));
+    } else if (campaignTarget === 'filter') {
+      targets = filteredCampaignTargets;
     }
 
     if (targets.length === 0) {
@@ -1168,7 +1235,6 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
 
             {/* Form layout */}
             <div className="wa-campaign-grid">
-              
               {/* Right Column: Audience definition / selection inputs */}
               <div>
                 <div className="form-group" style={{ marginBottom: '16px' }}>
@@ -1206,10 +1272,19 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                       />
                       أرقام خارجية (مخصصة / ملف Excel أو PDF) ({customNumbers.length} رقم)
                     </label>
-                  </div>
-                </div>
 
-                {campaignTarget === 'custom' && (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#0f172a', fontWeight: '500' }}>
+                      <input
+                        type="radio"
+                        name="campaign_target"
+                        checked={campaignTarget === 'filter'}
+                        onChange={() => setCampaignTarget('filter')}
+                        style={{ width: '16px', height: '16px' }}
+                      />
+                      تصفية بالخدمة والحالة ({filteredCampaignTargetsCount})
+                    </label>
+                  </div>
+                </div>                {campaignTarget === 'custom' && (
                   <>
                     <div style={{ padding: '16px', border: '1px dashed #3b82f6', borderRadius: '10px', background: '#f8fafc', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       
@@ -1573,6 +1648,95 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                     )}
                   </div>
                 )}
+
+                {campaignTarget === 'filter' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: '#334155', fontWeight: '600' }}>حدد الفلاتر لتصفية الطلاب</label>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: '180px' }}>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#475569', fontWeight: 'bold' }}>اختر الخدمة</label>
+                        <select
+                          className="premium-input"
+                          value={selectedFilterServiceId}
+                          onChange={(e) => setSelectedFilterServiceId(e.target.value)}
+                          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', fontSize: '13px' }}
+                        >
+                          <option value="">كل الخدمات</option>
+                          {SERVICES.map(service => (
+                            <option key={service.id} value={service.id}>{service.nameAr}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={{ flex: 1, minWidth: '180px' }}>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#475569', fontWeight: 'bold' }}>اختر حالة الطلب / الدفع</label>
+                        <select
+                          className="premium-input"
+                          value={selectedFilterStatus}
+                          onChange={(e) => setSelectedFilterStatus(e.target.value)}
+                          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', fontSize: '13px' }}
+                        >
+                          <option value="">كل الحالات</option>
+                          {STATUS_OPTIONS.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* قائمة المستهدفين المطابقين */}
+                    <div style={{ marginTop: '8px', borderTop: '1px solid #cbd5e1', paddingTop: '12px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#1e3a8a', fontWeight: 'bold' }}>
+                        الطلاب المطابقون حالياً للتصفية ({filteredCampaignTargetsCount} طالب):
+                      </label>
+                      
+                      <div 
+                        style={{ 
+                          maxHeight: '220px', 
+                          overflowY: 'auto', 
+                          borderRadius: '8px', 
+                          background: '#f8fafc', 
+                          border: '1px solid #cbd5e1',
+                          padding: '8px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
+                        }}
+                      >
+                        {filteredCampaignTargets.length > 0 ? (
+                          filteredCampaignTargets.map((target, idx) => (
+                            <div 
+                              key={target.whatsappNumber + '-' + idx} 
+                              style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center', 
+                                padding: '6px 10px', 
+                                borderRadius: '6px', 
+                                background: '#ffffff',
+                                border: '1px solid #e2e8f0'
+                              }}
+                            >
+                              <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 'bold', textAlign: 'right' }}>
+                                {target.fullNameArabic}
+                              </div>
+                              <span style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
+                                {target.whatsappNumber}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 10px', textAlign: 'center' }}>
+                            <Users size={24} color="#64748b" style={{ marginBottom: '6px' }} />
+                            <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                              لا يوجد طلاب مطابقون لمعايير التصفية المحددة.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Left Column: Message composition and sending actions */}
@@ -1619,6 +1783,21 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                       </p>
                       <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', color: '#ca8a04' }}>
                         العدد المستهدف الحالي: {selectedStudentIds.size} طالب
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {campaignTarget === 'filter' && (
+                  <div style={{ padding: '16px', borderRadius: '10px', border: '1px solid #bfdbfe', background: '#eff6ff', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', textAlign: 'center', marginBottom: '16px' }}>
+                    <Users size={32} color="#2563eb" />
+                    <div>
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#1e3a8a', fontWeight: 'bold' }}>إرسال لطلاب مصفّين بالخدمة والحالة</h4>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#1e40af', lineHeight: '1.5' }}>
+                        سيتم إرسال هذه الرسالة للطلاب المطابقين للفلاتر المحددة على اليمين.
+                      </p>
+                      <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', color: '#2563eb' }}>
+                        العدد المستهدف الحالي: {filteredCampaignTargetsCount} طالب
                       </div>
                     </div>
                   </div>
@@ -1679,7 +1858,8 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                     onClick={handleSendCampaign}
                     disabled={isSendingCampaign || 
                       (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                      (campaignTarget === 'custom' && customNumbers.length === 0)
+                      (campaignTarget === 'custom' && customNumbers.length === 0) ||
+                      (campaignTarget === 'filter' && filteredCampaignTargetsCount === 0)
                     }
                     style={{ 
                       width: '100%', 
@@ -1688,16 +1868,19 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                       border: 'none', 
                       background: (
                         (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                        (campaignTarget === 'custom' && customNumbers.length === 0) ||
+                        (campaignTarget === 'filter' && filteredCampaignTargetsCount === 0)
                       ) ? '#e2e8f0' : '#f59e0b', 
                       color: (
                         (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                        (campaignTarget === 'custom' && customNumbers.length === 0) ||
+                        (campaignTarget === 'filter' && filteredCampaignTargetsCount === 0)
                       ) ? '#94a3b8' : '#fff', 
                       fontWeight: 'bold', 
                       cursor: (
                         (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                        (campaignTarget === 'custom' && customNumbers.length === 0) ||
+                        (campaignTarget === 'filter' && filteredCampaignTargetsCount === 0)
                       ) ? 'not-allowed' : 'pointer',
                       display: 'flex', 
                       alignItems: 'center', 
@@ -1706,7 +1889,8 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                       fontSize: '15px',
                       boxShadow: (
                         (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                        (campaignTarget === 'custom' && customNumbers.length === 0) ||
+                        (campaignTarget === 'filter' && filteredCampaignTargetsCount === 0)
                       ) ? 'none' : '0 4px 6px -1px rgba(245,158,11,0.2)'
                     }}
                   >

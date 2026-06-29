@@ -5404,6 +5404,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           adminPrefs={adminPrefs}
           updateAdminPreferences={updateAdminPreferences}
           students={students}
+          serviceRequests={serviceRequests}
         />
       )}
       {false && (
