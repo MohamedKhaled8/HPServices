@@ -17,7 +17,8 @@ import {
   Upload,
   Plus,
   Trash2,
-  Edit
+  Edit,
+  Lock
 } from 'lucide-react';
 import { SERVICES } from '../../constants/services';
 import { StudentData } from '../../types';
@@ -143,10 +144,13 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
   const [subTab, setSubTab] = useState<'config' | 'campaign'>('config');
 
   // API Config settings
-  const [apiToken, setApiToken] = useState(adminPrefs.wapilotToken || 'QgIkuHYc5lJh5sh1d1GkvwYh0MT5jSBL9Qa6VZw21W');
-  const [instanceId, setInstanceId] = useState(adminPrefs.wapilotInstanceId || '');
-  const [globalEnabled, setGlobalEnabled] = useState(adminPrefs.wapilotEnabled !== false);
+  const [apiToken, setApiToken] = useState<string>(adminPrefs.wapilotToken || '');
+  const [instanceId, setInstanceId] = useState<string>(adminPrefs.wapilotInstanceId || '');
+  const [globalEnabled, setGlobalEnabled] = useState<boolean>(adminPrefs.wapilotEnabled !== false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  // Flag to ensure we only sync from Firebase on the FIRST load, not on every subscription update
+  // This prevents Firebase from overwriting the user's in-progress edits
+  const hasLoadedPrefsRef = useRef(false);
 
   // Instance status & connection state
   const [instances, setInstances] = useState<any[]>([]);
@@ -197,24 +201,64 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
     };
   }, []);
 
-  // Fetch status on instanceId changes
+  // Config unlock state
+  const [isConfigUnlocked, setIsConfigUnlocked] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('admin_whatsapp_config_unlocked') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [lockPasswordInput, setLockPasswordInput] = useState('');
+  const [lockError, setLockError] = useState('');
+
+  const handleUnlockConfig = () => {
+    if (lockPasswordInput === '0100500500@##') {
+      setIsConfigUnlocked(true);
+      setLockError('');
+      try {
+        sessionStorage.setItem('admin_whatsapp_config_unlocked', '1');
+      } catch {
+        // ignore
+      }
+    } else {
+      setLockError('كلمة المرور غير صحيحة!');
+    }
+  };
+
+  // Sync state from Firebase adminPrefs — but ONLY ONCE on first load.
+  // After that, the user controls the form. This prevents Firebase subscription
+  // updates (from unrelated changes) from overwriting the user's in-progress edits.
   useEffect(() => {
-    if (apiToken && instanceId) {
-      checkInstanceStatus(apiToken, instanceId);
+    if (adminPrefs && !hasLoadedPrefsRef.current) {
+      // Only populate when we have actual saved data (prefs have arrived from Firebase)
+      if (adminPrefs.wapilotToken || adminPrefs.wapilotInstanceId) {
+        setApiToken(adminPrefs.wapilotToken || '');
+        setInstanceId(adminPrefs.wapilotInstanceId || '');
+        setGlobalEnabled(adminPrefs.wapilotEnabled !== false);
+        if (adminPrefs.serviceReplies) setServiceReplies(adminPrefs.serviceReplies);
+        hasLoadedPrefsRef.current = true;
+      }
+    }
+  }, [adminPrefs]);
+
+  // Check connection status whenever instanceId changes to a real value
+  useEffect(() => {
+    if (instanceId) {
+      checkInstanceStatus(instanceId);
     }
   }, [instanceId]);
 
-  // Load instances list on mount if token exists
+  // Load instances list once on mount (not on every token keystroke)
   useEffect(() => {
-    if (apiToken) {
-      fetchInstancesList(apiToken);
-    }
+    fetchInstancesList();
   }, []);
 
-  const fetchInstancesList = async (token: string) => {
+  const fetchInstancesList = async () => {
     setIsFetchingInstances(true);
     try {
-      const res = await callWhatsAppApi('instances', { token });
+      // Pass the current UI token so the backend uses it, not the saved Firebase one
+      const res = await callWhatsAppApi('instances', { token: apiToken, wapilotToken: apiToken });
       if (res && res.success && res.instances) {
         setInstances(res.instances);
         // If instanceId is empty, auto-select the first one
@@ -231,18 +275,18 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
     }
   };
 
-  const checkInstanceStatus = async (token: string, instId: string) => {
-    if (!token || !instId) return;
+  const checkInstanceStatus = async (instId: string) => {
+    if (!instId) return;
     setIsCheckingStatus(true);
     setConnectionStatus(null);
     setQrCode(null);
     try {
-      const res = await callWhatsAppApi('status', { token, instanceId: instId });
+      // Pass current UI token so backend doesn't use the stale Firebase value
+      const res = await callWhatsAppApi('status', { instanceId: instId, token: apiToken, wapilotToken: apiToken, wapilotInstanceId: instId });
       if (res && res.success && res.status) {
-        setConnectionStatus(res.status); // WORKING, CONNECTING, DISCONNECTED, etc.
+        setConnectionStatus(res.status);
         if (res.status !== 'WORKING') {
-          // Fetch QR code if not connected
-          fetchQrCode(token, instId);
+          fetchQrCode(instId);
         }
       } else if (res && res.message) {
         setConnectionStatus('error');
@@ -256,11 +300,11 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
     }
   };
 
-  const fetchQrCode = async (token: string, instId: string) => {
+  const fetchQrCode = async (instId: string) => {
     setIsFetchingQr(true);
     setQrCode(null);
     try {
-      const res = await callWhatsAppApi('qr-code', { token, instanceId: instId });
+      const res = await callWhatsAppApi('qr-code', { instanceId: instId, token: apiToken, wapilotToken: apiToken, wapilotInstanceId: instId });
       if (res && res.success && res.qr) {
         setQrCode(res.qr);
       }
@@ -272,12 +316,12 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
   };
 
   const handleStartSession = async () => {
-    if (!apiToken || !instanceId) return;
+    if (!instanceId) return;
     setIsSessionActionLoading(true);
     try {
-      const res = await callWhatsAppApi('start', { token: apiToken, instanceId });
+      const res = await callWhatsAppApi('start', { instanceId, token: apiToken, wapilotToken: apiToken, wapilotInstanceId: instanceId });
       showAlert('تنبيه', 'تم إرسال طلب تشغيل الجلسة، جاري التحقق من الحالة...', 'info');
-      setTimeout(() => checkInstanceStatus(apiToken, instanceId), 3000);
+      setTimeout(() => checkInstanceStatus(instanceId), 3000);
     } catch (err: any) {
       showAlert('خطأ', err.message || 'فشل تشغيل الجلسة', 'error');
     } finally {
@@ -286,13 +330,13 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
   };
 
   const handleLogoutSession = async () => {
-    if (!apiToken || !instanceId) return;
+    if (!instanceId) return;
     showConfirm('تسجيل الخروج', 'هل أنت متأكد من قطع اتصال الواتس اب الحالي؟ سيتطلب إرسال الرسائل مسح كود QR مجدداً.', async () => {
       setIsSessionActionLoading(true);
       try {
-        const res = await callWhatsAppApi('logout', { token: apiToken, instanceId });
+        const res = await callWhatsAppApi('logout', { instanceId, token: apiToken, wapilotToken: apiToken, wapilotInstanceId: instanceId });
         showAlert('نجاح', 'تم تسجيل الخروج وقطع الجلسة بنجاح.', 'success');
-        checkInstanceStatus(apiToken, instanceId);
+        checkInstanceStatus(instanceId);
       } catch (err: any) {
         showAlert('خطأ', err.message || 'فشل تسجيل الخروج', 'error');
       } finally {
@@ -318,7 +362,7 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
       await updateAdminPreferences(updatedPrefs);
       showAlert('نجاح', 'تم حفظ إعدادات ربط واتساب بنجاح.', 'success');
       // Refresh status
-      checkInstanceStatus(apiToken, instanceId);
+      checkInstanceStatus(instanceId);
     } catch (error: any) {
       logger.error('Error saving API settings:', error);
       showAlert('خطأ', 'حدث خطأ أثناء حفظ الإعدادات في خادم البيانات.', 'error');
@@ -669,7 +713,6 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
 
         try {
           const res = await callWhatsAppApi('send-message', {
-            token,
             instanceId: instId,
             chatId: num,
             text: personalizedMessage
@@ -746,19 +789,69 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
       </div>
 
       {subTab === 'config' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          
-          {/* 1. Integration config section */}
-          <div className="config-section" style={{ padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-            <div className="section-header-compact" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-              <div className="header-icon-hex" style={{ padding: '10px', background: 'rgba(37,99,235,0.1)', borderRadius: '8px' }}>
-                <Key size={24} color="#2563eb" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>إعدادات حساب Wapilot</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#475569' }}>أدخل بيانات ربط الحساب للاتصال بـ WhatsApp API.</p>
-              </div>
+        !isConfigUnlocked ? (
+          <div className="config-section" style={{ padding: '32px 24px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', maxWidth: '480px', margin: '40px auto', textAlign: 'center' }}>
+            <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Lock size={24} color="#ef4444" />
             </div>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>قسم إعدادات الربط والردود التلقائية مغلق</h3>
+            <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>يرجى إدخال كلمة المرور المخصصة لإجراء تعديلات على الربط أو قوالب الرسائل.</p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input
+                type="password"
+                className="premium-input"
+                value={lockPasswordInput}
+                onChange={(e) => {
+                  setLockPasswordInput(e.target.value);
+                  setLockError('');
+                }}
+                placeholder="أدخل كلمة مرور الإعدادات..."
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', textAlign: 'center' }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleUnlockConfig();
+                }}
+              />
+              {lockError && <span style={{ color: '#ef4444', fontSize: '12px', fontWeight: 'bold' }}>{lockError}</span>}
+              
+              <button
+                type="button"
+                onClick={handleUnlockConfig}
+                style={{ padding: '10px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(37,99,235,0.2)' }}
+              >
+                فتح قسم الإعدادات
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* 1. Integration config section */}
+            <div className="config-section" style={{ padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+              <div className="section-header-compact" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="header-icon-hex" style={{ padding: '10px', background: 'rgba(37,99,235,0.1)', borderRadius: '8px' }}>
+                    <Key size={24} color="#2563eb" />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>إعدادات حساب Wapilot</h3>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#475569' }}>أدخل بيانات ربط الحساب للاتصال بـ WhatsApp API.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsConfigUnlocked(false);
+                    setLockPasswordInput('');
+                    try {
+                      sessionStorage.removeItem('admin_whatsapp_config_unlocked');
+                    } catch {}
+                  }}
+                  style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #f87171', background: '#fef2f2', color: '#ef4444', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Lock size={12} /> قفل القسم
+                </button>
+              </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div className="form-group">
@@ -802,7 +895,7 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                   )}
                   <button
                     className="action-button-secondary"
-                    onClick={() => fetchInstancesList(apiToken)}
+                    onClick={() => fetchInstancesList()}
                     disabled={isFetchingInstances || !apiToken}
                     style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     title="تحديث قائمة القنوات من Wapilot"
@@ -865,7 +958,7 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                     </button>
                   )}
                   <button
-                    onClick={() => checkInstanceStatus(apiToken, instanceId)}
+                    onClick={() => checkInstanceStatus(instanceId)}
                     disabled={isCheckingStatus}
                     style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', cursor: 'pointer' }}
                     title="تحديث الحالة"
@@ -1054,6 +1147,7 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
           </div>
 
         </div>
+      )
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
@@ -1072,6 +1166,7 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
             {/* Form layout */}
             <div className="wa-campaign-grid">
               
+              {/* Right Column: Audience definition / selection inputs */}
               <div>
                 <div className="form-group" style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#334155', fontWeight: '600' }}>الجمهور المستهدف (المرسل إليهم)</label>
@@ -1301,124 +1396,6 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                   </>
                 )}
 
-                <div className="form-group-full" style={{ marginBottom: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label style={{ margin: 0, fontSize: '13px', color: '#334155', fontWeight: '600' }}>محتوى الرسالة المراد إرسالها</label>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>إدراج متغير:</span>
-                      <button
-                        type="button"
-                        onClick={() => insertPlaceholder('{name}')}
-                        style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.15s' }}
-                        title="سيتم استبداله باسم الطالب تلقائياً (أو 'عميلنا العزيز' للأرقام الخارجية)"
-                      >
-                        {"{الاسم}"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => insertPlaceholder('{phone}')}
-                        style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#16a34a', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.15s' }}
-                        title="سيتم استبداله برقم الهاتف تلقائياً"
-                      >
-                        {"{الهاتف}"}
-                      </button>
-                    </div>
-                  </div>
-                  <textarea
-                    ref={campaignMessageRef}
-                    className="premium-textarea"
-                    value={campaignMessage}
-                    onChange={(e) => setCampaignMessage(e.target.value)}
-                    placeholder="اكتب رسالتك هنا..."
-                    style={{ width: '100%', minHeight: '160px', padding: '12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '14px', lineHeight: '1.6', boxSizing: 'border-box' }}
-                  />
-                  <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: '#64748b' }}>يرجى كتابة نص الرسالة بوضوح وتجنب الروابط المشبوهة لمنع حظر الرقم من WhatsApp.</p>
-                </div>
-
-                {isSendingCampaign ? (
-                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px', color: '#334155', fontWeight: 'bold' }}>
-                      <span>جاري الإرسال: {campaignProgress.current} من {campaignProgress.total}</span>
-                      <span>نسبة الإنجاز: {Math.round((campaignProgress.current / campaignProgress.total) * 100)}%</span>
-                    </div>
-                    {/* Progress Bar */}
-                    <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
-                      <div style={{ height: '100%', width: `${(campaignProgress.current / campaignProgress.total) * 100}%`, background: '#f59e0b', transition: 'width 0.1s' }} />
-                    </div>
-                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', fontWeight: 'bold' }}>
-                      <span style={{ color: '#16a34a' }}>نجح: {campaignProgress.success}</span>
-                      <span style={{ color: '#dc2626' }}>فشل: {campaignProgress.failed}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={handleSendCampaign}
-                    disabled={isSendingCampaign || 
-                      (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                      (campaignTarget === 'custom' && customNumbers.length === 0)
-                    }
-                    style={{ 
-                      width: '100%', 
-                      padding: '12px', 
-                      borderRadius: '8px', 
-                      border: 'none', 
-                      background: (
-                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                        (campaignTarget === 'custom' && customNumbers.length === 0)
-                      ) ? '#e2e8f0' : '#f59e0b', 
-                      color: (
-                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                        (campaignTarget === 'custom' && customNumbers.length === 0)
-                      ) ? '#94a3b8' : '#fff', 
-                      fontWeight: 'bold', 
-                      cursor: (
-                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                        (campaignTarget === 'custom' && customNumbers.length === 0)
-                      ) ? 'not-allowed' : 'pointer',
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      gap: '8px',
-                      fontSize: '15px',
-                      boxShadow: (
-                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
-                        (campaignTarget === 'custom' && customNumbers.length === 0)
-                      ) ? 'none' : '0 4px 6px -1px rgba(245,158,11,0.2)'
-                    }}
-                  >
-                    <Send size={16} />
-                    إرسال الرسائل الآن عبر واتساب
-                  </button>
-                )}
-
-                {/* Live Progress Logs */}
-                {campaignLogs.length > 0 && (
-                  <div style={{ marginTop: '20px' }}>
-                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#334155', fontWeight: '600' }}>سجل عمليات الإرسال الحالية</label>
-                    <div 
-                      style={{ 
-                        height: '140px', 
-                        overflowY: 'auto', 
-                        background: '#0f172a', 
-                        padding: '12px', 
-                        borderRadius: '8px', 
-                        fontFamily: 'monospace', 
-                        fontSize: '12px', 
-                        color: '#34d399', 
-                        lineHeight: '1.6',
-                        border: '1px solid #1e293b'
-                      }}
-                    >
-                      {campaignLogs.map((log, idx) => (
-                        <div key={idx}>{log}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Recipient Selection panel */}
-              <div style={{ flex: 1 }}>
                 {campaignTarget === 'selected' && (
                   <div>
                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#334155', fontWeight: '600' }}>ابحث وحدد الطلاب المستهدفين</label>
@@ -1593,16 +1570,21 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                     )}
                   </div>
                 )}
+              </div>
 
+              {/* Left Column: Message composition and sending actions */}
+              <div>
+                
+                {/* Target Audience Summary Info Card */}
                 {campaignTarget === 'all' && (
-                  <div style={{ padding: '24px', borderRadius: '10px', border: '1px solid #bbf7d0', background: '#f0fdf4', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center' }}>
-                    <Users size={40} color="#16a34a" />
+                  <div style={{ padding: '16px', borderRadius: '10px', border: '1px solid #bbf7d0', background: '#f0fdf4', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', textAlign: 'center', marginBottom: '16px' }}>
+                    <Users size={32} color="#16a34a" />
                     <div>
-                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: '#14532d', fontWeight: 'bold' }}>إرسال عام لجميع الطلاب</h4>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#166534', lineHeight: '1.6' }}>
-                        سيتم إرسال هذه الرسالة إلى جميع الطلاب الذين يمتلكون أرقام هواتف مسجلة في قاعدة البيانات حالياً.
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#14532d', fontWeight: 'bold' }}>إرسال عام لجميع الطلاب</h4>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#166534', lineHeight: '1.5' }}>
+                        سيتم إرسال هذه الرسالة إلى جميع الطلاب الذين يمتلكون أرقام هواتف مسجلة.
                       </p>
-                      <div style={{ marginTop: '12px', fontSize: '13px', fontWeight: 'bold', color: '#15803d' }}>
+                      <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', color: '#15803d' }}>
                         العدد المستهدف الحالي: {studentList.filter(s => !!s.whatsappNumber).length} طالب
                       </div>
                     </div>
@@ -1610,16 +1592,147 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                 )}
 
                 {campaignTarget === 'custom' && (
-                  <div style={{ padding: '24px', borderRadius: '10px', border: '1px solid #bfdbfe', background: '#eff6ff', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center' }}>
-                    <Smartphone size={40} color="#2563eb" />
+                  <div style={{ padding: '16px', borderRadius: '10px', border: '1px solid #bfdbfe', background: '#eff6ff', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', textAlign: 'center', marginBottom: '16px' }}>
+                    <Smartphone size={32} color="#2563eb" />
                     <div>
-                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: '#1e3a8a', fontWeight: 'bold' }}>حملة أرقام خارجية مخصصة</h4>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#1e40af', lineHeight: '1.6' }}>
-                        سيتم إرسال هذه الرسالة إلى الأرقام الخارجية التي قمت بإضافتها أو استيرادها من الملفات.
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#1e3a8a', fontWeight: 'bold' }}>حملة أرقام خارجية مخصصة</h4>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#1e40af', lineHeight: '1.5' }}>
+                        سيتم إرسال هذه الرسالة إلى الأرقام الخارجية التي قمت بإضافتها أو استيرادها.
                       </p>
-                      <div style={{ marginTop: '12px', fontSize: '13px', fontWeight: 'bold', color: '#2563eb' }}>
+                      <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', color: '#2563eb' }}>
                         إجمالي الأرقام المستهدفة حالياً: {customNumbers.length} رقم
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {campaignTarget === 'selected' && (
+                  <div style={{ padding: '16px', borderRadius: '10px', border: '1px solid #fef08a', background: '#fefcbf', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', textAlign: 'center', marginBottom: '16px' }}>
+                    <Users size={32} color="#ca8a04" />
+                    <div>
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#854d0e', fontWeight: 'bold' }}>إرسال لطلاب محددين</h4>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#a16207', lineHeight: '1.5' }}>
+                        سيتم إرسال هذه الرسالة فقط للطلاب الذين قمت بتحديدهم بالبحث بالأعلى.
+                      </p>
+                      <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', color: '#ca8a04' }}>
+                        العدد المستهدف الحالي: {selectedStudentIds.size} طالب
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Message Content composition */}
+                <div className="form-group-full" style={{ marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{ margin: 0, fontSize: '13px', color: '#334155', fontWeight: '600' }}>محتوى الرسالة المراد إرسالها</label>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>إدراج متغير:</span>
+                      <button
+                        type="button"
+                        onClick={() => insertPlaceholder('{name}')}
+                        style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.15s' }}
+                        title="سيتم استبداله باسم الطالب تلقائياً (أو 'عميلنا العزيز' للأرقام الخارجية)"
+                      >
+                        {"{الاسم}"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertPlaceholder('{phone}')}
+                        style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#16a34a', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.15s' }}
+                        title="سيتم استبداله برقم الهاتف تلقائياً"
+                      >
+                        {"{الهاتف}"}
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    ref={campaignMessageRef}
+                    className="premium-textarea"
+                    value={campaignMessage}
+                    onChange={(e) => setCampaignMessage(e.target.value)}
+                    placeholder="اكتب رسالتك هنا..."
+                    style={{ width: '100%', minHeight: '160px', padding: '12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '14px', lineHeight: '1.6', boxSizing: 'border-box' }}
+                  />
+                  <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: '#64748b' }}>يرجى كتابة نص الرسالة بوضوح وتجنب الروابط المشبوهة لمنع حظر الرقم من WhatsApp.</p>
+                </div>
+
+                {isSendingCampaign ? (
+                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px', color: '#334155', fontWeight: 'bold' }}>
+                      <span>جاري الإرسال: {campaignProgress.current} من {campaignProgress.total}</span>
+                      <span>نسبة الإنجاز: {Math.round((campaignProgress.current / campaignProgress.total) * 100)}%</span>
+                    </div>
+                    {/* Progress Bar */}
+                    <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
+                      <div style={{ height: '100%', width: `${(campaignProgress.current / campaignProgress.total) * 100}%`, background: '#f59e0b', transition: 'width 0.1s' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', fontWeight: 'bold' }}>
+                      <span style={{ color: '#16a34a' }}>نجح: {campaignProgress.success}</span>
+                      <span style={{ color: '#dc2626' }}>فشل: {campaignProgress.failed}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleSendCampaign}
+                    disabled={isSendingCampaign || 
+                      (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                      (campaignTarget === 'custom' && customNumbers.length === 0)
+                    }
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px', 
+                      borderRadius: '8px', 
+                      border: 'none', 
+                      background: (
+                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                      ) ? '#e2e8f0' : '#f59e0b', 
+                      color: (
+                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                      ) ? '#94a3b8' : '#fff', 
+                      fontWeight: 'bold', 
+                      cursor: (
+                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                      ) ? 'not-allowed' : 'pointer',
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      gap: '8px',
+                      fontSize: '15px',
+                      boxShadow: (
+                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                      ) ? 'none' : '0 4px 6px -1px rgba(245,158,11,0.2)'
+                    }}
+                  >
+                    <Send size={16} />
+                    إرسال الرسائل الآن عبر واتساب
+                  </button>
+                )}
+
+                {/* Live Progress Logs */}
+                {campaignLogs.length > 0 && (
+                  <div style={{ marginTop: '20px' }}>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#334155', fontWeight: '600' }}>سجل عمليات الإرسال الحالية</label>
+                    <div 
+                      style={{ 
+                        height: '140px', 
+                        overflowY: 'auto', 
+                        background: '#0f172a', 
+                        padding: '12px', 
+                        borderRadius: '8px', 
+                        fontFamily: 'monospace', 
+                        fontSize: '12px', 
+                        color: '#34d399', 
+                        lineHeight: '1.6',
+                        border: '1px solid #1e293b'
+                      }}
+                    >
+                      {campaignLogs.map((log, idx) => (
+                        <div key={idx}>{log}</div>
+                      ))}
                     </div>
                   </div>
                 )}

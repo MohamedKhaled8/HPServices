@@ -2089,13 +2089,28 @@ async function requireAdminOrSelf(req, res, next) {
     }
 }
 
+async function getWapilotCredentials(reqBody) {
+    let prefs = {};
+    if (firebaseAutomationAuthReady && admin.apps && admin.apps.length > 0) {
+        try {
+            const prefsSnap = await admin.firestore().doc('config/adminPreferences').get();
+            prefs = prefsSnap.exists ? prefsSnap.data() : {};
+        } catch (e) {
+            console.error('Error fetching adminPrefs in backend:', e);
+        }
+    }
+    const token = prefs.wapilotToken || reqBody?.token || reqBody?.wapilotToken || 'QgIkuHYc5lJh5sh1d1GkvwYh0MT5jSBL9Qa6VZw21W';
+    const instanceId = prefs.wapilotInstanceId || reqBody?.instanceId || reqBody?.wapilotInstanceId;
+    return { token, instanceId };
+}
+
 // 1. Get available WhatsApp instances
 app.post('/api/whatsapp/instances', requireAutomationAdmin, async (req, res) => {
-    const { token } = req.body;
-    if (!token) {
-        return res.status(400).json({ success: false, error: 'مفتاح الـ API مطلوب.' });
-    }
     try {
+        const { token } = await getWapilotCredentials(req.body);
+        if (!token) {
+            return res.status(400).json({ success: false, error: 'مفتاح الـ API مطلوب.' });
+        }
         const data = await callWapilotApi('instances', token, 'GET');
         return res.json(data);
     } catch (error) {
@@ -2106,11 +2121,11 @@ app.post('/api/whatsapp/instances', requireAutomationAdmin, async (req, res) => 
 
 // 2. Get connection status of an instance
 app.post('/api/whatsapp/status', requireAutomationAdmin, async (req, res) => {
-    const { token, instanceId } = req.body;
-    if (!token || !instanceId) {
-        return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
-    }
     try {
+        const { token, instanceId } = await getWapilotCredentials(req.body);
+        if (!token || !instanceId) {
+            return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
+        }
         const data = await callWapilotApi(`instances/${instanceId}/status`, token, 'GET');
         return res.json(data);
     } catch (error) {
@@ -2121,11 +2136,11 @@ app.post('/api/whatsapp/status', requireAutomationAdmin, async (req, res) => {
 
 // 3. Get connection QR code of an instance
 app.post('/api/whatsapp/qr-code', requireAutomationAdmin, async (req, res) => {
-    const { token, instanceId } = req.body;
-    if (!token || !instanceId) {
-        return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
-    }
     try {
+        const { token, instanceId } = await getWapilotCredentials(req.body);
+        if (!token || !instanceId) {
+            return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
+        }
         const data = await callWapilotApi(`instances/${instanceId}/qr-code`, token, 'GET');
         return res.json(data);
     } catch (error) {
@@ -2136,11 +2151,11 @@ app.post('/api/whatsapp/qr-code', requireAutomationAdmin, async (req, res) => {
 
 // 4. Start instance session
 app.post('/api/whatsapp/start', requireAutomationAdmin, async (req, res) => {
-    const { token, instanceId } = req.body;
-    if (!token || !instanceId) {
-        return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
-    }
     try {
+        const { token, instanceId } = await getWapilotCredentials(req.body);
+        if (!token || !instanceId) {
+            return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
+        }
         const data = await callWapilotApi(`instances/${instanceId}/start`, token, 'POST');
         return res.json(data);
     } catch (error) {
@@ -2151,11 +2166,11 @@ app.post('/api/whatsapp/start', requireAutomationAdmin, async (req, res) => {
 
 // 5. Logout instance session
 app.post('/api/whatsapp/logout', requireAutomationAdmin, async (req, res) => {
-    const { token, instanceId } = req.body;
-    if (!token || !instanceId) {
-        return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
-    }
     try {
+        const { token, instanceId } = await getWapilotCredentials(req.body);
+        if (!token || !instanceId) {
+            return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة مطلوبان.' });
+        }
         const data = await callWapilotApi(`instances/${instanceId}/logout`, token, 'POST');
         return res.json(data);
     } catch (error) {
@@ -2166,11 +2181,15 @@ app.post('/api/whatsapp/logout', requireAutomationAdmin, async (req, res) => {
 
 // 6. Send direct text message
 app.post('/api/whatsapp/send-message', requireAutomationAdmin, async (req, res) => {
-    const { token, instanceId, chatId, text } = req.body;
-    if (!token || !instanceId || !chatId || !text) {
+    const { chatId, text } = req.body;
+    if (!chatId || !text) {
         return res.status(400).json({ success: false, error: 'البيانات المدخلة غير كاملة.' });
     }
     try {
+        const { token, instanceId } = await getWapilotCredentials(req.body);
+        if (!token || !instanceId) {
+            return res.status(400).json({ success: false, error: 'مفتاح الـ API ومعرف الجلسة غير مهيأين.' });
+        }
         const cleanChatId = normalizeWhatsAppNumber(chatId);
         const data = await callWapilotApi(`${instanceId}/send-message`, token, 'POST', {
             chat_id: cleanChatId,
