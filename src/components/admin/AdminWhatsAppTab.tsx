@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   MessageSquare, 
   Key, 
@@ -12,12 +12,18 @@ import {
   Settings, 
   Play, 
   LogOut,
-  Smartphone
+  Smartphone,
+  FileText,
+  Upload,
+  Plus,
+  Trash2,
+  Edit
 } from 'lucide-react';
 import { SERVICES } from '../../constants/services';
 import { StudentData } from '../../types';
 import { callWhatsAppApi } from '../../utils/whatsapp';
 import { logger } from '../../utils/logger';
+import * as XLSX from 'xlsx';
 
 // ─── TemplateField: stable component (must be OUTSIDE AdminWhatsAppTab) ──────
 // Defined here so React never re-mounts it on parent re-render,
@@ -120,7 +126,7 @@ const TemplateField: React.FC<TemplateFieldProps> = ({ id, label, placeholder, v
 
 interface AdminWhatsAppTabProps {
   showAlert: (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
-  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  showConfirm: (title: string, message: string, onConfirm: () => void, confirmLabel?: string) => void;
   adminPrefs: any;
   updateAdminPreferences: (prefs: any) => Promise<void>;
   students: Record<string, StudentData>;
@@ -137,7 +143,7 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
   const [subTab, setSubTab] = useState<'config' | 'campaign'>('config');
 
   // API Config settings
-  const [apiToken, setApiToken] = useState(adminPrefs.wapilotToken || 'P4VNqf576wkKpew05rKOtdtr24Ug89nEQ4kzslhhs7');
+  const [apiToken, setApiToken] = useState(adminPrefs.wapilotToken || 'QgIkuHYc5lJh5sh1d1GkvwYh0MT5jSBL9Qa6VZw21W');
   const [instanceId, setInstanceId] = useState(adminPrefs.wapilotInstanceId || '');
   const [globalEnabled, setGlobalEnabled] = useState(adminPrefs.wapilotEnabled !== false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
@@ -157,13 +163,39 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
 
   // Direct send/Campaign state
-  const [campaignTarget, setCampaignTarget] = useState<'selected' | 'all'>('selected');
+  const [campaignTarget, setCampaignTarget] = useState<'selected' | 'all' | 'custom'>('selected');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [campaignMessage, setCampaignMessage] = useState('');
   const [isSendingCampaign, setIsSendingCampaign] = useState(false);
   const [campaignProgress, setCampaignProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
   const [campaignLogs, setCampaignLogs] = useState<string[]>([]);
+
+  // Custom (external) numbers state
+  const [customNumbers, setCustomNumbers] = useState<string[]>([]);
+  const [manualNumberInput, setManualNumberInput] = useState('');
+  const [bulkNumbersInput, setBulkNumbersInput] = useState('');
+  const [customSearchTerm, setCustomSearchTerm] = useState('');
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const campaignMessageRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Search dropdown open/close states
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Click outside search wrapper handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchWrapperRef.current && !searchWrapperRef.current.contains(event.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Fetch status on instanceId changes
   useEffect(() => {
@@ -266,7 +298,7 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
       } finally {
         setIsSessionActionLoading(false);
       }
-    });
+    }, 'قطع الاتصال');
   };
 
   const handleSaveApiSettings = async () => {
@@ -319,8 +351,230 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
     setServiceReplies(updated);
   };
 
+  // Helper to extract phone numbers from text using Regex
+  const extractPhoneNumbersFromText = (text: string): string[] => {
+    const regex = /(?:\+?20|0)?1[0125]\d{8}\b|\b01[0125]\d{8}\b|\b\+?\d{10,14}\b/g;
+    const matches = text.match(regex) || [];
+    
+    const validNumbers: string[] = [];
+    matches.forEach(m => {
+      const digits = m.replace(/\D/g, '');
+      if (digits.length >= 10 && digits.length <= 15) {
+        let formatted = digits;
+        if (formatted.length === 11 && formatted.startsWith('01')) {
+          // Standard Egyptian format
+        } else if (formatted.length === 12 && formatted.startsWith('201')) {
+          formatted = '0' + formatted.slice(2);
+        } else if (formatted.length === 10 && formatted.startsWith('1')) {
+          formatted = '0' + formatted;
+        }
+        validNumbers.push(formatted);
+      }
+    });
+    return Array.from(new Set(validNumbers));
+  };
+
+  // Helper to parse Excel file
+  const parseExcelFile = (file: File): Promise<string[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const numbers: string[] = [];
+          
+          workbook.SheetNames.forEach(sheetName => {
+            const sheet = workbook.Sheets[sheetName];
+            const sheetJson: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            sheetJson.forEach(row => {
+              if (Array.isArray(row)) {
+                row.forEach(cell => {
+                  if (cell !== undefined && cell !== null) {
+                    const str = String(cell).trim();
+                    const extracted = extractPhoneNumbersFromText(str);
+                    numbers.push(...extracted);
+                  }
+                });
+              }
+            });
+          });
+          resolve(Array.from(new Set(numbers)));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  // Helper to parse PDF file by dynamically loading pdf.js
+  const parsePdfFile = async (file: File): Promise<string[]> => {
+    return new Promise((resolve, reject) => {
+      const runExtraction = async (pdfjsLib: any) => {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          const numbers: string[] = [];
+          
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map((item: any) => item.str).join(' ');
+            const extracted = extractPhoneNumbersFromText(pageText);
+            numbers.push(...extracted);
+          }
+          resolve(Array.from(new Set(numbers)));
+        } catch (err) {
+          reject(err);
+        }
+      };
+
+      if ((window as any).pdfjsLib) {
+        runExtraction((window as any).pdfjsLib);
+      } else {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+        script.onload = () => {
+          const pdfjsLib = (window as any).pdfjsLib;
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+          runExtraction(pdfjsLib);
+        };
+        script.onerror = () => reject(new Error('فشل تحميل مكتبة قراءة ملفات PDF من خادم CDN.'));
+        document.body.appendChild(script);
+      }
+    });
+  };
+
+  // File Upload Handler
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsParsingFile(true);
+    try {
+      let extracted: string[] = [];
+      const extension = file.name.split('.').pop()?.toLowerCase();
+      if (extension === 'xlsx' || extension === 'xls') {
+        extracted = await parseExcelFile(file);
+      } else if (extension === 'pdf') {
+        extracted = await parsePdfFile(file);
+      } else {
+        showAlert('خطأ', 'الملف غير مدعوم. يرجى رفع ملف Excel أو PDF فقط.', 'error');
+        setIsParsingFile(false);
+        return;
+      }
+
+      if (extracted.length === 0) {
+        showAlert('تنبيه', 'لم يتم العثور على أي أرقام هواتف في هذا الملف.', 'warning');
+      } else {
+        const merged = Array.from(new Set([...customNumbers, ...extracted]));
+        setCustomNumbers(merged);
+        showAlert('نجاح', `تم استخراج ${extracted.length} رقم بنجاح من الملف.`, 'success');
+      }
+    } catch (err: any) {
+      logger.error('File parsing error:', err);
+      showAlert('خطأ', `فشل استخراج الأرقام: ${err.message || 'عطل غير معروف'}`, 'error');
+    } finally {
+      setIsParsingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Add Manual Phone Number
+  const handleAddManualNumber = () => {
+    const num = manualNumberInput.replace(/\D/g, '');
+    if (!num) {
+      showAlert('تنبيه', 'يرجى إدخال رقم صحيح.', 'warning');
+      return;
+    }
+    
+    if (num.length < 10 || num.length > 15) {
+      showAlert('تنبيه', 'يجب أن يكون رقم الهاتف بين 10 و 15 رقم.', 'warning');
+      return;
+    }
+
+    let formatted = num;
+    if (formatted.length === 11 && formatted.startsWith('01')) {
+      // standard Egyptian format
+    } else if (formatted.length === 10 && formatted.startsWith('1')) {
+      formatted = '0' + formatted;
+    }
+
+    if (customNumbers.includes(formatted)) {
+      showAlert('تنبيه', 'هذا الرقم مضاف بالفعل في القائمة.', 'warning');
+      return;
+    }
+
+    setCustomNumbers([...customNumbers, formatted]);
+    setManualNumberInput('');
+  };
+
+  // Add Bulk Numbers from Textarea
+  const handleAddBulkNumbers = () => {
+    if (!bulkNumbersInput.trim()) {
+      showAlert('تنبيه', 'يرجى كتابة أو لصق أرقام أولاً.', 'warning');
+      return;
+    }
+    const extracted = extractPhoneNumbersFromText(bulkNumbersInput);
+    if (extracted.length === 0) {
+      showAlert('تنبيه', 'لم يتم العثور على أي أرقام هواتف صالحة في النص المدخل.', 'warning');
+      return;
+    }
+
+    const merged = Array.from(new Set([...customNumbers, ...extracted]));
+    const newlyAddedCount = merged.length - customNumbers.length;
+    
+    setCustomNumbers(merged);
+    setBulkNumbersInput('');
+    showAlert('نجاح', `تمت إضافة ${newlyAddedCount} رقم جديد إلى القائمة (مع استبعاد المكرر).`, 'success');
+  };
+
+  // Remove single number from custom list
+  const handleRemoveCustomNumber = (num: string) => {
+    setCustomNumbers(customNumbers.filter(n => n !== num));
+  };
+
+  // Insert placeholder variables at textarea cursor position
+  const insertPlaceholder = (ph: string) => {
+    const textarea = campaignMessageRef.current;
+    if (!textarea) {
+      // Fallback: append if not focused/rendered yet
+      setCampaignMessage(prev => prev + ph);
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+
+    setCampaignMessage(before + ph + after);
+
+    // Refocus and place cursor after the inserted placeholder
+    setTimeout(() => {
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = start + ph.length;
+    }, 50);
+  };
+
+  // Clear all custom numbers
+  const handleClearAllCustomNumbers = () => {
+    showConfirm('تأكيد الحذف', 'هل أنت متأكد من مسح جميع الأرقام المضافة؟', () => {
+      setCustomNumbers([]);
+    }, 'مسح الكل');
+  };
+
   // Convert student record to list for search
   const studentList = useMemo(() => Object.values(students || {}), [students]);
+
+  // Filter custom numbers based on search term
+  const filteredCustomNumbers = useMemo(() => {
+    const term = customSearchTerm.trim().toLowerCase();
+    if (!term) return customNumbers;
+    return customNumbers.filter(num => num.includes(term));
+  }, [customNumbers, customSearchTerm]);
 
   // Filter students based on search term
   const filteredStudents = useMemo(() => {
@@ -354,7 +608,6 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
   const handleClearSelection = () => {
     setSelectedStudentIds(new Set());
   };
-
   // Execute campaign/Bulk send
   const handleSendCampaign = async () => {
     if (!apiToken || !instanceId) {
@@ -367,32 +620,49 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
     }
 
     // Determine target list
-    let targets: StudentData[] = [];
+    let targets: { fullNameArabic: string; whatsappNumber: string }[] = [];
     if (campaignTarget === 'all') {
-      targets = studentList.filter(s => !!s.whatsappNumber);
-    } else {
-      targets = studentList.filter(s => s.id && selectedStudentIds.has(s.id));
+      targets = studentList
+        .filter(s => !!s.whatsappNumber)
+        .map(s => ({ fullNameArabic: s.fullNameArabic || 'طالب مسجل', whatsappNumber: s.whatsappNumber }));
+    } else if (campaignTarget === 'selected') {
+      targets = studentList
+        .filter(s => s.id && selectedStudentIds.has(s.id))
+        .map(s => ({ fullNameArabic: s.fullNameArabic || 'طالب مسجل', whatsappNumber: s.whatsappNumber }));
+    } else if (campaignTarget === 'custom') {
+      targets = customNumbers.map(num => ({ fullNameArabic: `رقم خارجي (${num})`, whatsappNumber: num }));
     }
 
     if (targets.length === 0) {
-      showAlert('تنبيه', 'يرجى اختيار طالب واحد على الأقل كمسلم للرسالة.', 'warning');
+      showAlert('تنبيه', 'يرجى اختيار مستلم واحد على الأقل للرسالة.', 'warning');
       return;
     }
 
-    showConfirm('تأكيد الحملة', `هل أنت متأكد من إرسال هذه الرسالة إلى ${targets.length} طالب؟`, async () => {
+    showConfirm('تأكيد الحملة', `هل أنت متأكد من إرسال هذه الرسالة إلى ${targets.length} جهة اتصال؟`, async () => {
       setIsSendingCampaign(true);
       setCampaignProgress({ current: 0, total: targets.length, success: 0, failed: 0 });
-      setCampaignLogs([`🚀 بدء حملة الإرسال لـ ${targets.length} طالب...`]);
+      setCampaignLogs([`🚀 بدء حملة الإرسال لـ ${targets.length} جهة اتصال...`]);
 
       const token = apiToken;
       const instId = instanceId;
       const message = campaignMessage;
 
+      let successCount = 0;
+      let failedCount = 0;
+
       // Loop and send sequentially to respect queue
       for (let i = 0; i < targets.length; i++) {
-        const student = targets[i];
-        const num = student.whatsappNumber;
-        const name = student.fullNameArabic || 'طالب مسجل';
+        const target = targets[i];
+        const num = target.whatsappNumber;
+        const name = target.fullNameArabic;
+
+        // Custom number check: fallback to "عميلنا العزيز"
+        const isCustom = name.startsWith('رقم خارجي');
+        const replacementName = isCustom ? 'عميلنا العزيز' : name;
+        
+        const personalizedMessage = message
+          .replace(/{name}/g, replacementName)
+          .replace(/{phone}/g, num);
 
         setCampaignProgress(prev => ({ ...prev, current: i + 1 }));
         setCampaignLogs(prev => [...prev, `جاري الإرسال إلى ${name} (${num})...`]);
@@ -402,18 +672,21 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
             token,
             instanceId: instId,
             chatId: num,
-            text: message
+            text: personalizedMessage
           });
 
           if (res && res.success) {
-            setCampaignProgress(prev => ({ ...prev, success: prev.success + 1 }));
+            successCount++;
+            setCampaignProgress(prev => ({ ...prev, success: successCount }));
             setCampaignLogs(prev => [...prev, `✅ تم الإرسال بنجاح إلى ${name}.`]);
           } else {
-            setCampaignProgress(prev => ({ ...prev, failed: prev.failed + 1 }));
+            failedCount++;
+            setCampaignProgress(prev => ({ ...prev, failed: failedCount }));
             setCampaignLogs(prev => [...prev, `❌ فشل الإرسال إلى ${name}: ${res?.message || 'رد غير معروف'}`]);
           }
         } catch (err: any) {
-          setCampaignProgress(prev => ({ ...prev, failed: prev.failed + 1 }));
+          failedCount++;
+          setCampaignProgress(prev => ({ ...prev, failed: failedCount }));
           setCampaignLogs(prev => [...prev, `❌ خطأ أثناء الإرسال إلى ${name}: ${err.message || 'عطل اتصال'}`]);
         }
 
@@ -422,11 +695,10 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
       }
 
       setIsSendingCampaign(false);
-      setCampaignLogs(prev => [...prev, `🏁 اكتملت الحملة! النجاح: ${campaignProgress.success + 1}، الفشل: ${campaignProgress.failed}`]);
-      showAlert('اكتمل الإرسال', `تم الانتهاء من إرسال الحملة. إجمالي المحاولات: ${targets.length}`, 'success');
-    });
+      setCampaignLogs(prev => [...prev, `🏁 اكتملت الحملة! النجاح: ${successCount}، الفشل: ${failedCount}`]);
+      showAlert('اكتمل الإرسال', `تم الانتهاء من إرسال الحملة. إجمالي المحاولات: ${targets.length}. النجاح: ${successCount}، الفشل: ${failedCount}`, 'success');
+    }, 'نعم، إرسال');
   };
-
   return (
     <div className="admin-content" style={{ direction: 'rtl', color: '#0f172a' }}>
       {/* Sub tabs switcher */}
@@ -798,14 +1070,13 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
             </div>
 
             {/* Form layout */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+            <div className="wa-campaign-grid">
               
-              {/* Message content and settings */}
               <div>
                 <div className="form-group" style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#334155', fontWeight: '600' }}>الجمهور المستهدف (المرسل إليهم)</label>
-                  <div style={{ display: 'flex', gap: '24px' }}>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: '#0f172a', fontWeight: '500' }}>
+                  <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#0f172a', fontWeight: '500' }}>
                       <input
                         type="radio"
                         name="campaign_target"
@@ -816,7 +1087,7 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                       طلاب محددين بالبحث والتحديد ({selectedStudentIds.size})
                     </label>
 
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: '#0f172a', fontWeight: '500' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#0f172a', fontWeight: '500' }}>
                       <input
                         type="radio"
                         name="campaign_target"
@@ -826,17 +1097,240 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                       />
                       جميع الطلاب المسجلين بالنظام ({studentList.length} طالب)
                     </label>
+
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#0f172a', fontWeight: '500' }}>
+                      <input
+                        type="radio"
+                        name="campaign_target"
+                        checked={campaignTarget === 'custom'}
+                        onChange={() => setCampaignTarget('custom')}
+                        style={{ width: '16px', height: '16px' }}
+                      />
+                      أرقام خارجية (مخصصة / ملف Excel أو PDF) ({customNumbers.length} رقم)
+                    </label>
                   </div>
                 </div>
 
+                {campaignTarget === 'custom' && (
+                  <>
+                    <div style={{ padding: '16px', border: '1px dashed #3b82f6', borderRadius: '10px', background: '#f8fafc', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      
+                      {/* Add Single / Manual Number */}
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#475569', fontWeight: 'bold' }}>إضافة رقم يدوي فردي</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            type="text"
+                            className="premium-input"
+                            value={manualNumberInput}
+                            onChange={(e) => setManualNumberInput(e.target.value)}
+                            placeholder="اكتب رقم الهاتف (مثال: 01012345678)..."
+                            style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '13px' }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleAddManualNumber(); }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddManualNumber}
+                            style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', fontSize: '13px' }}
+                          >
+                            <Plus size={14} /> إضافة
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Divider */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '2px 0' }}>
+                        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>أو</span>
+                        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+                      </div>
+
+                      {/* File Upload Dropzone */}
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#475569', fontWeight: 'bold' }}>رفع ملف يحتوي على أرقام (Excel أو PDF)</label>
+                        <div 
+                          onClick={() => fileInputRef.current?.click()}
+                          style={{ 
+                            border: '2px dashed #3b82f6', 
+                            borderRadius: '8px', 
+                            padding: '16px', 
+                            background: '#eff6ff', 
+                            textAlign: 'center', 
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileUpload}
+                            accept=".xlsx,.xls,.pdf"
+                            style={{ display: 'none' }}
+                          />
+                          {isParsingFile ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: '#2563eb' }}>
+                              <Loader2 size={24} className="animate-spin" />
+                              <span style={{ fontSize: '12px', fontWeight: 'bold' }}>جاري استخراج الأرقام من الملف...</span>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', color: '#1e40af' }}>
+                              <Upload size={24} />
+                              <span style={{ fontSize: '12px', fontWeight: 'bold' }}>اضغط هنا لاختيار ملف Excel (.xlsx/.xls) أو PDF</span>
+                              <span style={{ fontSize: '10px', color: '#64748b' }}>سيقوم النظام باستخراج جميع أرقام الهواتف الصالحة منه</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Divider */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '2px 0' }}>
+                        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>أو</span>
+                        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+                      </div>
+
+                      {/* Bulk numbers textarea */}
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#475569', fontWeight: 'bold' }}>لصق أرقام متعددة (مفصولة بفاصلة أو سطر جديد)</label>
+                        <textarea
+                          className="premium-textarea"
+                          value={bulkNumbersInput}
+                          onChange={(e) => setBulkNumbersInput(e.target.value)}
+                          placeholder={`الصق قائمة أرقام هنا، على سبيل المثال:
+01012345678, 01198765432
+01211111111`}
+                          style={{ width: '100%', minHeight: '85px', padding: '8px 12px', borderRadius: '8px', background: '#fff', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddBulkNumbers}
+                          style={{ width: '100%', marginTop: '6px', padding: '8px', borderRadius: '8px', border: 'none', background: '#10b981', color: '#fff', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+                        >
+                          معالجة واستخراج الأرقام من النص
+                        </button>
+                      </div>
+
+                    </div>
+
+                    {/* قائمة الأرقام المضافة */}
+                    <div style={{ marginBottom: '20px', padding: '16px', border: '1px solid #cbd5e1', borderRadius: '10px', background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <label style={{ margin: 0, fontSize: '13px', color: '#1e3a8a', fontWeight: 'bold' }}>قائمة الأرقام الخارجية المضافة</label>
+                        {customNumbers.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleClearAllCustomNumbers}
+                            style={{ border: 'none', background: 'transparent', color: '#ef4444', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '2px' }}
+                          >
+                            <Trash2 size={12} /> حذف الكل
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Custom Numbers Search Bar */}
+                      <div style={{ position: 'relative', marginBottom: '12px' }}>
+                        <input
+                          type="text"
+                          className="premium-input"
+                          value={customSearchTerm}
+                          onChange={(e) => setCustomSearchTerm(e.target.value)}
+                          placeholder="البحث في الأرقام المضافة..."
+                          style={{ width: '100%', padding: '8px 32px 8px 8px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '12px' }}
+                        />
+                        <Search size={14} color="#64748b" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+                      </div>
+
+                      {/* Matching results table */}
+                      <div 
+                        style={{ 
+                          maxHeight: '200px', 
+                          overflowY: 'auto', 
+                          borderRadius: '8px', 
+                          background: '#ffffff', 
+                          border: '1px solid #cbd5e1',
+                          padding: '8px'
+                        }}
+                      >
+                        {filteredCustomNumbers.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {filteredCustomNumbers.map((num, idx) => (
+                              <div 
+                                key={num + '-' + idx} 
+                                style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  justifyContent: 'space-between', 
+                                  padding: '6px 10px', 
+                                  borderRadius: '6px', 
+                                  background: '#f8fafc',
+                                  border: '1px solid #e2e8f0',
+                                  transition: 'all 0.1s'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '12px', color: '#64748b' }}>#{idx + 1}</span>
+                                  <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', fontFamily: 'monospace' }}>{num}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCustomNumber(num)}
+                                  style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  title="حذف الرقم من القائمة"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 10px', textAlign: 'center' }}>
+                            <Users size={24} color="#64748b" style={{ marginBottom: '6px' }} />
+                            <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                              {customNumbers.length === 0 ? 'القائمة فارغة. أضف أرقاماً أعلاه.' : 'لا توجد أرقام مطابقة للبحث.'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {customNumbers.length > 0 && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>
+                          إجمالي الأرقام المضافة حالياً: {customNumbers.length} رقم
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
                 <div className="form-group-full" style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#334155', fontWeight: '600' }}>محتوى الرسالة المراد إرسالها</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{ margin: 0, fontSize: '13px', color: '#334155', fontWeight: '600' }}>محتوى الرسالة المراد إرسالها</label>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>إدراج متغير:</span>
+                      <button
+                        type="button"
+                        onClick={() => insertPlaceholder('{name}')}
+                        style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.15s' }}
+                        title="سيتم استبداله باسم الطالب تلقائياً (أو 'عميلنا العزيز' للأرقام الخارجية)"
+                      >
+                        {"{الاسم}"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertPlaceholder('{phone}')}
+                        style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#16a34a', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.15s' }}
+                        title="سيتم استبداله برقم الهاتف تلقائياً"
+                      >
+                        {"{الهاتف}"}
+                      </button>
+                    </div>
+                  </div>
                   <textarea
+                    ref={campaignMessageRef}
                     className="premium-textarea"
                     value={campaignMessage}
                     onChange={(e) => setCampaignMessage(e.target.value)}
                     placeholder="اكتب رسالتك هنا..."
-                    style={{ width: '100%', minHeight: '160px', padding: '12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '14px', lineHeight: '1.6' }}
+                    style={{ width: '100%', minHeight: '160px', padding: '12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '14px', lineHeight: '1.6', boxSizing: 'border-box' }}
                   />
                   <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: '#64748b' }}>يرجى كتابة نص الرسالة بوضوح وتجنب الروابط المشبوهة لمنع حظر الرقم من WhatsApp.</p>
                 </div>
@@ -859,22 +1353,37 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                 ) : (
                   <button
                     onClick={handleSendCampaign}
-                    disabled={isSendingCampaign || (campaignTarget === 'selected' && selectedStudentIds.size === 0)}
+                    disabled={isSendingCampaign || 
+                      (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                      (campaignTarget === 'custom' && customNumbers.length === 0)
+                    }
                     style={{ 
                       width: '100%', 
                       padding: '12px', 
                       borderRadius: '8px', 
                       border: 'none', 
-                      background: (campaignTarget === 'selected' && selectedStudentIds.size === 0) ? '#e2e8f0' : '#f59e0b', 
-                      color: (campaignTarget === 'selected' && selectedStudentIds.size === 0) ? '#94a3b8' : '#fff', 
+                      background: (
+                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                      ) ? '#e2e8f0' : '#f59e0b', 
+                      color: (
+                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                      ) ? '#94a3b8' : '#fff', 
                       fontWeight: 'bold', 
-                      cursor: (campaignTarget === 'selected' && selectedStudentIds.size === 0) ? 'not-allowed' : 'pointer',
+                      cursor: (
+                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                      ) ? 'not-allowed' : 'pointer',
                       display: 'flex', 
                       alignItems: 'center', 
                       justifyContent: 'center',
                       gap: '8px',
                       fontSize: '15px',
-                      boxShadow: (campaignTarget === 'selected' && selectedStudentIds.size === 0) ? 'none' : '0 4px 6px -1px rgba(245,158,11,0.2)'
+                      boxShadow: (
+                        (campaignTarget === 'selected' && selectedStudentIds.size === 0) ||
+                        (campaignTarget === 'custom' && customNumbers.length === 0)
+                      ) ? 'none' : '0 4px 6px -1px rgba(245,158,11,0.2)'
                     }}
                   >
                     <Send size={16} />
@@ -908,108 +1417,210 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
                 )}
               </div>
 
-              {/* Recipient Selection search (Visible only when campaignTarget is 'selected') */}
-              <div style={{ opacity: campaignTarget === 'selected' ? 1 : 0.4, pointerEvents: campaignTarget === 'selected' ? 'auto' : 'none' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#334155', fontWeight: '600' }}>ابحث وحدد الطلاب المستهدفين</label>
-                
-                {/* Search Bar */}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <div style={{ position: 'relative', flex: 1 }}>
-                    <input
-                      type="text"
-                      className="premium-input"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="ابحث بالاسم، الرقم القومي، رقم الهاتف..."
-                      style={{ width: '100%', padding: '10px 36px 10px 10px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '13px' }}
-                    />
-                    <Search size={16} color="#64748b" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                  </div>
-                </div>
-
-                {/* Matching results table */}
-                <div 
-                  style={{ 
-                    maxHeight: '320px', 
-                    overflowY: 'auto', 
-                    borderRadius: '8px', 
-                    background: '#ffffff', 
-                    border: '1px solid #cbd5e1',
-                    padding: '8px'
-                  }}
-                >
-                  {filteredStudents.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', borderBottom: '1px solid #e2e8f0', marginBottom: '4px' }}>
-                        <button 
-                          onClick={handleSelectAllFiltered}
-                          style={{ border: 'none', background: 'transparent', color: '#2563eb', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
-                        >
-                          تحديد نتائج البحث كاملة
-                        </button>
-                        <button 
-                          onClick={handleClearSelection}
-                          style={{ border: 'none', background: 'transparent', color: '#64748b', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
-                        >
-                          إلغاء التحديد الحالي
-                        </button>
+              {/* Recipient Selection panel */}
+              <div style={{ flex: 1 }}>
+                {campaignTarget === 'selected' && (
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#334155', fontWeight: '600' }}>ابحث وحدد الطلاب المستهدفين</label>
+                    
+                    {/* Search & dropdown container */}
+                    <div ref={searchWrapperRef} style={{ position: 'relative', marginBottom: '12px' }}>
+                      {/* Search Bar */}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <input
+                            type="text"
+                            className="premium-input"
+                            value={searchTerm}
+                            onChange={(e) => {
+                              setSearchTerm(e.target.value);
+                              setShowSearchDropdown(true);
+                            }}
+                            onFocus={() => setShowSearchDropdown(true)}
+                            placeholder="ابحث بالاسم، الرقم القومي، رقم الهاتف..."
+                            style={{ width: '100%', padding: '10px 36px 10px 10px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', fontSize: '13px' }}
+                          />
+                          <Search size={16} color="#64748b" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                        </div>
                       </div>
 
-                      {filteredStudents.map(student => {
-                        const isSelected = student.id && selectedStudentIds.has(student.id);
-                        return (
-                          <div 
-                            key={student.id} 
-                            onClick={() => student.id && handleToggleSelectStudent(student.id)}
-                            style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '10px', 
-                              padding: '8px', 
-                              borderRadius: '6px', 
-                              cursor: 'pointer',
-                              background: isSelected ? '#eff6ff' : 'transparent',
-                              border: isSelected ? '1px solid #bfdbfe' : '1px solid transparent',
-                              transition: 'all 0.1s'
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!isSelected}
-                              onChange={() => {}} // Done via row click
-                              style={{ pointerEvents: 'none' }}
-                            />
-                            <div style={{ flex: 1, textAlign: 'right' }}>
-                              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>{student.fullNameArabic}</div>
-                              <div style={{ fontSize: '11px', color: '#475569', display: 'flex', gap: '8px', marginTop: '2px' }}>
-                                <span>📞 {student.whatsappNumber || 'بدون رقم'}</span>
-                                <span>🆔 {student.nationalID}</span>
+                      {/* Matching results table as dropdown */}
+                      {showSearchDropdown && searchTerm.trim() !== '' && (
+                        <div 
+                          style={{ 
+                            position: 'absolute',
+                            top: 'calc(100% + 4px)',
+                            left: 0,
+                            right: 0,
+                            maxHeight: '220px', 
+                            overflowY: 'auto', 
+                            borderRadius: '8px', 
+                            background: '#ffffff', 
+                            border: '1px solid #cbd5e1',
+                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                            padding: '8px',
+                            zIndex: 50
+                          }}
+                        >
+                          {filteredStudents.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', borderBottom: '1px solid #e2e8f0', marginBottom: '4px' }}>
+                                <button 
+                                  type="button"
+                                  onClick={handleSelectAllFiltered}
+                                  style={{ border: 'none', background: 'transparent', color: '#2563eb', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                                >
+                                  تحديد نتائج البحث كاملة
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={handleClearSelection}
+                                  style={{ border: 'none', background: 'transparent', color: '#64748b', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                                >
+                                  إلغاء التحديد الحالي
+                                </button>
+                              </div>
+
+                              {filteredStudents.map(student => {
+                                const isSelected = student.id && selectedStudentIds.has(student.id);
+                                return (
+                                  <div 
+                                    key={student.id} 
+                                    onClick={() => student.id && handleToggleSelectStudent(student.id)}
+                                    style={{ 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      gap: '10px', 
+                                      padding: '8px', 
+                                      borderRadius: '6px', 
+                                      cursor: 'pointer',
+                                      background: isSelected ? '#eff6ff' : 'transparent',
+                                      border: isSelected ? '1px solid #bfdbfe' : '1px solid transparent',
+                                      transition: 'all 0.1s'
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={!!isSelected}
+                                      onChange={() => {}} // Done via row click
+                                      style={{ pointerEvents: 'none' }}
+                                    />
+                                    <div style={{ flex: 1, textAlign: 'right' }}>
+                                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>{student.fullNameArabic}</div>
+                                      <div style={{ fontSize: '11px', color: '#475569', display: 'flex', gap: '8px', marginTop: '2px' }}>
+                                        <span>📞 {student.whatsappNumber || 'بدون رقم'}</span>
+                                        <span>🆔 {student.nationalID}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px 10px', textAlign: 'center' }}>
+                              <Users size={28} color="#475569" style={{ marginBottom: '6px' }} />
+                              <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                                لا توجد نتائج مطابقة لعملية البحث
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Selected counter info */}
+                    {selectedStudentIds.size > 0 && (
+                      <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b' }}>
+                        <span>تم تحديد: {selectedStudentIds.size} طالب</span>
+                        <button 
+                          type="button"
+                          onClick={handleClearSelection}
+                          style={{ border: 'none', background: 'transparent', color: '#f87171', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          إلغاء اختيار الكل
+                        </button>
+                      </div>
+                    )}
+
+                    {/* الطلاب المختارون حالياً (مباشرة ليرى المستخدم من اختار) */}
+                    {selectedStudentIds.size > 0 && (
+                      <div style={{ marginTop: '16px', borderTop: '1px solid #cbd5e1', paddingTop: '12px' }}>
+                        <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: '#1e3a8a', fontWeight: 'bold' }}>
+                          الطلاب المختارون حالياً ({selectedStudentIds.size} طالب):
+                        </label>
+                        <div style={{ 
+                          maxHeight: '180px', 
+                          overflowY: 'auto', 
+                          background: '#f8fafc', 
+                          border: '1px solid #cbd5e1', 
+                          borderRadius: '8px', 
+                          padding: '8px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
+                        }}>
+                          {studentList.filter(s => s.id && selectedStudentIds.has(s.id)).map(student => (
+                            <div 
+                              key={student.id} 
+                              style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center', 
+                                padding: '6px 10px', 
+                                borderRadius: '6px', 
+                                background: '#ffffff',
+                                border: '1px solid #e2e8f0'
+                              }}
+                            >
+                              <div style={{ fontSize: '12px', color: '#0f172a', fontWeight: 'bold', textAlign: 'right' }}>
+                                {student.fullNameArabic}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>{student.whatsappNumber || 'بدون رقم'}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => student.id && handleToggleSelectStudent(student.id)}
+                                  style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px' }}
+                                  title="إلغاء تحديد هذا الطالب"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 10px', textAlign: 'center' }}>
-                      <Users size={32} color="#475569" style={{ marginBottom: '8px' }} />
-                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-                        {searchTerm.trim() ? 'لا توجد نتائج مطابقة لعملية البحث' : 'ابدأ بكتابة اسم الطالب أو الرقم في خانة البحث لعرض النتائج وتحديدها.'}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                {/* Selected counter info */}
-                {selectedStudentIds.size > 0 && (
-                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8' }}>
-                    <span>تم تحديد: {selectedStudentIds.size} طالب</span>
-                    <button 
-                      onClick={handleClearSelection}
-                      style={{ border: 'none', background: 'transparent', color: '#f87171', cursor: 'pointer', fontSize: '12px' }}
-                    >
-                      تصفير الاختيار
-                    </button>
+                {campaignTarget === 'all' && (
+                  <div style={{ padding: '24px', borderRadius: '10px', border: '1px solid #bbf7d0', background: '#f0fdf4', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center' }}>
+                    <Users size={40} color="#16a34a" />
+                    <div>
+                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: '#14532d', fontWeight: 'bold' }}>إرسال عام لجميع الطلاب</h4>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#166534', lineHeight: '1.6' }}>
+                        سيتم إرسال هذه الرسالة إلى جميع الطلاب الذين يمتلكون أرقام هواتف مسجلة في قاعدة البيانات حالياً.
+                      </p>
+                      <div style={{ marginTop: '12px', fontSize: '13px', fontWeight: 'bold', color: '#15803d' }}>
+                        العدد المستهدف الحالي: {studentList.filter(s => !!s.whatsappNumber).length} طالب
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {campaignTarget === 'custom' && (
+                  <div style={{ padding: '24px', borderRadius: '10px', border: '1px solid #bfdbfe', background: '#eff6ff', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center' }}>
+                    <Smartphone size={40} color="#2563eb" />
+                    <div>
+                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: '#1e3a8a', fontWeight: 'bold' }}>حملة أرقام خارجية مخصصة</h4>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#1e40af', lineHeight: '1.6' }}>
+                        سيتم إرسال هذه الرسالة إلى الأرقام الخارجية التي قمت بإضافتها أو استيرادها من الملفات.
+                      </p>
+                      <div style={{ marginTop: '12px', fontSize: '13px', fontWeight: 'bold', color: '#2563eb' }}>
+                        إجمالي الأرقام المستهدفة حالياً: {customNumbers.length} رقم
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

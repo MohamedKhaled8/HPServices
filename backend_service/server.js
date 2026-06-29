@@ -2211,7 +2211,7 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
             prefs = prefsSnap.exists ? prefsSnap.data() : {};
         }
 
-        const token = prefs.wapilotToken || req.body.wapilotToken || 'P4VNqf576wkKpew05rKOtdtr24Ug89nEQ4kzslhhs7';
+        const token = prefs.wapilotToken || req.body.wapilotToken || 'QgIkuHYc5lJh5sh1d1GkvwYh0MT5jSBL9Qa6VZw21W';
         const instanceId = prefs.wapilotInstanceId || req.body.wapilotInstanceId;
         const globalEnabled = prefs.wapilotEnabled !== false && req.body.wapilotEnabled !== false;
 

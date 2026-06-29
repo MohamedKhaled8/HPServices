@@ -558,6 +558,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     message: string;
     type: 'success' | 'error' | 'info' | 'warning';
     onConfirm?: () => void;
+    confirmLabel?: string;
   }>({
     isOpen: false,
     title: '',
@@ -569,8 +570,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     setAlertConfig({ isOpen: true, title, message, type, onConfirm: undefined });
   };
 
-  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
-    setAlertConfig({ isOpen: true, title, message, type: 'warning', onConfirm });
+  const showConfirm = (title: string, message: string, onConfirm: () => void, confirmLabel?: string) => {
+    setAlertConfig({ isOpen: true, title, message, type: 'warning', onConfirm, confirmLabel: confirmLabel || 'نعم، حذف' });
   };
 
   const scrollActiveCellIntoView = React.useCallback(() => {
@@ -1633,7 +1634,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           studentName = studentData.fullNameArabic || '';
           whatsappNumber = studentData.whatsappNumber || '';
           nationalID = studentData.nationalID || '';
-          address = studentData.address || '';
+          if (studentData.address) {
+            if (typeof studentData.address === 'object') {
+              address = `${studentData.address.governorate || ''}, ${studentData.address.city || ''}, ${studentData.address.street || ''}, ${studentData.address.building || ''}, ${studentData.address.siteNumber || ''}${studentData.address.landmark ? `, ${studentData.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',');
+            } else {
+              address = String(studentData.address);
+            }
+          }
         }
         if (request.data) {
           address = request.data.address || request.data.address_details || request.data.deliveryAddress || address;
@@ -7707,7 +7714,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.2)',
                     }}
                   >
-                    نعم، حذف
+                    {alertConfig.confirmLabel || 'نعم، حذف'}
                   </button>
                   <button
                     onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
