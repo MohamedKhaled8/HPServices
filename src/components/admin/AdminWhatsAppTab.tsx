@@ -714,8 +714,11 @@ const AdminWhatsAppTab: React.FC<AdminWhatsAppTabProps> = ({
         try {
           const res = await callWhatsAppApi('send-message', {
             instanceId: instId,
+            wapilotInstanceId: instId,
             chatId: num,
-            text: personalizedMessage
+            text: personalizedMessage,
+            token: token,
+            wapilotToken: token,
           });
 
           if (res && res.success) {
