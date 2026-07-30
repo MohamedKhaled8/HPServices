@@ -14,6 +14,10 @@ interface AdminStatisticsTabProps {
   statsUnlocked: boolean;
   lockStats: () => void;
   setStatsPasswordOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  statsPasswordOpen: boolean;
+  statsPasswordInput: string;
+  setStatsPasswordInput: React.Dispatch<React.SetStateAction<string>>;
+  tryUnlockStats: () => void;
   setToastState: React.Dispatch<React.SetStateAction<{ message: string; type: 'loading' | 'success' | 'error'; duration?: number } | null>>;
 }
 
@@ -28,6 +32,10 @@ const AdminStatisticsTab: React.FC<AdminStatisticsTabProps> = ({
   statsUnlocked,
   lockStats,
   setStatsPasswordOpen,
+  statsPasswordOpen,
+  statsPasswordInput,
+  setStatsPasswordInput,
+  tryUnlockStats,
   setToastState,
 }) => {
   const maskNumber = (n: number) => (statsUnlocked ? String(n) : '*****');
@@ -147,6 +155,82 @@ const AdminStatisticsTab: React.FC<AdminStatisticsTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* === مودال كلمة مرور الإحصائيات === */}
+      {statsPasswordOpen && !statsUnlocked && (
+        <div
+          style={{
+            position: 'sticky',
+            top: 10,
+            zIndex: 50,
+            marginBottom: 18,
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 12,
+            borderRadius: 12,
+            background: '#0b1220',
+            color: '#e2e8f0',
+            border: '1px solid rgba(148,163,184,0.2)'
+          }}
+        >
+          <span style={{ fontWeight: 700 }}>إظهار أرقام الإحصائيات:</span>
+          <input
+            type="password"
+            value={statsPasswordInput}
+            onChange={(e) => setStatsPasswordInput(e.target.value)}
+            placeholder="أدخل كلمة المرور"
+            style={{
+              width: 220,
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: '1px solid rgba(148,163,184,0.25)',
+              background: '#0f172a',
+              color: '#e2e8f0',
+              outline: 'none'
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                tryUnlockStats();
+              } else if (e.key === 'Escape') {
+                setStatsPasswordOpen(false);
+                setStatsPasswordInput('');
+              }
+            }}
+            autoFocus
+          />
+          <button
+            onClick={tryUnlockStats}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 10,
+              border: '1px solid rgba(148,163,184,0.25)',
+              background: '#1e293b',
+              color: '#e2e8f0',
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            فتح
+          </button>
+          <button
+            onClick={() => { setStatsPasswordOpen(false); setStatsPasswordInput(''); }}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 10,
+              border: '1px solid rgba(148,163,184,0.25)',
+              background: 'transparent',
+              color: '#94a3b8',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            إلغاء
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px' }}>
         {/* Total Stats */}

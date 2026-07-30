@@ -183,6 +183,11 @@ export const validateStudentData = (data: Partial<StudentData>): ValidationError
 
 /** استبدال رقم هاتف مخزن في حقل انستاباي بمعرف الانستاباي الرسمي */
 const INSTAPAY_ID = 'raoufpk97@instapay';
+/** الرقم الهاتفي المرتبط بحساب انستاباي الرسمي */
+const INSTAPAY_PHONE = '01017180923';
+/** الاسم المختصر المعروض مع رقم انستاباي */
+const INSTAPAY_DISPLAY_NAME = "احمد ع م ش ";
+
 export function normalizeInstaPay(val: string | undefined): string {
   if (!val || typeof val !== 'string') return INSTAPAY_ID;
   const t = val.trim();
@@ -190,3 +195,38 @@ export function normalizeInstaPay(val: string | undefined): string {
   if (/^01[0-9]{9}$/.test(t) || /^1[0-9]{9}$/.test(t)) return INSTAPAY_ID;
   return t;
 }
+
+/**
+ * يُرجع الرقم الهاتفي للنسخ عند الضغط على كرت انستاباي
+ * (نسخ الرقم فقط وليس المعرف @instapay)
+ */
+export function getInstaPayPhone(): string {
+  return INSTAPAY_PHONE;
+}
+
+/**
+ * يُرجع النص المعروض على كرت انستاباي بالشكل: "احمد ع م ش 01017180923"
+ */
+export function getInstaPayDisplayLabel(): string {
+  return `${INSTAPAY_DISPLAY_NAME} ${INSTAPAY_PHONE}`;
+}
+
+/** الرقم الهاتفي المرتبط بمحفظة فودافون كاش */
+const VODAFONE_PHONE = '01050889591';
+/** الاسم المعروض مع محفظة فودافون كاش */
+const VODAFONE_DISPLAY_NAME = 'محمد ك ع س';
+
+/**
+ * يُرجع الرقم الهاتفي لفودافون كاش
+ */
+export function getVodafonePhone(): string {
+  return VODAFONE_PHONE;
+}
+
+/**
+ * يُرجع النص المعروض على كرت فودافون كاش بالشكل: "محمد ك ع س 01050889591"
+ */
+export function getVodafoneDisplayLabel(): string {
+  return `${VODAFONE_DISPLAY_NAME} ${VODAFONE_PHONE}`;
+}
+

@@ -7,6 +7,8 @@ require('dotenv').config();
 const automationCrypto = require('./automationCrypto');
 automationCrypto.initFromEnv();
 
+const { selfHealingLocator, healingSelect, healingButton, healingInput } = require('./selfHealingSelector');
+
 const app = express();
 app.use(
     cors({
@@ -1642,9 +1644,15 @@ async function runElectronicPaymentAutomation(data) {
         //   select[1] = الجهة (كلية التربية, كلية الحقوق, ...)
         //   select[0] = نوع الخدمة (يتم تحميله بعد اختيار الكلية)
 
-        console.log('📋 [EP] Step 2: Selecting entity...');
+        console.log('📋 [EP] Step 2: Selecting entity (with Self-Healing)...');
 
-        const entitySelect = page.locator('select').nth(1);
+        const entitySelect = await healingSelect(page, {
+            description: 'قائمة اختيار الكلية / الجهة',
+            nthIndex: 1,
+            expectedOptionHints: ['كلية', 'التربية', 'دراسات عليا', 'الحقوق', 'التجارة'],
+            primarySelector: 'select:nth-of-type(2)'
+        }) || page.locator('select').nth(1);
+
         const entityOptions = await entitySelect.locator('option').allInnerTexts();
         console.log('[EP] Entity options:', entityOptions);
 
@@ -1681,8 +1689,13 @@ async function runElectronicPaymentAutomation(data) {
         console.log('⏳ [EP] Waiting for service-type options to load...');
         await page.waitForTimeout(1500);
 
-        console.log('📘 [EP] Step 2b: Selecting service type...');
-        const serviceSelect = page.locator('select').first();
+        console.log('📘 [EP] Step 2b: Selecting service type (with Self-Healing)...');
+        const serviceSelect = await healingSelect(page, {
+            description: 'قائمة نوع الخدمة',
+            nthIndex: 0,
+            expectedOptionHints: ['دبلوم', 'خدمة', 'شهادة', 'مصاريف'],
+            primarySelector: 'select:first-of-type'
+        }) || page.locator('select').first();
 
         let serviceOptions = await serviceSelect.locator('option').allInnerTexts();
         console.log('[EP] Raw service options:', serviceOptions);
@@ -1746,8 +1759,13 @@ async function runElectronicPaymentAutomation(data) {
         await page.waitForTimeout(300);
 
         // Click "متابعة"
-        console.log('➡️ [EP] Step 4: Clicking متابعة...');
-        const continueButton = page.locator('button, input').filter({ hasText: /متابعه|متابعة/i }).first();
+        console.log('➡️ [EP] Step 4: Clicking متابعة (with Self-Healing)...');
+        const continueButton = await healingButton(page, {
+            description: 'زر متابعة الطلب',
+            expectedTextHints: ['متابعه', 'متابعة', 'تأكيد', 'Submit', 'Next'],
+            primarySelector: 'button:has-text("متابعة"), input[value*="متابعة"]'
+        }) || page.locator('button, input').filter({ hasText: /متابعه|متابعة/i }).first();
+
         if (await continueButton.isVisible({ timeout: 5000 }).catch(() => false)) {
             await continueButton.click();
             await Promise.race([

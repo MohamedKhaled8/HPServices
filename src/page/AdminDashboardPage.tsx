@@ -411,6 +411,45 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     setCellValue?: (row: number, col: number, value: string) => void;
   } | null>(null);
 
+  // Server Automation Health Badge State
+  const [serverHealth, setServerHealth] = useState<{
+    status: 'checking' | 'online' | 'offline';
+    buildTag?: string;
+    details?: string;
+  }>({ status: 'checking' });
+
+  const checkServerHealth = useCallback(async () => {
+    setServerHealth(prev => ({ ...prev, status: 'checking' }));
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const res = await fetch(`${apiUrl}/api/automation-health`, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        setServerHealth({
+          status: 'online',
+          buildTag: data.buildTag || data.dtApi || 'جاهز',
+          details: `السيرفر متصل بنجاح | الاصدار: ${data.buildTag || '2.1'}`
+        });
+      } else {
+        setServerHealth({
+          status: 'offline',
+          details: 'السيرفر لا يجيب بشكل صحيح'
+        });
+      }
+    } catch (err: any) {
+      setServerHealth({
+        status: 'offline',
+        details: 'تعذر الاتصال بالسيرفر: ' + (err.message || 'خطأ شبكة')
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    checkServerHealth();
+    const interval = setInterval(checkServerHealth, 35000);
+    return () => clearInterval(interval);
+  }, [checkServerHealth]);
+
   const dtCodesIndex = useMemo(() => {
     const map: Record<string, any> = {};
     dtCodes.forEach(code => {
@@ -2950,7 +2989,58 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       <div className="admin-header">
         <div className="admin-header-content">
           <h1>لوحة تحكم الإدارة</h1>
-          <div className="admin-actions">
+          <div className="admin-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {/* Server Automation Health Badge */}
+            <div
+              title={serverHealth.status === 'online' ? 'الخدمة متصلة وتعمل كالمعتاد' : serverHealth.status === 'offline' ? 'تعذر الاتصال بخدمة الأتمتة' : 'جاري التحقق من حالة الاتصال'}
+              onClick={checkServerHealth}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 14px',
+                borderRadius: '20px',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                border: serverHealth.status === 'online'
+                  ? '1px solid rgba(16, 185, 129, 0.35)'
+                  : serverHealth.status === 'offline'
+                  ? '1px solid rgba(239, 68, 68, 0.35)'
+                  : '1px solid rgba(245, 158, 11, 0.35)',
+                background: serverHealth.status === 'online'
+                  ? 'rgba(16, 185, 129, 0.08)'
+                  : serverHealth.status === 'offline'
+                  ? 'rgba(239, 68, 68, 0.08)'
+                  : 'rgba(245, 158, 11, 0.08)',
+                color: serverHealth.status === 'online'
+                  ? '#059669'
+                  : serverHealth.status === 'offline'
+                  ? '#dc2626'
+                  : '#d97706',
+                transition: 'all 0.25s ease',
+                userSelect: 'none'
+              }}
+            >
+              <span
+                style={{
+                  width: '9px',
+                  height: '9px',
+                  borderRadius: '50%',
+                  background: serverHealth.status === 'online' ? '#10b981' : serverHealth.status === 'offline' ? '#ef4444' : '#f59e0b',
+                  boxShadow: serverHealth.status === 'online' ? '0 0 8px #10b981' : 'none',
+                  animation: serverHealth.status === 'checking' ? 'pulse 1s infinite' : 'none'
+                }}
+              />
+              <span>
+                {serverHealth.status === 'online'
+                  ? 'حالة الخدمة: نشط 🟢'
+                  : serverHealth.status === 'offline'
+                  ? 'حالة الخدمة: متوقف 🔴'
+                  : 'جاري التحقق...'}
+              </span>
+            </div>
+
             <button onClick={onBack} className="back-button">
               رجوع
             </button>
@@ -7374,9 +7464,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           statsUnlocked={statsUnlocked}
           lockStats={lockStats}
           setStatsPasswordOpen={setStatsPasswordOpen}
+          statsPasswordOpen={statsPasswordOpen}
+          statsPasswordInput={statsPasswordInput}
+          setStatsPasswordInput={setStatsPasswordInput}
+          tryUnlockStats={tryUnlockStats}
           setToastState={setToastState}
         />
       )}
+
       {activeTab === 'dataExtraction' && (
         <div className="admin-content">
           <div className="section-header">

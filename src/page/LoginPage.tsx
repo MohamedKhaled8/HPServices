@@ -151,9 +151,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
           </div>
         </div>
 
-        <div className="auth-panel-quote">
-          "طلب العلم فريضة على كل مسلم"
-        </div>
+
       </div>
 
       {/* ─── RIGHT FORM PANEL ─── */}
