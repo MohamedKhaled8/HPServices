@@ -102,7 +102,8 @@ import {
   ChevronDown,
   Folder,
   Key,
-  Lock
+  Lock,
+  Scan
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
@@ -125,6 +126,7 @@ import AdminUsersTab from '../components/admin/AdminUsersTab';
 import AdminWhatsAppTab from '../components/admin/AdminWhatsAppTab';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
 import { MessageSquare } from 'lucide-react';
+import DataExtractionService from '../components/DataExtractionService';
 
 
 interface AdminDashboardPageProps {
@@ -247,6 +249,46 @@ const normalizeWorkflowStatus = (s: string | undefined): ServiceRequestWorkflowS
   return 'pending';
 };
 
+interface DebouncedSearchInputProps {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder: string;
+  className: string;
+}
+
+const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
+  value,
+  onChange,
+  placeholder,
+  className
+}) => {
+  const [localVal, setLocalVal] = useState(value);
+
+  useEffect(() => {
+    setLocalVal(value);
+  }, [value]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      onChange(localVal);
+    }, 300); // 300ms debounce
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [localVal, onChange]);
+
+  return (
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={localVal}
+      onChange={(e) => setLocalVal(e.target.value)}
+      className={className}
+    />
+  );
+};
+
 const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBack, onAssignmentsClick }) => {
   const { student } = useStudent();
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
@@ -265,7 +307,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [students]);
 
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp' | 'dataExtraction'>('requests');
   const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
   const [selectedDTColumns, setSelectedDTColumns] = useState<Set<number>>(new Set());
   const [selectedEPRows, setSelectedEPRows] = useState<Set<number>>(new Set());
@@ -2608,48 +2650,58 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (selectedServiceId !== deferredRequestsServiceId) return [];
     const pool = requestsByServiceId[selectedServiceId] ?? [];
     const term = serviceSearchTerm.toLowerCase().trim();
-    return pool
-      .filter((request) => {
-        if (!term) return true;
-        const studentData = students[request.studentId];
 
-        const dataMatch = Object.values(request.data || {}).some(
-          (val) => val && String(val).toLowerCase().includes(term)
-        );
-        if (dataMatch) return true;
+    // 1. Filter the requests using a high-performance, allocation-free loop
+    const filtered = pool.filter((request) => {
+      if (!term) return true;
+      const studentData = students[request.studentId];
 
-        if (studentData) {
-          if (studentData.fullNameArabic?.toLowerCase().includes(term)) return true;
-          if (studentData.nationalID?.includes(term)) return true;
-          if (studentData.whatsappNumber?.includes(term)) return true;
-          if (studentData.email?.toLowerCase().includes(term)) return true;
+      let dataMatch = false;
+      if (request.data) {
+        for (const key in request.data) {
+          const val = request.data[key];
+          if (val && String(val).toLowerCase().includes(term)) {
+            dataMatch = true;
+            break;
+          }
         }
+      }
+      if (dataMatch) return true;
 
-        const statusAr = workflowStatusLabelAr(request.status);
-        if (statusAr.includes(term)) return true;
+      if (studentData) {
+        if (studentData.fullNameArabic?.toLowerCase().includes(term)) return true;
+        if (studentData.nationalID?.includes(term)) return true;
+        if (studentData.whatsappNumber?.includes(term)) return true;
+        if (studentData.email?.toLowerCase().includes(term)) return true;
+      }
 
-        if (request.createdAt) {
-          const dateStr = new Date(request.createdAt).toLocaleDateString('ar-EG');
-          if (dateStr.includes(term)) return true;
-        }
+      const statusAr = workflowStatusLabelAr(request.status);
+      if (statusAr.includes(term)) return true;
 
-        return false;
-      })
-      .sort((a, b) => {
-        const nameA = (
-          a.data.full_name_arabic ||
-          a.data.full_name ||
-          students[a.studentId]?.fullNameArabic ||
-          ''
-        ).toLowerCase();
-        const nameB = (
-          b.data.full_name_arabic ||
-          b.data.full_name ||
-          students[b.studentId]?.fullNameArabic ||
-          ''
-        ).toLowerCase();
-        return nameA.localeCompare(nameB, 'ar');
-      });
+      if (request.createdAt) {
+        const dateStr = new Date(request.createdAt).toLocaleDateString('ar-EG');
+        if (dateStr.includes(term)) return true;
+      }
+
+      return false;
+    });
+
+    // 2. Pre-compute sorting keys (Schwartzian transform) to prevent O(N log N) redundant lookups
+    const mapped = filtered.map((req) => {
+      const name = (
+        req.data?.full_name_arabic ||
+        req.data?.full_name ||
+        students[req.studentId]?.fullNameArabic ||
+        ''
+      ).toLowerCase();
+      return { req, name };
+    });
+
+    // 3. Sort using pre-computed keys
+    mapped.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
+    // 4. Extract sorted requests
+    return mapped.map((item) => item.req);
   }, [dataReady, selectedServiceId, deferredRequestsServiceId, requestsByServiceId, serviceSearchTerm, students]);
 
   const getStatusBadge = (status: string | undefined) => {
@@ -3028,6 +3080,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <MessageSquare size={18} />
           الواتساب
         </button>
+        <button
+          className={`tab-button ${activeTab === 'dataExtraction' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dataExtraction')}
+        >
+          <Scan size={18} />
+          استخراج البيانات
+        </button>
       </div>
 
       {activeTab === 'news' && (
@@ -3304,6 +3363,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         break;
                       case '11': // استلام و شحن التحول الرقمي
                         columns = [colName, colWhatsapp, colNationalId, colAddress, colTotalPrice];
+                        break;
+                      case '12': // استخراج البيانات
+                        columns = [colName, colWhatsapp, colNationalId];
                         break;
                       default:
                         // Default order for other services
@@ -3875,6 +3937,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   case '9': rowValues = [colStudentNamesVal, colLeaderWhatsappVal, colTrackVal, colProjectTitleVal, colGroupLinkVal]; break;
                                   case '10': rowValues = [colNameVal, colWhatsappVal, colDiplomaYearVal, colTrackVal, colDiplomaTypeVal, colTotalPriceVal]; break;
                                   case '11': rowValues = [colNameVal, colWhatsappVal, colNationalIdVal, colAddressVal, colTotalPriceVal]; break;
+                                  case '12': rowValues = [colNameVal, colWhatsappVal, colNationalIdVal]; break;
                                   default:
                                     rowValues = [colNameVal, colNationalIdVal, colWhatsappVal, colEmailVal];
                                     if (hasAddress) rowValues.push(colAddressVal);
@@ -7313,6 +7376,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           setStatsPasswordOpen={setStatsPasswordOpen}
           setToastState={setToastState}
         />
+      )}
+      {activeTab === 'dataExtraction' && (
+        <div className="admin-content">
+          <div className="section-header">
+            <h2>أداة استخراج البيانات بالذكاء الاصطناعي</h2>
+          </div>
+          <div className="admin-data-extraction-wrapper" style={{ padding: '20px', background: '#fff', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+            <DataExtractionService />
+          </div>
+        </div>
       )}
       {false && (() => {
         // --- STATISTICS CALCULATION ENGINE ---

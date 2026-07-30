@@ -8,6 +8,7 @@ import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, Certifi
 import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils/trackUtils';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
+import DataExtractionService from '../components/DataExtractionService';
 import { logger } from '../utils/logger';
 import { normalizeInstaPay } from '../utils/validation';
 import '../styles/ServiceDetailsPage.css';
@@ -755,6 +756,24 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             <p>عذراً، هذه الخدمة غير متوفرة في الوقت الحالي. يرجى مراجعة الإدارة أو المحاولة لاحقاً.</p>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ─── Data Extraction Service (service 12) — Custom UI ───
+  if (serviceId === '12') {
+    return (
+      <div className="service-details-page">
+        <div className="details-header">
+          <button onClick={onBack} className="back-button">
+            <ArrowRight size={20} />
+            رجوع
+          </button>
+          <h1>{service.nameAr}</h1>
+        </div>
+        <div className="details-container" style={{ padding: '24px 0' }}>
+          <DataExtractionService />
+        </div>
       </div>
     );
   }

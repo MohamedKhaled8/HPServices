@@ -12,7 +12,7 @@ import {
   GraduationCap, ClipboardList, Package, CreditCard, CheckSquare, Award, FileCheck, Phone, Mail, MapPin, ChevronRight,
   Facebook, Linkedin, Github, MessageCircle,
   FacebookIcon, LinkedinIcon, GithubIcon, /* Try alternatives */
-  Truck, ScrollText, PenTool, MonitorSmartphone, Library, BookOpen, Crown, Wallet, ClipboardEdit, Bell, Sparkles
+  Truck, ScrollText, PenTool, MonitorSmartphone, Library, BookOpen, Crown, Wallet, ClipboardEdit, Bell, Sparkles, Scan
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -49,7 +49,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   'solve.json': PenTool,           // حل التكليفات
   'Certificate.json': Award,       // الشهادات
   'TEchnology.json': MonitorSmartphone, // التحول الرقمي
-  'Graduation.json': GraduationCap // مشروع التخرج
+  'Graduation.json': GraduationCap, // مشروع التخرج
+  'DataExtraction.json': Scan  // استخراج البيانات
 };
 
 // --- Memoized Hero Slideshow Component to prevent Dashboard re-renders ---

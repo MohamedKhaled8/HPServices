@@ -289,6 +289,17 @@ export const SERVICES: Service[] = [
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true }
     ],
     paymentMethods: ['Vodafone', 'instaPay']
+  },
+  {
+    id: '12',
+    nameEn: 'Data Extraction',
+    nameAr: 'استخراج البيانات',
+    descriptionEn: 'Upload documents to extract data using AI',
+    descriptionAr: 'ارفع مستنداتك واستخرج البيانات تلقائياً بالذكاء الاصطناعي',
+    icon: 'DataExtraction.json',
+    color: '#0EA5E9',
+    fields: [],
+    paymentMethods: []
   }
 ];
 

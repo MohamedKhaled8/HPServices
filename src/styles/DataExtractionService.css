@@ -1,0 +1,630 @@
+/* ===== Data Extraction Service Styles ===== */
+
+.data-extraction-container {
+  direction: rtl;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* ── Upload Zone ── */
+.upload-zone {
+  border: 2px dashed #94a3b8;
+  border-radius: 20px;
+  padding: 48px 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(14,165,233,0.03) 0%, rgba(99,102,241,0.03) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.upload-zone:hover {
+  border-color: #0ea5e9;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(14, 165, 233, 0.15);
+}
+
+.upload-zone:hover::before {
+  opacity: 1;
+}
+
+.upload-zone.drag-over {
+  border-color: #0ea5e9;
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+  transform: scale(1.01);
+  box-shadow: 0 12px 32px -4px rgba(14, 165, 233, 0.25);
+}
+
+.upload-zone-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 8px 20px -4px rgba(14, 165, 233, 0.35);
+  transition: transform 0.3s ease;
+}
+
+.upload-zone:hover .upload-zone-icon {
+  transform: scale(1.08) rotate(-3deg);
+}
+
+.upload-zone-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.upload-zone-subtitle {
+  font-size: 0.95rem;
+  color: #64748b;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.upload-zone-formats {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.format-badge {
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #e0f2fe, #dbeafe);
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+/* ── Files List ── */
+.extraction-files-list {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.extraction-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  transition: all 0.2s ease;
+}
+
+.extraction-file-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.extraction-file-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.extraction-file-icon.image-type {
+  background: linear-gradient(135deg, #dbeafe, #e0f2fe);
+  color: #2563eb;
+}
+
+.extraction-file-icon.pdf-type {
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  color: #dc2626;
+}
+
+.extraction-file-icon.zip-type {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #d97706;
+}
+
+.extraction-file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.extraction-file-name {
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.extraction-file-size {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.extraction-file-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.extraction-file-status.pending { color: #94a3b8; }
+.extraction-file-status.analyzing { color: #0ea5e9; }
+.extraction-file-status.done { color: #10b981; }
+.extraction-file-status.error { color: #ef4444; }
+
+.extraction-file-remove {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.extraction-file-remove:hover {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+/* ── Action Buttons ── */
+.extraction-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.extraction-btn {
+  padding: 12px 28px;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+  border: none;
+}
+
+.extraction-btn-primary {
+  background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+  color: white;
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.35);
+}
+
+.extraction-btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4);
+}
+
+.extraction-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.extraction-btn-secondary {
+  background: white;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.extraction-btn-secondary:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.extraction-btn-danger {
+  background: white;
+  color: #ef4444;
+  border: 1px solid #fecaca;
+}
+
+.extraction-btn-danger:hover {
+  background: #fef2f2;
+}
+
+/* ── Progress ── */
+.extraction-progress-container {
+  margin-top: 24px;
+  padding: 24px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-radius: 16px;
+  border: 1px solid #bae6fd;
+}
+
+.extraction-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.extraction-progress-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: #0369a1;
+  font-size: 1rem;
+}
+
+.extraction-progress-count {
+  font-size: 0.9rem;
+  color: #0ea5e9;
+  font-weight: 600;
+}
+
+.extraction-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e0f2fe;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.extraction-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0ea5e9, #6366f1);
+  border-radius: 10px;
+  transition: width 0.5s ease;
+}
+
+.extraction-current-file {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Results Table ── */
+.extraction-results {
+  margin-top: 32px;
+}
+
+.extraction-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.extraction-results-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.extraction-results-count {
+  padding: 4px 14px;
+  background: linear-gradient(135deg, #e0f2fe, #dbeafe);
+  color: #0369a1;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 20px;
+}
+
+.extraction-results-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.extraction-result-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.extraction-result-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+
+.extraction-result-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e2e8f0;
+  cursor: pointer;
+  gap: 12px;
+}
+
+.extraction-result-card-header:hover {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+}
+
+.extraction-result-card-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.extraction-result-card-title h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.extraction-doc-type-badge {
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+  color: white;
+  white-space: nowrap;
+}
+
+.extraction-confidence-badge {
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.extraction-confidence-badge.high {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.extraction-confidence-badge.medium {
+  background: #fef3c7;
+  color: #a16207;
+}
+
+.extraction-confidence-badge.low {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.extraction-result-toggle {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  transition: all 0.25s ease;
+  display: flex;
+}
+
+.extraction-result-toggle:hover {
+  background: #e2e8f0;
+}
+
+.extraction-result-toggle.expanded {
+  transform: rotate(180deg);
+}
+
+.extraction-result-card-body {
+  padding: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease, padding 0.35s ease;
+}
+
+.extraction-result-card-body.expanded {
+  max-height: 2000px;
+  padding: 20px;
+}
+
+.extraction-fields-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.extraction-fields-table th {
+  background: #f1f5f9;
+  padding: 12px 16px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: #475569;
+  text-align: right;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.extraction-fields-table td {
+  padding: 11px 16px;
+  font-size: 0.9rem;
+  color: #1e293b;
+  border-bottom: 1px solid #f1f5f9;
+  line-height: 1.5;
+}
+
+.extraction-fields-table tr:last-child td {
+  border-bottom: none;
+}
+
+.extraction-fields-table tr:hover td {
+  background: #f8fafc;
+}
+
+.extraction-field-label {
+  font-weight: 700;
+  color: #475569;
+  white-space: nowrap;
+  width: 160px;
+}
+
+.extraction-field-value {
+  color: #0f172a;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+/* ── Combined Table ── */
+.extraction-combined-table-wrapper {
+  margin-top: 24px;
+  overflow-x: auto;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+
+.extraction-combined-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+  min-width: 900px;
+}
+
+.extraction-combined-table thead tr {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+}
+
+.extraction-combined-table th {
+  padding: 14px 16px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: #475569;
+  text-align: right;
+  border-bottom: 2px solid #cbd5e1;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f1f5f9;
+}
+
+.extraction-combined-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.extraction-combined-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.extraction-combined-table tbody tr:hover td {
+  background: #f0f9ff;
+}
+
+/* ── Spinner ── */
+@keyframes extraction-spin {
+  to { transform: rotate(360deg); }
+}
+
+.extraction-spinner {
+  animation: extraction-spin 1s linear infinite;
+}
+
+/* ── Empty State ── */
+.extraction-empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #94a3b8;
+}
+
+.extraction-empty-state-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background: #f1f5f9;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .upload-zone {
+    padding: 32px 20px;
+  }
+
+  .upload-zone-icon {
+    width: 64px;
+    height: 64px;
+  }
+
+  .upload-zone-title {
+    font-size: 1.1rem;
+  }
+
+  .extraction-actions {
+    flex-direction: column;
+  }
+
+  .extraction-btn {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .extraction-results-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .extraction-result-card-header {
+    flex-wrap: wrap;
+  }
+
+  .extraction-field-label {
+    width: auto;
+  }
+
+  .extraction-fields-table th,
+  .extraction-fields-table td {
+    padding: 10px 12px;
+  }
+}
