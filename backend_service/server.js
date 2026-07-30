@@ -16,7 +16,8 @@ app.use(
         allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
     })
 );
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 /** متى يكون true: تم تهيئة Firebase Admin ويمكن التحقق من idToken + مستند admins/{uid} */
 let firebaseAutomationAuthReady = false;
@@ -1641,14 +1642,30 @@ async function runElectronicPaymentAutomation(data) {
         //   select[1] = الجهة (كلية التربية, كلية الحقوق, ...)
         //   select[0] = نوع الخدمة (يتم تحميله بعد اختيار الكلية)
 
-        console.log('📋 [EP] Step 2: Selecting entity "كلية التربية"...');
+        console.log('📋 [EP] Step 2: Selecting entity...');
 
         const entitySelect = page.locator('select').nth(1);
         const entityOptions = await entitySelect.locator('option').allInnerTexts();
         console.log('[EP] Entity options:', entityOptions);
 
-        const wantedEntity = 'كلية التربية';
+        const requestedServiceStr = normalizeArabic(data.serviceType || data.serviceName || 'دبلوم');
+        const isDiploma = requestedServiceStr.includes('دبلوم');
+
+        let wantedEntity = data.entityName;
+        if (!wantedEntity) {
+            wantedEntity = isDiploma ? 'كلية التربية (دراسات عليا)' : 'كلية التربية';
+        }
+
         let entityIndex = entityOptions.findIndex(o => normalizeArabic(o).includes(normalizeArabic(wantedEntity)));
+
+        // إذا كان يطلب دبلوم، نفضل اختيار دراسات عليا صراحة
+        if (isDiploma && (entityIndex <= 0 || !normalizeArabic(entityOptions[entityIndex] || '').includes('دراسات عليا'))) {
+            const pgIndex = entityOptions.findIndex(o => normalizeArabic(o).includes('دراسات عليا'));
+            if (pgIndex > 0) {
+                entityIndex = pgIndex;
+            }
+        }
+
         if (entityIndex <= 0 && entityOptions.length > 1) {
             entityIndex = 1; // أول اختيار حقيقي بعد "إختر"
         }
@@ -1662,9 +1679,9 @@ async function runElectronicPaymentAutomation(data) {
 
         // انتظر حتى يتم تحميل نوع الخدمة بعد اختيار الكلية
         console.log('⏳ [EP] Waiting for service-type options to load...');
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(1500);
 
-        console.log('📘 [EP] Step 2b: Selecting service type "دبلوم (2025 - 2026)"...');
+        console.log('📘 [EP] Step 2b: Selecting service type...');
         const serviceSelect = page.locator('select').first();
 
         let serviceOptions = await serviceSelect.locator('option').allInnerTexts();
@@ -1681,17 +1698,22 @@ async function runElectronicPaymentAutomation(data) {
             throw new Error('قائمة نوع الخدمة لم يتم تحميلها بعد اختيار الكلية');
         }
 
-        const wantedService = 'دبلوم (2025 - 2026)';
+        const wantedService = data.serviceType || data.serviceName || 'دبلوم';
         let serviceIndex = serviceOptions.findIndex(o => normalizeArabic(o).includes(normalizeArabic(wantedService)));
         if (serviceIndex <= 0) {
             serviceIndex = serviceOptions.findIndex(o => normalizeArabic(o).includes('دبلوم'));
         }
         if (serviceIndex <= 0) {
-            serviceIndex = 1; // أول اختيار حقيقي بعد "إختر"
+            // ابحث عن أول خيار صالح وغير "إختر" وغير disabled
+            serviceIndex = serviceOptions.findIndex((o, idx) => idx > 0 && !isSelectUnsetLabel(o) && normalizeArabic(o) !== 'لايوجد');
         }
 
-        await serviceSelect.selectOption({ index: serviceIndex });
-        console.log(`[EP] ✅ Selected service: "${serviceOptions[serviceIndex]}"`);
+        if (serviceIndex > 0) {
+            await serviceSelect.selectOption({ index: serviceIndex });
+            console.log(`[EP] ✅ Selected service: "${serviceOptions[serviceIndex]}"`);
+        } else {
+            throw new Error('لم يتم العثور على خدمة صالحة ومفعّلة للإختيار');
+        }
 
         // -------- تعبئة الحقول النصية --------
         console.log('✉️ [EP] Step 3: Filling all text inputs...');
@@ -2099,8 +2121,8 @@ async function getWapilotCredentials(reqBody) {
             console.error('Error fetching adminPrefs in backend:', e);
         }
     }
-    const token = prefs.wapilotToken || reqBody?.token || reqBody?.wapilotToken || 'QgIkuHYc5lJh5sh1d1GkvwYh0MT5jSBL9Qa6VZw21W';
-    const instanceId = prefs.wapilotInstanceId || reqBody?.instanceId || reqBody?.wapilotInstanceId;
+    const token = reqBody?.token || reqBody?.wapilotToken || prefs.wapilotToken || 'QgIkuHYc5lJh5sh1d1GkvwYh0MT5jSBL9Qa6VZw21W';
+    const instanceId = reqBody?.instanceId || reqBody?.wapilotInstanceId || prefs.wapilotInstanceId;
     return { token, instanceId };
 }
 
@@ -2344,6 +2366,106 @@ app.post('/api/whatsapp/notify', requireAdminOrSelf, async (req, res) => {
     } catch (error) {
         console.error('[WhatsApp] Auto notify error:', error);
         return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Local Document OCR Data Extraction using Python easyocr
+app.post('/api/extract-data', async (req, res) => {
+    const fs = require('fs');
+    const path = require('path');
+    const { exec } = require('child_process');
+    const os = require('os');
+
+    const { base64Image, mimeType } = req.body;
+    if (!base64Image) {
+        return res.status(400).json({ success: false, error: 'لم يتم إرسال الصورة.' });
+    }
+
+    // 1. Create a temp file path
+    const tempDir = os.tmpdir();
+    const ext = mimeType === 'application/pdf' ? 'pdf' : 'jpg';
+    const tempFileName = `ocr_upload_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
+    const tempFilePath = path.join(tempDir, tempFileName);
+
+    try {
+        // 2. Clean base64 and write to temp file
+        const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "").replace(/^data:application\/pdf;base64,/, "");
+        fs.writeFileSync(tempFilePath, Buffer.from(cleanBase64, 'base64'));
+
+        // 3. Run Python OCR script
+        // Note: On Windows, use 'python', on Linux/Render use 'python3'
+        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+        const scriptPath = path.join(__dirname, 'scripts', 'ocr_extract.py');
+        const command = `"${pythonCmd}" "${scriptPath}" "${tempFilePath}"`;
+
+        console.log(`[OCR] Running local OCR command: ${command}`);
+
+        exec(command, { 
+            maxBuffer: 1024 * 1024 * 5,
+            env: { 
+                ...process.env, 
+                PYTHONIOENCODING: 'utf-8',
+                OPENBLAS_NUM_THREADS: '1',
+                MKL_NUM_THREADS: '1',
+                OMP_NUM_THREADS: '1'
+            }
+        }, (error, stdout, stderr) => {
+            // Always clean up the temp file first
+            try {
+                if (fs.existsSync(tempFilePath)) {
+                    fs.unlinkSync(tempFilePath);
+                }
+            } catch (cleanupErr) {
+                console.error('[OCR] Temp file cleanup error:', cleanupErr);
+            }
+
+            // Try to parse stdout JSON first, even if exit code is non-zero (controlled Python errors)
+            try {
+                const text = stdout.trim();
+                const braceStart = text.indexOf('{');
+                const braceEnd = text.lastIndexOf('}');
+                if (braceStart !== -1 && braceEnd !== -1) {
+                    const jsonStr = text.substring(braceStart, braceEnd + 1);
+                    const result = JSON.parse(jsonStr);
+                    if (result.error) {
+                        return res.status(400).json({ success: false, error: result.error, rawText: result.rawText });
+                    }
+                    return res.json(result);
+                }
+            } catch (parseErr) {
+                console.error('[OCR] Inline JSON parse error:', parseErr);
+            }
+
+            if (error) {
+                console.error('[OCR] Python script error:', error, stderr);
+                try {
+                    fs.writeFileSync(path.join(__dirname, 'ocr_debug.txt'), 
+                        `COMMAND: ${command}\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}\n\nERROR:\n${error.message}`
+                    );
+                } catch (logErr) {
+                    console.error('[OCR] Failed to write debug log:', logErr);
+                }
+                return res.status(500).json({ 
+                    success: false, 
+                    error: `فشل التحليل المحلي: ${error.message || stderr}. تم كتابة التفاصيل في ملف ocr_debug.txt.` 
+                });
+            }
+
+            return res.status(500).json({
+                success: false,
+                error: 'لم يرجع برنامج الاستخراج أي مخرجات صالحة.'
+            });
+        });
+
+    } catch (err) {
+        console.error('[OCR] Handler error:', err);
+        // Ensure cleanup in case of crash
+        try {
+            if (fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+            }
+        } catch (_) {}
+        return res.status(500).json({ success: false, error: err.message });
     }
 });
 
