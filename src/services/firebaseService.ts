@@ -1786,7 +1786,7 @@ export const subscribeToAllServiceRequests = (
 
   serviceIds.forEach(serviceId => {
     const collectionName = `serviceRequests_${serviceId}`;
-    const q = query(collection(db, collectionName));
+    const q = query(collection(db, collectionName), orderBy('createdAt', 'desc'), limit(100));
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const requests: ServiceRequest[] = querySnapshot.docs.map(doc => {
@@ -1815,6 +1815,52 @@ export const subscribeToAllServiceRequests = (
     if (debounceTimer) clearTimeout(debounceTimer);
     unsubscribes.forEach(unsub => unsub());
   };
+};
+
+/** حساب العدد الكلي الفعلي لطلبات خدمة معينة دون تنزيل المستندات */
+export const getServiceRequestsCount = async (serviceId: string): Promise<number> => {
+  try {
+    const collectionName = `serviceRequests_${serviceId}`;
+    const snapshot = await getCountFromServer(query(collection(db, collectionName)));
+    return snapshot.data().count;
+  } catch (error: any) {
+    logger.error(`getServiceRequestsCount for service ${serviceId}:`, error);
+    return 0;
+  }
+};
+
+/** جلب صفحة من طلبات خدمة معينة مرتبة حسب أحدث تاريخ للتحميل التدريجي */
+export const fetchServiceRequestsPage = async (
+  serviceId: string,
+  pageSize: number = 50,
+  lastDoc: QueryDocumentSnapshot<DocumentData> | null = null
+): Promise<{
+  requests: ServiceRequest[];
+  lastSnapshot: QueryDocumentSnapshot<DocumentData> | null;
+  hasMore: boolean;
+}> => {
+  try {
+    const collectionName = `serviceRequests_${serviceId}`;
+    const coll = collection(db, collectionName);
+    const q = lastDoc
+      ? query(coll, orderBy('createdAt', 'desc'), startAfter(lastDoc), limit(pageSize))
+      : query(coll, orderBy('createdAt', 'desc'), limit(pageSize));
+    const snap = await getDocs(q);
+    const requests: ServiceRequest[] = snap.docs.map(docSnap => {
+      const data = docSnap.data();
+      return {
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+      } as ServiceRequest;
+    });
+    const lastSnapshot = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+    const hasMore = snap.docs.length === pageSize;
+    return { requests, lastSnapshot, hasMore };
+  } catch (error: any) {
+    logger.error(`fetchServiceRequestsPage for service ${serviceId}:`, error);
+    return { requests: [], lastSnapshot: null, hasMore: false };
+  }
 };
 
 export const updateServiceRequestStatus = async (
@@ -1866,6 +1912,69 @@ export const deleteServiceRequest = async (
     await deleteDoc(doc(db, collectionName, requestId));
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء حذف الطلب');
+  }
+};
+
+/**
+ * تنظيف وحذف الطلبات المكتملة فقط التي مر عليها أكثر من 3 أشهر من الفايرستور،
+ * دون المساس بحسابات الطلاب إطلاقاً (Students remain 100% untouched).
+ * يستخدم Batched Writes (500 حذف في كل دفعة) مع yield بين الدفعات لتفادي التجميد.
+ */
+export const cleanOldCompletedRequests = async (): Promise<{ deletedCount: number }> => {
+  // Helper: yield to browser event loop so UI doesn't freeze
+  const yieldToMain = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
+  try {
+    const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    const threeMonthsAgoMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    let deletedCount = 0;
+
+    for (const serviceId of serviceIds) {
+      const collectionName = `serviceRequests_${serviceId}`;
+      const coll = collection(db, collectionName);
+      const q = query(coll, where('status', '==', 'completed'));
+
+      // Yield before each network call so the browser stays responsive
+      await yieldToMain();
+      const snap = await getDocs(q);
+
+      const docsToDelete: any[] = [];
+
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        const createdVal = data.createdAt;
+        let createdMs = 0;
+        if (createdVal?.toDate && typeof createdVal.toDate === 'function') {
+          createdMs = createdVal.toDate().getTime();
+        } else if (typeof createdVal?.seconds === 'number') {
+          createdMs = createdVal.seconds * 1000;
+        } else if (createdVal) {
+          const d = new Date(createdVal);
+          createdMs = isNaN(d.getTime()) ? 0 : d.getTime();
+        }
+        if (createdMs > 0 && createdMs < threeMonthsAgoMs) {
+          docsToDelete.push(docSnap);
+        }
+      });
+
+      // Delete in batches of 500 (Firestore limit per batch)
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < docsToDelete.length; i += BATCH_SIZE) {
+        const chunk = docsToDelete.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach(docSnap => batch.delete(docSnap.ref));
+        await yieldToMain(); // yield before committing each batch
+        await batch.commit();
+        deletedCount += chunk.length;
+        await yieldToMain(); // yield after committing so UI can repaint
+      }
+    }
+
+    logger.log(`cleanOldCompletedRequests: Successfully deleted ${deletedCount} completed requests older than 3 months.`);
+    return { deletedCount };
+  } catch (error: any) {
+    logger.error('Error cleaning old completed requests:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء تنظيف الطلبات القديمة المكتملة');
   }
 };
 
@@ -2261,7 +2370,8 @@ export const subscribeToDigitalTransformationCodes = (
   try {
     const q = query(
       collection(db, 'digitalTransformationCodes'),
-      orderBy('updatedAt', 'desc')
+      orderBy('updatedAt', 'desc'),
+      limit(100)
     );
 
     const unsubscribe = onSnapshot(
@@ -2353,7 +2463,8 @@ export const subscribeToElectronicPaymentCodes = (
   try {
     const q = query(
       collection(db, 'electronicPaymentCodes'),
-      orderBy('updatedAt', 'desc')
+      orderBy('updatedAt', 'desc'),
+      limit(100)
     );
 
     const unsubscribe = onSnapshot(

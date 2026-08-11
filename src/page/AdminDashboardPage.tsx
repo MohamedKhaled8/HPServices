@@ -44,7 +44,10 @@ import {
   updateAdminPreferences,
   clearLatestNews,
   clearQuickNotification,
-  normalizeArabicText
+  normalizeArabicText,
+  getServiceRequestsCount,
+  fetchServiceRequestsPage,
+  cleanOldCompletedRequests
 } from '../services/firebaseService';
 import { normalizeTrackName } from '../utils/trackUtils';
 import {
@@ -363,6 +366,64 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  const [requestVisibleLimits, setRequestVisibleLimits] = useState<Record<string, number>>({});
+  const [serviceTotalCounts, setServiceTotalCounts] = useState<Record<string, number>>({});
+  const [serviceLastSnapshots, setServiceLastSnapshots] = useState<Record<string, any>>({});
+  const [serviceHasMore, setServiceHasMore] = useState<Record<string, boolean>>({});
+  const [isLoadingMoreServiceRequests, setIsLoadingMoreServiceRequests] = useState<boolean>(false);
+  const [isCleaningOldRequests, setIsCleaningOldRequests] = useState<boolean>(false);
+  const [cleanPasswordInput, setCleanPasswordInput] = useState<string>('');
+  const [cleanPasswordError, setCleanPasswordError] = useState<string>('');
+  const [isCleanPasswordModalOpen, setIsCleanPasswordModalOpen] = useState<boolean>(false);
+  const CLEAN_PASSWORD = 'Mm9002432@#';
+
+  useEffect(() => {
+    if (!selectedServiceId) return;
+    if (serviceTotalCounts[selectedServiceId] !== undefined) return;
+    
+    void getServiceRequestsCount(selectedServiceId).then(count => {
+      setServiceTotalCounts(prev => ({ ...prev, [selectedServiceId]: count }));
+    });
+  }, [selectedServiceId, serviceTotalCounts]);
+
+  const handleLoadMoreServiceRequests = async (serviceId: string) => {
+    const currentVisLimit = requestVisibleLimits[serviceId] || 50;
+    const pool = requestsByServiceId[serviceId] ?? [];
+
+    if (pool.length > currentVisLimit) {
+      setRequestVisibleLimits(prev => ({
+        ...prev,
+        [serviceId]: currentVisLimit + 50
+      }));
+      return;
+    }
+
+    if (isLoadingMoreServiceRequests) return;
+    setIsLoadingMoreServiceRequests(true);
+    try {
+      const lastSnap = serviceLastSnapshots[serviceId] || null;
+      const res = await fetchServiceRequestsPage(serviceId, 50, lastSnap);
+      
+      if (res.requests.length > 0) {
+        setServiceRequests(prev => {
+          const existingIds = new Set(prev.map(r => r.id));
+          const newRequests = res.requests.filter(r => !existingIds.has(r.id));
+          return [...prev, ...newRequests];
+        });
+        setServiceLastSnapshots(prev => ({ ...prev, [serviceId]: res.lastSnapshot }));
+      }
+      setServiceHasMore(prev => ({ ...prev, [serviceId]: res.hasMore }));
+      setRequestVisibleLimits(prev => ({
+        ...prev,
+        [serviceId]: currentVisLimit + 50
+      }));
+    } catch (e: any) {
+      logger.error('Error fetching more service requests:', e);
+    } finally {
+      setIsLoadingMoreServiceRequests(false);
+    }
+  };
 
   // Admin Preferences Editor State
   const [adminPrefs, setAdminPrefs] = useState<any>({ serviceOrder: [], profitCosts: {} });
@@ -2702,6 +2763,41 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     });
   };
 
+
+
+  const handleCleanOldCompletedRequests = () => {
+    setCleanPasswordInput('');
+    setCleanPasswordError('');
+    setIsCleanPasswordModalOpen(true);
+  };
+
+  const handleCleanPasswordConfirm = async () => {
+    if (cleanPasswordInput !== CLEAN_PASSWORD) {
+      setCleanPasswordError('❌ كلمة المرور غير صحيحة، حاول مرة أخرى');
+      return;
+    }
+    setIsCleanPasswordModalOpen(false);
+    setIsCleaningOldRequests(true);
+    try {
+      const res = await cleanOldCompletedRequests();
+      const threeMonthsAgoMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
+      setServiceRequests(prev => prev.filter(req => {
+        if (normalizeWorkflowStatus(req.status) !== 'completed') return true;
+        const createdMs = req.createdAt ? new Date(req.createdAt).getTime() : 0;
+        return createdMs === 0 || createdMs >= threeMonthsAgoMs;
+      }));
+      showAlert(
+        'نجاح',
+        `✅ تم حذف ${res.deletedCount} طلب مكتمل قديم (+3 أشهر) بنجاح.\n(جميع حسابات الطلاب والمستخدمين بأمان تام 100%).`,
+        'success'
+      );
+    } catch (error: any) {
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء تنظيف الطلبات القديمة', 'error');
+    } finally {
+      setIsCleaningOldRequests(false);
+    }
+  };
+
   const workflowStatusLabelAr = (s: string | undefined) => {
     switch (normalizeWorkflowStatus(s)) {
       case 'pending': return 'قيد الانتظار';
@@ -2790,11 +2886,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         students[req.studentId]?.fullNameArabic ||
         ''
       ).toLowerCase();
-      return { req, name };
+      const isCompleted = normalizeWorkflowStatus(req.status) === 'completed';
+      const time = req.createdAt ? new Date(req.createdAt).getTime() : 0;
+      return { req, name, isCompleted, time };
     });
 
-    // 3. Sort using pre-computed keys
-    mapped.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    // 3. Sort: Active/Pending requests at the top (newest first), Completed requests at the bottom
+    mapped.sort((a, b) => {
+      if (a.isCompleted !== b.isCompleted) {
+        return a.isCompleted ? 1 : -1;
+      }
+      return b.time - a.time;
+    });
 
     // 4. Extract sorted requests
     return mapped.map((item) => item.req);
@@ -3345,6 +3448,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 <div className="selected-service-header">
                   <h3>
                     {getServiceName(selectedServiceId)}
+                    {serviceTotalCounts[selectedServiceId] != null && (
+                      <span style={{ fontSize: '14px', backgroundColor: '#e2e8f0', color: '#0f172a', padding: '4px 12px', borderRadius: '12px', marginRight: '12px', fontWeight: 700 }}>
+                        إجمالي طلبات الخدمة: {serviceTotalCounts[selectedServiceId]} طلب
+                      </span>
+                    )}
                   </h3>
                   <button
                     onClick={() => setSelectedServiceId(null)}
@@ -3579,7 +3687,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     };
 
                     // تطبيق الفرز مع مراعاة ترتيب الأعمدة الظاهر ومعرّف العمود المستقر
-                    const displayRequests = !requestsSort
+                    const sortedRequests = !requestsSort
                       ? filteredRequests
                       : [...filteredRequests].sort((a, b) => {
                           const id = requestsSort.colId;
@@ -3632,6 +3740,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                           return 0;
                         });
+
+                    const currentLimit = selectedServiceId ? (requestVisibleLimits[selectedServiceId] || 50) : 50;
+                    const displayRequests = serviceSearchTerm.trim() ? sortedRequests : sortedRequests.slice(0, currentLimit);
 
                     const duplicateCountByRow = computeRequestDuplicateCounts(displayRequests, students);
 
@@ -4784,6 +4895,39 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                             </div>
                           </div>
                         )}
+                        {selectedServiceId && !serviceSearchTerm.trim() && (
+                          (serviceTotalCounts[selectedServiceId] != null && displayRequests.length < serviceTotalCounts[selectedServiceId]) ||
+                          (serviceHasMore[selectedServiceId] !== false) ||
+                          (sortedRequests.length > displayRequests.length)
+                        ) && (
+                          <div style={{ textAlign: 'center', margin: '24px 0 16px', display: 'flex', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleLoadMoreServiceRequests(selectedServiceId)}
+                              disabled={isLoadingMoreServiceRequests}
+                              style={{
+                                padding: '12px 28px',
+                                backgroundColor: isLoadingMoreServiceRequests ? '#94a3b8' : '#2563eb',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '12px',
+                                fontSize: '15px',
+                                fontWeight: 700,
+                                cursor: isLoadingMoreServiceRequests ? 'not-allowed' : 'pointer',
+                                boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <span>{isLoadingMoreServiceRequests ? 'جاري تحميل الدفعة التالية...' : 'تحميل المزيد (+50 طلب)'}</span>
+                              <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '20px' }}>
+                                المعروض {displayRequests.length} {serviceTotalCounts[selectedServiceId] != null ? `من أصل ${serviceTotalCounts[selectedServiceId]}` : `من أصل ${sortedRequests.length}`}
+                              </span>
+                            </button>
+                          </div>
+                        )}
                       </>
                     );
                   })()}
@@ -5793,9 +5937,138 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                   })}
               </AnimatePresence>
             </div>
+
+            {/* ⚠️ Danger Zone — Clean Old Completed Requests */}
+            <div style={{
+              marginTop: '48px',
+              padding: '24px',
+              borderRadius: '16px',
+              border: '2px dashed #fca5a5',
+              background: '#fff5f5'
+            }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: '15px', fontWeight: 800, color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Trash2 size={17} color="#b91c1c" />
+                منطقة الخطر — حذف الطلبات القديمة المكتملة
+              </h4>
+              <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#7f1d1d', lineHeight: 1.7 }}>
+                يقوم هذا الإجراء بحذف <strong>جميع طلبات الخدمات المكتملة</strong> التي مر عليها أكثر من <strong>3 أشهر</strong> من قاعدة البيانات نهائياً لا رجعة فيه.
+                <br />
+                <strong style={{ color: '#15803d' }}>✅ حسابات الطلاب والمستخدمين محمية 100% ولن تُمس إطلاقاً.</strong>
+              </p>
+              <button
+                type="button"
+                onClick={handleCleanOldCompletedRequests}
+                disabled={isCleaningOldRequests}
+                style={{
+                  padding: '12px 28px',
+                  backgroundColor: isCleaningOldRequests ? '#94a3b8' : '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  cursor: isCleaningOldRequests ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(220,38,38,0.3)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Trash2 size={16} />
+                {isCleaningOldRequests ? 'جاري التنظيف...' : 'تنظيف الطلبات المكتملة القديمة (+3 أشهر) 🔒'}
+              </button>
+            </div>
           </div>
         )
       }
+
+      {/* Password Modal for Cleaning Old Completed Requests */}
+      {isCleanPasswordModalOpen && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10005,
+            background: 'rgba(15,23,42,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '24px', boxSizing: 'border-box'
+          }}
+          onClick={() => setIsCleanPasswordModalOpen(false)}
+        >
+          <div
+            style={{
+              background: '#fff', borderRadius: '20px', padding: '36px 32px',
+              maxWidth: '420px', width: '100%', direction: 'rtl',
+              boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
+              border: '2px solid #ef4444'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ background: '#fef2f2', borderRadius: '12px', padding: '10px', display: 'flex' }}>
+                <Trash2 size={24} color="#ef4444" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0f172a' }}>
+                  تنظيف الطلبات القديمة المكتملة
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                  هذا إجراء خطير — أدخل كلمة المرور للمتابعة
+                </p>
+              </div>
+            </div>
+            <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '20px', background: '#fef2f2', borderRadius: '10px', padding: '12px' }}>
+              ⚠️ سيتم حذف <strong>جميع الطلبات المكتملة</strong> التي مر عليها أكثر من <strong>3 أشهر</strong> من الفايرستور نهائياً وبشكل لا يمكن التراجع عنه.<br />
+              <strong style={{ color: '#16a34a' }}>✅ حسابات الطلاب والمستخدمين محمية 100% ولن تُمس.</strong>
+            </p>
+            <input
+              type="password"
+              autoFocus
+              value={cleanPasswordInput}
+              onChange={e => { setCleanPasswordInput(e.target.value); setCleanPasswordError(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') handleCleanPasswordConfirm(); }}
+              placeholder="أدخل كلمة المرور هنا..."
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                padding: '12px 16px', borderRadius: '10px',
+                border: cleanPasswordError ? '2px solid #ef4444' : '2px solid #e2e8f0',
+                fontSize: '15px', outline: 'none',
+                fontFamily: 'monospace', letterSpacing: '2px',
+                marginBottom: '8px', direction: 'ltr'
+              }}
+            />
+            {cleanPasswordError && (
+              <p style={{ color: '#ef4444', fontSize: '13px', margin: '0 0 16px', fontWeight: 600 }}>
+                {cleanPasswordError}
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+              <button
+                onClick={handleCleanPasswordConfirm}
+                disabled={isCleaningOldRequests}
+                style={{
+                  flex: 1, padding: '12px', backgroundColor: isCleaningOldRequests ? '#94a3b8' : '#ef4444',
+                  color: '#fff', border: 'none', borderRadius: '10px',
+                  fontSize: '14px', fontWeight: 700, cursor: isCleaningOldRequests ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                }}
+              >
+                <Trash2 size={15} />
+                {isCleaningOldRequests ? 'جاري التنظيف...' : 'تأكيد الحذف'}
+              </button>
+              <button
+                onClick={() => setIsCleanPasswordModalOpen(false)}
+                style={{
+                  flex: 1, padding: '12px', backgroundColor: '#f1f5f9',
+                  color: '#475569', border: '1px solid #e2e8f0', borderRadius: '10px',
+                  fontSize: '14px', fontWeight: 700, cursor: 'pointer'
+                }}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Request Modal */}
       {
