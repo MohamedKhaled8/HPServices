@@ -49,8 +49,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   'solve.json': PenTool,           // حل التكليفات
   'Certificate.json': Award,       // الشهادات
   'TEchnology.json': MonitorSmartphone, // التحول الرقمي
-  'Graduation.json': GraduationCap, // مشروع التخرج
-  'DataExtraction.json': Scan  // استخراج البيانات
+  'Graduation.json': GraduationCap // مشروع التخرج
 };
 
 // --- Memoized Hero Slideshow Component to prevent Dashboard re-renders ---
@@ -264,7 +263,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       unsubscribe();
       unsubscribePrefs();
     }
-  }, [student]);
+  }, [student?.id]);
 
   useEffect(() => {
     const hour = new Date().getHours();

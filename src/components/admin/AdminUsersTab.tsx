@@ -24,6 +24,9 @@ interface AdminUsersTabProps {
   showAlert: (title: string, message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   setToastState: React.Dispatch<React.SetStateAction<any>>;
   ADMIN_USERS_PAGE_SIZE: number;
+  usersHasMore?: boolean;
+  isLoadingMoreUsers?: boolean;
+  handleLoadMoreUsers?: () => void;
 }
 
 const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
@@ -48,6 +51,9 @@ const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   showAlert,
   setToastState,
   ADMIN_USERS_PAGE_SIZE,
+  usersHasMore,
+  isLoadingMoreUsers,
+  handleLoadMoreUsers,
 }) => {
   return (
     <div className="admin-content">
@@ -55,25 +61,21 @@ const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <span>إدارة المستخدمين</span>
           {searchTerm.trim() ? (
-            <span style={{ color: '#64748b', fontWeight: 700 }}>({filteredAdminStudents.length})</span>
+            <span style={{ color: '#2563eb', fontWeight: 800, fontSize: '0.95em' }}>
+              (نتائج البحث: {filteredAdminStudents.length.toLocaleString('ar-EG')})
+            </span>
+          ) : typeof studentsTotalCount === 'number' ? (
+            <span style={{ color: '#2563eb', fontWeight: 800, fontSize: '0.95em' }}>
+              ({studentsTotalCount.toLocaleString('ar-EG')})
+            </span>
           ) : usersDirectoryLoading && filteredAdminStudents.length === 0 ? (
             <span style={{ color: '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '15px' }}>
               <Loader2 size={18} className="spinning-loader-small" style={{ flexShrink: 0, color: '#64748b' }} />
               جاري التحميل
-              {typeof studentsTotalCount === 'number' && (
-                <span style={{ color: '#94a3b8' }}>({(studentsTotalCount as number).toLocaleString('ar-EG')})</span>
-              )}
             </span>
           ) : (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ color: '#64748b', fontWeight: 700 }}>({filteredAdminStudents.length})</span>
-              {studentsRestLoading &&
-                typeof studentsTotalCount === 'number' &&
-                studentsTotalCount > filteredAdminStudents.length && (
-                  <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: '0.9em' }}>
-                    — {filteredAdminStudents.length.toLocaleString('ar-EG')} / {(studentsTotalCount as number).toLocaleString('ar-EG')}
-                  </span>
-                )}
+            <span style={{ color: '#64748b', fontWeight: 700 }}>
+              ({filteredAdminStudents.length.toLocaleString('ar-EG')})
             </span>
           )}
         </h2>
@@ -100,36 +102,26 @@ const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
           </div>
         ) : (
           <>
-            <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+            <div className="pagination-info" style={{ marginBottom: '16px', color: '#475569', fontSize: '14px', padding: '10px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
               {usersDirectoryLoading && !searchTerm.trim() && filteredAdminStudents.length === 0 ? (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
                   <Loader2 size={16} strokeWidth={2.2} className="spinning-loader-small" style={{ color: '#64748b', flexShrink: 0 }} />
-                  <span>جاري تحميل المستخدمين…</span>
+                  <span>جاري تحميل قائمة الطلاب…</span>
                   {typeof studentsTotalCount === 'number' && (
                     <span style={{ color: '#94a3b8', fontSize: '13px' }}>
-                      ({(studentsTotalCount as number).toLocaleString('ar-EG')} في السحابة)
+                      ({studentsTotalCount.toLocaleString('ar-EG')} في السحابة)
                     </span>
                   )}
                 </span>
               ) : (
                 <span>
-                  إجمالي المستخدمين المعروضين: {filteredAdminStudents.length.toLocaleString('ar-EG')}
-                  {typeof studentsTotalCount === 'number' &&
-                    studentsRestLoading &&
-                    (studentsTotalCount as number) > filteredAdminStudents.length && (
-                      <span style={{ color: '#94a3b8', marginRight: '8px', fontSize: '13px' }}>
-                        — جاري إكمال القائمة ({filteredAdminStudents.length.toLocaleString('ar-EG')} /{' '}
-                        {(studentsTotalCount as number).toLocaleString('ar-EG')})
-                      </span>
-                    )}
-                  {typeof studentsTotalCount === 'number' &&
-                    !(studentsRestLoading && (studentsTotalCount as number) > filteredAdminStudents.length) &&
-                    (studentsTotalCount as number) !== filteredAdminStudents.length &&
-                    !searchTerm.trim() && (
-                      <span style={{ color: '#94a3b8', marginRight: '8px', fontSize: '13px' }}>
-                        — في السحابة: {(studentsTotalCount as number).toLocaleString('ar-EG')}
-                      </span>
-                    )}
+                  <strong>المعروض:</strong> {filteredAdminStudents.length.toLocaleString('ar-EG')}
+                  {typeof studentsTotalCount === 'number' && !searchTerm.trim() && (
+                    <span> من إجمالي {studentsTotalCount.toLocaleString('ar-EG')} طالب في السحابة</span>
+                  )}
+                  {searchTerm.trim() && (
+                    <span style={{ color: '#2563eb', marginRight: '8px', fontWeight: 700 }}> (نتائج البحث)</span>
+                  )}
                   {filteredAdminStudents.length > ADMIN_USERS_PAGE_SIZE && (
                     <span style={{ color: '#94a3b8', fontSize: '13px', marginRight: '8px' }}>
                       — عرض {usersListPage * ADMIN_USERS_PAGE_SIZE + 1}–{Math.min((usersListPage + 1) * ADMIN_USERS_PAGE_SIZE, filteredAdminStudents.length)}
@@ -390,6 +382,40 @@ const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 </tbody>
               </table>
             </div>
+
+            {!searchTerm.trim() && usersHasMore && handleLoadMoreUsers && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px', marginBottom: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleLoadMoreUsers}
+                  disabled={isLoadingMoreUsers}
+                  style={{
+                    padding: '12px 28px',
+                    background: isLoadingMoreUsers ? '#94a3b8' : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    fontWeight: 700,
+                    fontSize: '15px',
+                    cursor: isLoadingMoreUsers ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {isLoadingMoreUsers ? (
+                    <>
+                      <Loader2 size={18} className="spinning-loader-small" />
+                      <span>جاري تحميل الدفعة التالية…</span>
+                    </>
+                  ) : (
+                    <span>تحميل المزيد من الطلاب (+50)</span>
+                  )}
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

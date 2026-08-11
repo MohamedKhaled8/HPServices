@@ -43,7 +43,8 @@ import {
   subscribeToAdminPreferences,
   updateAdminPreferences,
   clearLatestNews,
-  clearQuickNotification
+  clearQuickNotification,
+  normalizeArabicText
 } from '../services/firebaseService';
 import { normalizeTrackName } from '../utils/trackUtils';
 import {
@@ -126,7 +127,6 @@ import AdminUsersTab from '../components/admin/AdminUsersTab';
 import AdminWhatsAppTab from '../components/admin/AdminWhatsAppTab';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
 import { MessageSquare } from 'lucide-react';
-import DataExtractionService from '../components/DataExtractionService';
 
 
 interface AdminDashboardPageProps {
@@ -307,7 +307,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [students]);
 
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp' | 'dataExtraction'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp'>('requests');
   const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
   const [selectedDTColumns, setSelectedDTColumns] = useState<Set<number>>(new Set());
   const [selectedEPRows, setSelectedEPRows] = useState<Set<number>>(new Set());
@@ -341,12 +341,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const itemsPerPage = 10;
   const requestsSectionRef = React.useRef<HTMLDivElement>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
+  const [searchResults, setSearchResults] = useState<StudentData[] | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [usersListPage, setUsersListPage] = useState(0);
   /** انتظار أول لقطة من Firestore لمجموعة الطلاب (قائمة كاملة بدون بحث) */
   const [usersDirectoryLoading, setUsersDirectoryLoading] = useState(true);
   /** العدد الكلي من Firestore (استعلام count) — يظهر فوراً */
   const [studentsTotalCount, setStudentsTotalCount] = useState<number | null>(null);
+  const [usersLastSnap, setUsersLastSnap] = useState<any>(null);
+  const [usersHasMore, setUsersHasMore] = useState<boolean>(false);
+  const [isLoadingMoreUsers, setIsLoadingMoreUsers] = useState<boolean>(false);
   /** جاري جلب دفعات إضافية بعد أول دفعة */
   const [studentsRestLoading, setStudentsRestLoading] = useState(false);
   const [serviceSearchTerm, setServiceSearchTerm] = useState<string>('');
@@ -602,19 +606,34 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [serviceRequests]);
 
   const filteredAdminStudents = useMemo(() => {
+    if (searchResults !== null) {
+      return searchResults;
+    }
+
     const term = searchTerm.toLowerCase().trim();
+    if (!term) return allStudents;
+
     return allStudents.filter(student => {
-      if (!term) return true;
+      const s = student as any;
+      const arabicName = String(s.fullNameArabic || s.full_name_arabic || s.full_name || '').toLowerCase();
+      const englishName = String(s.vehicleNameEnglish || s.fullNameEnglish || s.full_name_english || '').toLowerCase();
+      const email = String(s.email || '').toLowerCase();
+      const whatsapp = String(s.whatsappNumber || s.phone || s.phoneNumber || s.mobile || '');
+      const natId = String(s.nationalID || s.national_id || '');
+      const diploma = String(s.diplomaType || s.diploma_type || s.diplomaYear || s.diploma_year || '').toLowerCase();
+      const course = String(s.course || s.track || s.track_name || '').toLowerCase();
+
       return (
-        student.fullNameArabic?.toLowerCase().includes(term) ||
-        student.email?.toLowerCase().includes(term) ||
-        student.nationalID?.includes(term) ||
-        student.whatsappNumber?.includes(term) ||
-        student.diplomaType?.toLowerCase().includes(term) ||
-        student.diplomaYear?.includes(term)
+        arabicName.includes(term) ||
+        englishName.includes(term) ||
+        email.includes(term) ||
+        whatsapp.includes(term) ||
+        natId.includes(term) ||
+        diploma.includes(term) ||
+        course.includes(term)
       );
     });
-  }, [allStudents, searchTerm]);
+  }, [allStudents, searchTerm, searchResults]);
 
   const displayedAdminStudents = useMemo(() => {
     const start = usersListPage * ADMIN_USERS_PAGE_SIZE;
@@ -1609,7 +1628,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return () => unsubscribe();
   }, []);
 
-  // تحميل المستخدمين: عدّ سريع + دفعات (أسرع بكثير من onSnapshot لمجموعة ضخمة كاملة)
+  // تحميل المستخدمين: الصفحة الأولى فقط (50 طالب) بدلاً من حلقة while المطلقة لمنع استهلاك القراءات
   useEffect(() => {
     if (isLoading) return;
 
@@ -1636,13 +1655,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     (async () => {
       try {
-        let lastSnap: Awaited<ReturnType<typeof fetchStudentsPageByDocumentId>>['lastSnapshot'] = null;
-        let accumulated: StudentData[] = [];
-
         const first = await fetchStudentsPageByDocumentId(STUDENTS_PAGE, null);
         if (cancelled) return;
-        accumulated = first.students;
-        setAllStudents(accumulated);
+        setAllStudents(first.students);
+        setUsersLastSnap(first.lastSnapshot);
+        setUsersHasMore(first.hasMore);
         
         // Also update the students lookup map cache
         const firstMap: Record<string, StudentData> = {};
@@ -1652,31 +1669,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         setStudents(prev => ({ ...prev, ...firstMap }));
 
         setUsersDirectoryLoading(false);
-        lastSnap = first.lastSnapshot;
-
-        let hasMore = first.hasMore;
-        while (hasMore && lastSnap && !cancelled) {
-          setStudentsRestLoading(true);
-          const next = await fetchStudentsPageByDocumentId(STUDENTS_PAGE, lastSnap);
-          if (cancelled) return;
-          accumulated = [...accumulated, ...next.students];
-          setAllStudents(accumulated);
-          
-          // Also update the students lookup map cache
-          const nextMap: Record<string, StudentData> = {};
-          next.students.forEach(s => {
-            if (s.id) nextMap[s.id] = s;
-          });
-          setStudents(prev => ({ ...prev, ...nextMap }));
-
-          lastSnap = next.lastSnapshot;
-          hasMore = next.hasMore;
-        }
-        setStudentsRestLoading(false);
-
-        if (!cancelled) {
-          setStudentsTotalCount((prev) => (typeof prev === 'number' ? prev : accumulated.length));
-        }
       } catch (error: any) {
         logger.error('Admin: paginated students load failed', error);
         setUsersDirectoryLoading(false);
@@ -1688,7 +1680,30 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return () => {
       cancelled = true;
     };
-  }, [isLoading, searchTerm]);
+  }, [isLoading]);
+
+  const handleLoadMoreUsers = async () => {
+    if (!usersHasMore || !usersLastSnap || isLoadingMoreUsers) return;
+    setIsLoadingMoreUsers(true);
+    try {
+      const STUDENTS_PAGE = 50;
+      const res = await fetchStudentsPageByDocumentId(STUDENTS_PAGE, usersLastSnap);
+      setAllStudents(prev => [...prev, ...res.students]);
+      setUsersLastSnap(res.lastSnapshot);
+      setUsersHasMore(res.hasMore);
+
+      const newMap: Record<string, StudentData> = {};
+      res.students.forEach(s => {
+        if (s.id) newMap[s.id] = s;
+      });
+      setStudents(prev => ({ ...prev, ...newMap }));
+    } catch (e: any) {
+      logger.error('Error loading more students:', e);
+      showAlert('خطأ', 'حدث خطأ أثناء تحميل الدفعة التالية من الطلاب', 'error');
+    } finally {
+      setIsLoadingMoreUsers(false);
+    }
+  };
 
   const handleStatusChange = async (requestId: string, status: ServiceRequestWorkflowStatus, serviceId: string) => {
     try {
@@ -2498,34 +2513,50 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     });
   };
 
+  const searchIdRef = useRef(0);
+
   const handleSearchStudent = async () => {
-    if (!searchTerm.trim()) {
+    const term = searchTerm.trim();
+    if (!term) {
+      setSearchResults(null);
       return;
     }
 
+    const currentSearchId = ++searchIdRef.current;
+
     try {
-      const results = await searchStudent(searchTerm);
-      logger.log('Search results:', results.length);
-      setAllStudents(results);
+      const combinedCacheMap = new Map<string, StudentData>();
+      allStudents.forEach(s => { if (s?.id) combinedCacheMap.set(s.id, s); });
+      if (studentsRef.current) {
+        Object.values(studentsRef.current).forEach(s => { if (s?.id) combinedCacheMap.set(s.id, s); });
+      }
+      const cacheArray = Array.from(combinedCacheMap.values());
+
+      const results = await searchStudent(term, cacheArray);
+      if (searchIdRef.current === currentSearchId) {
+        logger.log('Search results:', results.length);
+        setSearchResults(results);
+      }
     } catch (error: any) {
-      logger.error('Search error:', error);
-      showAlert('خطأ', error.message || 'حدث خطأ أثناء البحث', 'error');
+      if (searchIdRef.current === currentSearchId) {
+        logger.error('Search error:', error);
+        showAlert('خطأ', error.message || 'حدث خطأ أثناء البحث', 'error');
+      }
     }
   };
 
-  // Auto search on searchTerm change
+  // Auto search on searchTerm change with 350ms debounce
   useEffect(() => {
     if (activeTab !== 'users' || isLoading) return;
 
-    // If search term is empty, let the other useEffect handle showing all students
     if (!searchTerm.trim()) {
+      setSearchResults(null);
       return;
     }
 
-    // Debounce search
     const timeoutId = setTimeout(() => {
       handleSearchStudent();
-    }, 300);
+    }, 350);
 
     return () => clearTimeout(timeoutId);
   }, [searchTerm, activeTab, isLoading]);
@@ -2533,6 +2564,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const handleEditStudent = (student: StudentData) => {
     setEditedStudentData({ ...student });
     setIsEditingStudent(true);
+  };
+
+  const handleDeleteStudent = async (studentId: string): Promise<void> => {
+    await deleteStudentData(studentId);
+    // Remove immediately from local list — no refresh needed
+    setAllStudents(prev => prev.filter(s => s.id !== studentId));
+    setSearchResults(prev => prev ? prev.filter(s => s.id !== studentId) : null);
+    setStudents(prev => {
+      const updated = { ...prev };
+      delete updated[studentId];
+      return updated;
+    });
+    if (studentsTotalCount !== null) {
+      setStudentsTotalCount(prev => (prev !== null ? prev - 1 : prev));
+    }
   };
 
   const handleSaveStudent = async () => {
@@ -2690,29 +2736,40 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     const pool = requestsByServiceId[selectedServiceId] ?? [];
     const term = serviceSearchTerm.toLowerCase().trim();
 
-    // 1. Filter the requests using a high-performance, allocation-free loop
+    // 1. Filter the requests using prefix matching for names
     const filtered = pool.filter((request) => {
       if (!term) return true;
+      const termNorm = normalizeArabicText(term);
       const studentData = students[request.studentId];
 
-      let dataMatch = false;
-      if (request.data) {
-        for (const key in request.data) {
-          const val = request.data[key];
-          if (val && String(val).toLowerCase().includes(term)) {
-            dataMatch = true;
-            break;
-          }
-        }
-      }
-      if (dataMatch) return true;
+      const fullNameAr = (
+        request.data?.full_name_arabic ||
+        request.data?.full_name ||
+        studentData?.fullNameArabic ||
+        ''
+      );
+      const fullNameArNorm = normalizeArabicText(fullNameAr);
 
-      if (studentData) {
-        if (studentData.fullNameArabic?.toLowerCase().includes(term)) return true;
-        if (studentData.nationalID?.includes(term)) return true;
-        if (studentData.whatsappNumber?.includes(term)) return true;
-        if (studentData.email?.toLowerCase().includes(term)) return true;
-      }
+      const fullNameEn = (
+        request.data?.full_name_english ||
+        studentData?.vehicleNameEnglish ||
+        (studentData as any)?.fullNameEnglish ||
+        ''
+      ).toLowerCase();
+
+      // Name prefix matching: only return requests where student name STARTS with the search term
+      if (fullNameArNorm && fullNameArNorm.startsWith(termNorm)) return true;
+      if (fullNameEn && fullNameEn.startsWith(term)) return true;
+
+      // Match other non-name fields (National ID, Phone, Email, Status, Date)
+      const natId = String(request.data?.national_id || studentData?.nationalID || '');
+      if (natId && natId.includes(term)) return true;
+
+      const whatsapp = String(request.data?.whatsapp_number || request.data?.phone_whatsapp || studentData?.whatsappNumber || '');
+      if (whatsapp && whatsapp.includes(term)) return true;
+
+      const email = String(request.data?.email || studentData?.email || '').toLowerCase();
+      if (email && email.includes(term)) return true;
 
       const statusAr = workflowStatusLabelAr(request.status);
       if (statusAr.includes(term)) return true;
@@ -3169,13 +3226,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         >
           <MessageSquare size={18} />
           الواتساب
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'dataExtraction' ? 'active' : ''}`}
-          onClick={() => setActiveTab('dataExtraction')}
-        >
-          <Scan size={18} />
-          استخراج البيانات
         </button>
       </div>
 
@@ -5390,141 +5440,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         )
       }
 
-      {
-        activeTab === 'graduationProject' && (
-          <div className="admin-content">
-            <div className="books-section">
-              <div className="section-header">
-                <h2>إعدادات مشروع التخرج</h2>
-                <button type="button" onClick={handleSaveGraduationProjectConfig} className="save-button" disabled={isSaving === 'graduationProject'}>
-                  <Save size={18} />
-                  {isSaving === 'graduationProject' ? 'جاري الحفظ...' : 'حفظ'}
-                </button>
-              </div>
-
-              {graduationProjectConfig && (
-                <div className="book-config-form">
-                  <div className="form-group">
-                    <label>اسم السيكشن</label>
-                    <input
-                      type="text"
-                      value={graduationProjectConfig.serviceName}
-                      onChange={(e) => setGraduationProjectConfig({ ...graduationProjectConfig, serviceName: e.target.value })}
-                      className="config-input"
-                      placeholder="مشروع التخرج"
-                    />
-                  </div>
-
-                  {/* Features Section */}
-                  <div className="form-group">
-                    <label>المميزات</label>
-                    <div className="features-admin-list">
-                      {graduationProjectConfig.features.map((feature, index) => (
-                        <div key={index} className="feature-admin-item">
-                          <span>{feature}</span>
-                          <button
-                            onClick={() => handleRemoveGraduationProjectFeature(index)}
-                            className="remove-price-button"
-                            title="حذف"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="add-price-form" style={{ marginTop: '12px' }}>
-                      <input
-                        type="text"
-                        placeholder="أضف ميزة جديدة"
-                        value={newGradProjectFeature}
-                        onChange={(e) => setNewGradProjectFeature(e.target.value)}
-                        className="config-input"
-                      />
-                      <button onClick={handleAddGraduationProjectFeature} className="add-price-button">
-                        إضافة ميزة
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Prices Section */}
-                  <div className="form-group">
-                    <label>الأسعار</label>
-                    <div className="prices-grid">
-                      {(graduationProjectConfig.prices || []).map((priceItem) => (
-                        <div key={priceItem.id} className="price-item">
-                          <div className="price-item-info">
-                            <span className="price-amount">{priceItem.price} جنيه</span>
-                          </div>
-                          <button
-                            onClick={() => handleRemoveGraduationProjectPrice(priceItem.id)}
-                            className="remove-price-button"
-                            title="حذف"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="add-price-section" style={{ marginTop: '16px' }}>
-                      <div className="add-price-form">
-                        <input
-                          type="number"
-                          placeholder="السعر (جنيه)"
-                          value={newGradProjectPriceAmount}
-                          onChange={(e) => setNewGradProjectPriceAmount(e.target.value)}
-                          className="config-input"
-                          min="0"
-                        />
-                        <button onClick={handleAddGraduationProjectPrice} className="add-price-button">
-                          إضافة سعر
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Payment Methods */}
-                  <div className="form-group">
-                    <label>أرقام الدفع</label>
-                    <div className="payment-numbers">
-                      <div className="payment-item">
-                        <label>instaPay</label>
-                        <input
-                          type="text"
-                          value={graduationProjectConfig.paymentMethods.instaPay}
-                          onChange={(e) => setGraduationProjectConfig({
-                            ...graduationProjectConfig,
-                            paymentMethods: {
-                              ...graduationProjectConfig.paymentMethods,
-                              instaPay: e.target.value
-                            }
-                          })}
-                          className="config-input"
-                        />
-                      </div>
-                      <div className="payment-item">
-                        <label>محفظة الكاش</label>
-                        <input
-                          type="text"
-                          value={graduationProjectConfig.paymentMethods.cashWallet}
-                          onChange={(e) => setGraduationProjectConfig({
-                            ...graduationProjectConfig,
-                            paymentMethods: {
-                              ...graduationProjectConfig.paymentMethods,
-                              cashWallet: e.target.value
-                            }
-                          })}
-                          className="config-input"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )
-      }
-
       {activeTab === 'users' && (
         <AdminUsersTab
           searchTerm={searchTerm}
@@ -5544,12 +5459,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           setShowPasswords={setShowPasswords}
           setViewingStudentRequests={setViewingStudentRequests}
           handleEditStudent={handleEditStudent}
-          deleteStudentData={deleteStudentData}
+          deleteStudentData={handleDeleteStudent}
           showAlert={showAlert}
           setToastState={setToastState}
           ADMIN_USERS_PAGE_SIZE={ADMIN_USERS_PAGE_SIZE}
+          usersHasMore={usersHasMore}
+          isLoadingMoreUsers={isLoadingMoreUsers}
+          handleLoadMoreUsers={handleLoadMoreUsers}
         />
       )}
+
       {activeTab === 'whatsapp' && (
         <AdminWhatsAppTab
           showAlert={showAlert}
@@ -5560,355 +5479,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           serviceRequests={serviceRequests}
         />
       )}
-      {false && (
-          <div className="admin-content">
-            <div className="section-header">
-              <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <span>إدارة المستخدمين</span>
-                {searchTerm.trim() ? (
-                  <span style={{ color: '#64748b', fontWeight: 700 }}>({filteredAdminStudents.length})</span>
-                ) : usersDirectoryLoading && filteredAdminStudents.length === 0 ? (
-                  <span style={{ color: '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '15px' }}>
-                    <Loader2 size={18} className="spinning-loader-small" style={{ flexShrink: 0, color: '#64748b' }} />
-                    جاري التحميل
-                    {typeof studentsTotalCount === 'number' && (
-                      <span style={{ color: '#94a3b8' }}>({(studentsTotalCount as number).toLocaleString('ar-EG')})</span>
-                    )}
-                  </span>
-                ) : (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ color: '#64748b', fontWeight: 700 }}>({filteredAdminStudents.length})</span>
-                    {studentsRestLoading &&
-                      typeof studentsTotalCount === 'number' &&
-                      (studentsTotalCount as number) > filteredAdminStudents.length && (
-                        <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: '0.9em' }}>
-                          — {filteredAdminStudents.length.toLocaleString('ar-EG')} / {(studentsTotalCount as number).toLocaleString('ar-EG')}
-                        </span>
-                      )}
-                  </span>
-                )}
-              </h2>
-              <div className="search-box">
-                <Search size={18} />
-                <input
-                  type="text"
-                  placeholder="ابحث عن مستخدم بالإسم أو الرقم القومي أو الهاتف..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="search-input"
-                />
-              </div>
-            </div>
-
-            <div className="requests-list-container">
-              {searchTerm.trim() && filteredAdminStudents.length === 0 ? (
-                <div className="no-requests-message">
-                  <p>لا يوجد مستخدمين يطابقون بحثك</p>
-                </div>
-              ) : !searchTerm.trim() && !usersDirectoryLoading && filteredAdminStudents.length === 0 ? (
-                <div className="no-requests-message">
-                  <p>لا يوجد مستخدمين مسجلين حالياً</p>
-                </div>
-              ) : (
-                <>
-                  <div className="pagination-info" style={{ marginBottom: '16px', color: '#64748b', fontSize: '14px', padding: '0 8px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
-                    {usersDirectoryLoading && !searchTerm.trim() && filteredAdminStudents.length === 0 ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
-                        <Loader2 size={16} strokeWidth={2.2} className="spinning-loader-small" style={{ color: '#64748b', flexShrink: 0 }} />
-                        <span>جاري تحميل المستخدمين…</span>
-                        {typeof studentsTotalCount === 'number' && (
-                          <span style={{ color: '#94a3b8', fontSize: '13px' }}>
-                            ({(studentsTotalCount as number).toLocaleString('ar-EG')} في السحابة)
-                          </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span>
-                        إجمالي المستخدمين المعروضين: {filteredAdminStudents.length.toLocaleString('ar-EG')}
-                        {typeof studentsTotalCount === 'number' &&
-                          studentsRestLoading &&
-                          (studentsTotalCount as number) > filteredAdminStudents.length && (
-                            <span style={{ color: '#94a3b8', marginRight: '8px', fontSize: '13px' }}>
-                              — جاري إكمال القائمة ({filteredAdminStudents.length.toLocaleString('ar-EG')} /{' '}
-                              {(studentsTotalCount as number).toLocaleString('ar-EG')})
-                            </span>
-                          )}
-                        {typeof studentsTotalCount === 'number' &&
-                          !(studentsRestLoading && (studentsTotalCount as number) > filteredAdminStudents.length) &&
-                          (studentsTotalCount as number) !== filteredAdminStudents.length &&
-                          !searchTerm.trim() && (
-                            <span style={{ color: '#94a3b8', marginRight: '8px', fontSize: '13px' }}>
-                              — في السحابة: {(studentsTotalCount as number).toLocaleString('ar-EG')}
-                            </span>
-                          )}
-                        {filteredAdminStudents.length > ADMIN_USERS_PAGE_SIZE && (
-                          <span style={{ color: '#94a3b8', fontSize: '13px', marginRight: '8px' }}>
-                            — عرض {usersListPage * ADMIN_USERS_PAGE_SIZE + 1}–{Math.min((usersListPage + 1) * ADMIN_USERS_PAGE_SIZE, filteredAdminStudents.length)}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {!(usersDirectoryLoading && !searchTerm.trim() && filteredAdminStudents.length === 0) &&
-                      filteredAdminStudents.length > ADMIN_USERS_PAGE_SIZE && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                        <button
-                          type="button"
-                          disabled={usersListPage <= 0}
-                          onClick={() => setUsersListPage(p => Math.max(0, p - 1))}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: '8px',
-                            border: '1px solid #cbd5e1',
-                            background: usersListPage <= 0 ? '#f1f5f9' : '#fff',
-                            cursor: usersListPage <= 0 ? 'not-allowed' : 'pointer',
-                            fontWeight: 700,
-                            fontSize: '13px'
-                          }}
-                        >
-                          السابق
-                        </button>
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
-                          صفحة {usersListPage + 1} / {adminUsersTotalPages}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={usersListPage >= adminUsersTotalPages - 1}
-                          onClick={() => setUsersListPage(p => Math.min(adminUsersTotalPages - 1, p + 1))}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: '8px',
-                            border: '1px solid #cbd5e1',
-                            background: usersListPage >= adminUsersTotalPages - 1 ? '#f1f5f9' : '#fff',
-                            cursor: usersListPage >= adminUsersTotalPages - 1 ? 'not-allowed' : 'pointer',
-                            fontWeight: 700,
-                            fontSize: '13px'
-                          }}
-                        >
-                          التالي
-                        </button>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="excel-table-wrapper" style={{
-                    maxHeight: 'none',
-                    overflowY: 'visible',
-                    overflowX: 'auto',
-                    borderRadius: '12px',
-                    border: '1px solid #e2e8f0',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
-                  }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                      <thead>
-                        <tr style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', position: 'sticky', top: 0, zIndex: 10 }}>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', width: '50px' }}>#</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', width: '40px' }}>✓</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '180px' }}>الاسم</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '140px' }}>الرقم القومي</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '180px' }}>البريد الإلكتروني</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '120px' }}>رقم الواتساب</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '120px' }}>نوع الدبلومة</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>سنة الدبلومة</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '80px' }}>المسار</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '150px' }}>العنوان</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>كلمة المرور</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '100px' }}>تاريخ الانضمام</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '60px' }}>الطلبات</th>
-                          <th style={{ padding: '16px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '800', fontSize: '12px', whiteSpace: 'nowrap' }}>إجراءات</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {usersDirectoryLoading && !searchTerm.trim() && filteredAdminStudents.length === 0
-                          ? Array.from({ length: 6 }).map((_, skRow) => (
-                              <tr key={`u-sk-${skRow}`} style={{ background: skRow % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                                {Array.from({ length: 14 }).map((__, skCol) => (
-                                  <td
-                                    key={skCol}
-                                    style={{
-                                      padding: '14px 10px',
-                                      border: '1px solid #e2e8f0',
-                                      verticalAlign: 'middle'
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        height: 10,
-                                        width: skCol === 0 ? 20 : skCol < 4 ? '70%' : '45%',
-                                        maxWidth: skCol >= 4 ? 120 : undefined,
-                                        background: '#e2e8f0',
-                                        borderRadius: 5,
-                                        margin: skCol >= 3 ? '0 auto' : skCol === 0 ? '0 auto' : undefined
-                                      }}
-                                    />
-                                  </td>
-                                ))}
-                              </tr>
-                            ))
-                          : displayedAdminStudents.map((student, index) => {
-                          const globalIndex = usersListPage * ADMIN_USERS_PAGE_SIZE + index;
-                          const studentRequestCount = requestCountByStudentId.get(student.id || '') ?? 0;
-                          const flagKey = `student-${student.id}`;
-                          const studentFlags = toggledFlags[flagKey] || { f1: false, f2: false, f3: false };
-                          const isFlagged = studentFlags.f1 || studentFlags.f2 || studentFlags.f3;
-                          const addressStr = [student.address?.governorate, student.address?.city, student.address?.street].filter(Boolean).join(' - ') || '';
-
-                          return (
-                            <tr key={student.id} style={{
-                              background: isFlagged ? '#eff6ff' : (globalIndex % 2 === 0 ? '#ffffff' : '#f8fafc'),
-                              borderLeft: isFlagged ? '3px solid #2563eb' : 'none',
-                              transition: 'background-color 0.2s'
-                            }}>
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '13px', color: '#64748b', fontWeight: '700' }}>
-                                {globalIndex + 1}
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleFlag(flagKey, 1)}
-                                  style={{ background: 'none', border: 'none', padding: '0', cursor: 'pointer', color: isFlagged ? '#2563eb' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}
-                                >
-                                  {isFlagged ? <CheckSquare size={20} strokeWidth={2.5} /> : <Square size={20} strokeWidth={1.5} />}
-                                </button>
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#1e293b', fontWeight: '700', minWidth: '180px' }}>
-                                {student.fullNameArabic || 'بدون اسم'}
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', fontWeight: '600', direction: 'ltr', textAlign: 'right' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                                  {student.nationalID || '-'}
-                                  {student.nationalID && (
-                                    <Copy
-                                      size={14}
-                                      style={{ cursor: 'pointer', color: '#3b82f6', opacity: 0.6 }}
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(student.nationalID!);
-                                        setToastState({ message: 'تم نسخ الرقم القومي', type: 'success', duration: 2000 });
-                                      }}
-                                    />
-                                  )}
-                                </div>
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', direction: 'ltr', textAlign: 'right', maxWidth: '200px', wordBreak: 'break-all' }}>
-                                {student.email || '-'}
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', direction: 'ltr', textAlign: 'right' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
-                                  {student.whatsappNumber || '-'}
-                                  {student.whatsappNumber && (
-                                    <Copy
-                                      size={14}
-                                      style={{ cursor: 'pointer', color: '#10b981', opacity: 0.6 }}
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(student.whatsappNumber!);
-                                        setToastState({ message: 'تم نسخ رقم الواتساب', type: 'success', duration: 2000 });
-                                      }}
-                                    />
-                                  )}
-                                </div>
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
-                                {student.diplomaType || '-'}
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', textAlign: 'center' }}>
-                                {student.diplomaYear || '-'}
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
-                                {student.track || '-'}
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', maxWidth: '200px' }}>
-                                <div style={{ maxHeight: '60px', overflowY: 'auto', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                  {addressStr || '-'}
-                                </div>
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
-                                    {showPasswords[student.id || ''] ? (student.password || '-') : '••••••••'}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowPasswords(prev => ({ ...prev, [student.id || '']: !prev[student.id || ''] }))}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', padding: 0, display: 'flex' }}
-                                  >
-                                    {showPasswords[student.id || ''] ? <EyeOff size={14} /> : <Eye size={14} />}
-                                  </button>
-                                </div>
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                {student.createdAt ? new Date(student.createdAt).toLocaleDateString('ar-EG') : '-'}
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                                <span style={{
-                                  background: studentRequestCount > 0 ? '#dbeafe' : '#f1f5f9',
-                                  color: studentRequestCount > 0 ? '#1d4ed8' : '#94a3b8',
-                                  padding: '4px 10px',
-                                  borderRadius: '12px',
-                                  fontSize: '13px',
-                                  fontWeight: '700'
-                                }}>
-                                  {studentRequestCount}
-                                </span>
-                              </td>
-
-                              <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
-                                  <button
-                                    onClick={() => setViewingStudentRequests(student)}
-                                    title="عرض جميع الطلبات"
-                                    style={{ padding: '8px', background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd', borderRadius: '8px', cursor: 'pointer' }}
-                                  >
-                                    <ClipboardList size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleEditStudent(student)}
-                                    title="تعديل البيانات"
-                                    style={{ padding: '8px', background: '#eff6ff', color: '#2563eb', border: '1px solid #93c5fd', borderRadius: '8px', cursor: 'pointer' }}
-                                  >
-                                    <Edit2 size={16} />
-                                  </button>
-                                  <button
-                                    onClick={async () => {
-                                      if (!window.confirm("هل أنت متأكد من حذف هذا المشترك نهائياً من المنصة؟")) return;
-                                      try {
-                                        await deleteStudentData(student.id!);
-                                        showAlert('نجاح', 'تم حذف المشترك بنجاح', 'success');
-                                      } catch (error: any) {
-                                        showAlert('خطأ', error.message || 'حدث خطأ أثناء الحذف', 'error');
-                                      }
-                                    }}
-                                    title="حذف المشترك"
-                                    style={{ padding: '8px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '8px', cursor: 'pointer' }}
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )
-      }
-
-
 
       {
         activeTab === 'services' && (
@@ -7470,17 +7040,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           tryUnlockStats={tryUnlockStats}
           setToastState={setToastState}
         />
-      )}
-
-      {activeTab === 'dataExtraction' && (
-        <div className="admin-content">
-          <div className="section-header">
-            <h2>أداة استخراج البيانات بالذكاء الاصطناعي</h2>
-          </div>
-          <div className="admin-data-extraction-wrapper" style={{ padding: '20px', background: '#fff', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
-            <DataExtractionService />
-          </div>
-        </div>
       )}
       {false && (() => {
         // --- STATISTICS CALCULATION ENGINE ---

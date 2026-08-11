@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, useTransition, useDeferredValue } from 'react';
 import { StudentData } from '../types';
-import { subscribeToAllStudents, updateStudentData, deleteStudentData } from '../services/firebaseService';
+import { fetchStudentsPageByDocumentId, searchStudent, updateStudentData, deleteStudentData } from '../services/firebaseService';
 import { ArrowRight, Eye, EyeOff, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { AutoSizer as _AutoSizer } from 'react-virtualized-auto-sizer';
 import { List as _List } from 'react-window';
@@ -124,6 +124,7 @@ const itemKey = (index: number, data: RowItemData) => data.items[index]?.id || i
 
 const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
   const [students, setStudents] = useState<StudentData[]>([]);
+  const [searchResults, setSearchResults] = useState<StudentData[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingStudent, setEditingStudent] = useState<StudentData | null>(null);
@@ -132,18 +133,46 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
   const [, startTransition] = useTransition();
   const deferredSearch = useDeferredValue(searchTerm);
 
-  useEffect(() => {
-    setIsLoading(true);
-    const unsubscribe = subscribeToAllStudents((allStudents) => {
-      // Avoid blocking UI thread on big snapshots
-      startTransition(() => {
-        setStudents(allStudents);
-      });
-      setIsLoading(false);
-    });
+  const [lastSnap, setLastSnap] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-    return () => unsubscribe();
+  useEffect(() => {
+    let cancelled = false;
+    const loadInitial = async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetchStudentsPageByDocumentId(50, null);
+        if (cancelled) return;
+        setStudents(res.students);
+        setLastSnap(res.lastSnapshot);
+        setHasMore(res.hasMore);
+      } catch (e) {
+        console.error('Error fetching students:', e);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    loadInitial();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const handleLoadMore = async () => {
+    if (!hasMore || !lastSnap || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const res = await fetchStudentsPageByDocumentId(50, lastSnap);
+      setStudents(prev => [...prev, ...res.students]);
+      setLastSnap(res.lastSnapshot);
+      setHasMore(res.hasMore);
+    } catch (e) {
+      console.error('Error loading more students:', e);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const handleEditPassword = useCallback((student: StudentData) => {
     setEditingStudent(student);
@@ -182,18 +211,58 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
     }
   }, []);
 
+  const allUsersSearchIdRef = React.useRef(0);
+
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) {
+      setSearchResults(null);
+      return;
+    }
+
+    const currentId = ++allUsersSearchIdRef.current;
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const results = await searchStudent(term, students);
+        if (allUsersSearchIdRef.current === currentId) {
+          setSearchResults(results);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, 350);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, students]);
+
   const filteredStudents = useMemo(() => {
+    if (searchResults !== null) {
+      return searchResults;
+    }
+
     const t = deferredSearch.trim();
     if (!t) return students;
     const searchLower = t.toLowerCase();
-    return students.filter(student => (
-      student.fullNameArabic?.toLowerCase().includes(searchLower) ||
-      student.email?.toLowerCase().includes(searchLower) ||
-      student.whatsappNumber?.includes(t) ||
-      student.id?.toLowerCase().includes(searchLower) ||
-      student.nationalID?.includes(t)
-    ));
-  }, [students, deferredSearch]);
+    return students.filter(student => {
+      const s = student as any;
+      const arabicName = String(s.fullNameArabic || s.full_name_arabic || s.full_name || '').toLowerCase();
+      const englishName = String(s.vehicleNameEnglish || s.fullNameEnglish || s.full_name_english || '').toLowerCase();
+      const email = String(s.email || '').toLowerCase();
+      const whatsapp = String(s.whatsappNumber || s.phone || s.phoneNumber || s.mobile || '');
+      const natId = String(s.nationalID || s.national_id || '');
+      const idStr = String(s.id || '').toLowerCase();
+
+      return (
+        arabicName.includes(searchLower) ||
+        englishName.includes(searchLower) ||
+        email.includes(searchLower) ||
+        whatsapp.includes(t) ||
+        natId.includes(t) ||
+        idStr.includes(searchLower)
+      );
+    });
+  }, [students, deferredSearch, searchResults]);
 
   const formatDate = useCallback((dateString?: string) => {
     if (!dateString) return 'غير متاح';
@@ -280,6 +349,26 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
                 </List>
               )}
             </AutoSizer>
+          </div>
+        )}
+        {hasMore && !isLoading && (
+          <div style={{ textAlign: 'center', padding: '15px' }}>
+            <button
+              onClick={handleLoadMore}
+              disabled={isLoadingMore}
+              style={{
+                padding: '10px 24px',
+                backgroundColor: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '14px'
+              }}
+            >
+              {isLoadingMore ? 'جاري التحميل...' : 'تحميل المزيد من المستخدمين'}
+            </button>
           </div>
         )}
       </div>

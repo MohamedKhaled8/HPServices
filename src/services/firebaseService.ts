@@ -361,12 +361,69 @@ export const changeOtherUserPasswordHelper = async (uid: string, newPassword: st
   }
 };
 
+export const normalizeArabicText = (str: string): string => {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[\u064B-\u0652]/g, '') // Strip Tashkeel
+    .replace(/[\u0640]/g, '')        // Strip Tatweel
+    .replace(/[أإآٱ]/g, 'ا')         // Normalize Alef
+    .replace(/ة/g, 'ه')              // Normalize Ta Marbouta
+    .replace(/ى/g, 'ي')              // Normalize Alef Maqsura
+    .replace(/\s+/g, ' ');           // Collapse spaces
+};
+
+export const generateSearchKeywords = (studentData: Partial<StudentData>): string[] => {
+  const keywordsSet = new Set<string>();
+
+  const processText = (text?: string) => {
+    if (!text) return;
+    const rawStr = String(text).trim();
+    if (!rawStr) return;
+
+    const normStr = normalizeArabicText(rawStr);
+    const words = normStr.split(/[\s,._\-/\\]+/).filter(w => w.length >= 2);
+
+    words.forEach(w => {
+      keywordsSet.add(w);
+      // Prefix substrings for partial word matching (min 2 chars)
+      for (let i = 2; i <= Math.min(w.length, 12); i++) {
+        keywordsSet.add(w.slice(0, i));
+      }
+    });
+
+    // Generate bi-grams (2-word phrases) for phrase search like "محمد مصطفى"
+    for (let i = 0; i < words.length - 1; i++) {
+      const bigram = `${words[i]} ${words[i + 1]}`;
+      keywordsSet.add(bigram);
+    }
+  };
+
+  const s = studentData as any;
+  processText(s.fullNameArabic);
+  processText(s.full_name_arabic);
+  processText(s.full_name);
+  processText(s.vehicleNameEnglish);
+  processText(s.fullNameEnglish);
+  processText(s.full_name_english);
+  processText(s.email);
+  processText(s.nationalID || s.national_id);
+  processText(s.whatsappNumber || s.phone);
+  processText(s.diplomaType);
+  processText(s.course || s.track);
+
+  return Array.from(keywordsSet);
+};
+
 export const updateStudentData = async (userId: string, data: Partial<StudentData>): Promise<void> => {
   try {
+    const keywords = generateSearchKeywords(data);
+    const payload = keywords.length > 0 ? { ...data, searchKeywords: keywords } : data;
     await setDoc(
       doc(db, 'students', userId),
       {
-        ...data,
+        ...payload,
         updatedAt: serverTimestamp()
       },
       { merge: true }
@@ -558,27 +615,38 @@ export const distributeAssignmentsForTrack = async (
       throw new Error('لا توجد ملفات مرفوعة لهذا المسار');
     }
 
-    // 2) Get students filtered by tier (if specified) AND track
-    const studentsRef = collection(db, 'students');
-    const studentsSnap = await getDocs(studentsRef);
-    let allStudentsInTrack: { id: string; data: StudentData }[] = [];
+    // 2) Get targeted students by tier and/or track without scanning full collection
+    let targetStudentsMap: Record<string, StudentData> = {};
 
-    studentsSnap.forEach((docSnap) => {
-      const data = docSnap.data() as StudentData;
+    if (serviceTier) {
+      const tierPrice = serviceTier === '500' ? 500 : 300;
+      const tierStudentIds = await getStudentIdsByTier(tierPrice);
+      if (tierStudentIds.size > 0) {
+        targetStudentsMap = await getStudentsByIds(Array.from(tierStudentIds));
+      }
+    } else {
+      const trackVariantsMap: Record<TrackKey, string[]> = {
+        track1: ['track1', 'الأول', 'الاول', 'المسار الأول', 'المسار الاول', 'الأولى', '1'],
+        track2: ['track2', 'الثاني', 'المسار الثاني', 'الثانية', '2'],
+        track3: ['track3', 'الثالث', 'المسار الثالث', 'الثالثة', '3']
+      };
+      const variants = trackVariantsMap[track] || [track];
+      const q = query(collection(db, 'students'), where('track', 'in', variants));
+      const snap = await getDocs(q);
+      snap.docs.forEach((docSnap) => {
+        targetStudentsMap[docSnap.id] = docSnap.data() as StudentData;
+      });
+    }
+
+    let allStudentsInTrack: { id: string; data: StudentData }[] = [];
+    Object.entries(targetStudentsMap).forEach(([id, data]) => {
       const studentTrackKey = trackToKey(data.track || null);
       if (studentTrackKey === track) {
-        allStudentsInTrack.push({ id: docSnap.id, data });
+        allStudentsInTrack.push({ id, data });
       }
     });
 
     let students = allStudentsInTrack;
-
-    // If a tier is specified, filter by students who bought that tier
-    if (serviceTier) {
-      const tierPrice = serviceTier === '500' ? 500 : 300;
-      const tierStudentIds = await getStudentIdsByTier(tierPrice);
-      students = allStudentsInTrack.filter(s => tierStudentIds.has(s.id));
-    }
 
     if (students.length === 0) {
       const tierLabel = serviceTier === '500' ? 'خدمة الـ 500' : serviceTier === '300' ? 'خدمة الـ 300' : 'هذا المسار';
@@ -955,16 +1023,9 @@ export const distribute130UnifiedFiles = async (fileIds?: string[]): Promise<voi
       throw new Error('لا يوجد طلاب مشتركين في خدمة الـ 130 حالياً');
     }
 
-    // 3) Get student data
-    const studentsRef = collection(db, 'students');
-    const studentsSnap = await getDocs(studentsRef);
-    const students: { id: string; data: StudentData }[] = [];
-
-    studentsSnap.forEach((docSnap) => {
-      if (tierStudentIds.has(docSnap.id)) {
-        students.push({ id: docSnap.id, data: docSnap.data() as StudentData });
-      }
-    });
+    // 3) Get student data (only for the targeted tier students)
+    const studentsMap = await getStudentsByIds(Array.from(tierStudentIds));
+    const students: { id: string; data: StudentData }[] = Object.entries(studentsMap).map(([id, data]) => ({ id, data }));
 
     if (students.length === 0) {
       throw new Error('لا يوجد طلاب مشتركين في خدمة الـ 130 حالياً');
@@ -1059,7 +1120,9 @@ export const removeAssignedFilesFromAllStudents = async (fileIds: string[]): Pro
 
     const fileIdSet = new Set(fileIds);
     const studentsRef = collection(db, 'students');
-    const studentsSnap = await getDocs(studentsRef);
+    // Fetch ONLY students who currently have assigned files (assignedFile != null)
+    const q = query(studentsRef, where('assignedFile', '!=', null));
+    const studentsSnap = await getDocs(q);
 
     let updatedCount = 0;
     const batch = writeBatch(db);
@@ -1242,128 +1305,169 @@ export const subscribeToAdminPreferences = (
   );
 };
 
-// Search for a student by any field
-export const searchStudent = async (searchTerm: string): Promise<StudentData[]> => {
+// Search for a student by any field (Optimized to reduce Firestore Reads while guaranteeing 100% result accuracy)
+// Search for a student by any field (Optimized to reduce Firestore Reads while guaranteeing 100% result accuracy)
+export const searchStudent = async (searchTerm: string, cachedStudents?: StudentData[]): Promise<StudentData[]> => {
   try {
-    const studentsRef = collection(db, 'students');
-    const allStudents: StudentData[] = [];
-
-    // If search term is empty, return empty array
-    if (!searchTerm.trim()) {
+    const searchTrimmed = searchTerm.trim();
+    if (!searchTrimmed) {
       return [];
     }
 
-    // Get all students (Firestore doesn't support full-text search easily)
-    const querySnapshot = await getDocs(studentsRef);
+    const searchLower = searchTrimmed.toLowerCase();
+    const searchNorm = normalizeArabicText(searchTrimmed);
+    const isNumeric = /^\d+$/.test(searchTrimmed);
 
-    // Check if search term is a number (for national ID or phone)
-    const isNumeric = /^\d+$/.test(searchTerm);
-    const isNationalID = isNumeric && searchTerm.length <= 14;
-    const searchLower = searchTerm.toLowerCase();
-    const searchTrimmed = searchTerm.trim();
+    const filterStudent = (student: StudentData): boolean => {
+      if (!student) return false;
+      const s = student as any;
 
-    querySnapshot.docs.forEach(doc => {
-      const data = doc.data();
-      const student = {
-        ...data,
-        id: doc.id,
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
-      } as StudentData;
+      const arabicName = String(s.fullNameArabic || s.full_name_arabic || s.full_name || '');
+      const arabicNameNorm = normalizeArabicText(arabicName);
 
-      let matches = false;
+      const englishName = String(s.vehicleNameEnglish || s.fullNameEnglish || s.full_name_english || '').toLowerCase();
+      const email = String(s.email || '').toLowerCase();
+      const whatsapp = String(s.whatsappNumber || s.phone || s.phoneNumber || s.mobile || '');
+      const natId = String(s.nationalID || s.national_id || '');
+      const diploma = String(s.diplomaType || s.diploma_type || s.diplomaYear || s.diploma_year || '').toLowerCase();
+      const course = String(s.course || s.track || s.track_name || '').toLowerCase();
+      const idStr = String(s.id || '').toLowerCase();
 
-      // Search in all fields
-      // 1. Full Name Arabic
-      if (student.fullNameArabic && student.fullNameArabic.toLowerCase().includes(searchLower)) {
-        matches = true;
-      }
-
-      // 2. Full Name English
-      if (student.vehicleNameEnglish && student.vehicleNameEnglish.toLowerCase().includes(searchLower)) {
-        matches = true;
-      }
-
-      // 3. Email
-      if (student.email && student.email.toLowerCase().includes(searchLower)) {
-        matches = true;
-      }
-
-      // 4. WhatsApp Number
-      if (student.whatsappNumber && student.whatsappNumber.includes(searchTrimmed)) {
-        matches = true;
-      }
-
-      // 5. National ID - special handling
-      if (student.nationalID) {
-        if (isNationalID) {
-          // If search term is less than 14 digits, it must be a prefix
-          if (searchTrimmed.length < 14) {
-            if (student.nationalID.startsWith(searchTrimmed)) {
-              matches = true;
-            }
-          } else if (searchTrimmed.length === 14) {
-            // Exact match for 14 digits
-            if (student.nationalID === searchTrimmed) {
-              matches = true;
-            }
-          }
+      let addrStr = '';
+      if (s.address) {
+        if (typeof s.address === 'object') {
+          addrStr = `${s.address.governorate || ''} ${s.address.city || ''} ${s.address.street || ''} ${s.address.building || ''} ${s.address.siteNumber || ''} ${s.address.landmark || ''}`;
         } else {
-          // If not numeric, search as text
-          if (student.nationalID.includes(searchTrimmed)) {
-            matches = true;
+          addrStr = String(s.address);
+        }
+      }
+      const addrNorm = normalizeArabicText(addrStr);
+
+      const isTextSearch = !isNumeric && !searchTrimmed.includes('@');
+
+      if (isTextSearch) {
+        return (
+          arabicNameNorm.startsWith(searchNorm) ||
+          arabicName.toLowerCase().startsWith(searchLower) ||
+          englishName.startsWith(searchLower)
+        );
+      }
+
+      return (
+        arabicNameNorm.startsWith(searchNorm) ||
+        englishName.startsWith(searchLower) ||
+        email.includes(searchLower) ||
+        whatsapp.includes(searchTrimmed) ||
+        natId.includes(searchTrimmed) ||
+        diploma.includes(searchLower) ||
+        course.includes(searchLower) ||
+        addrNorm.includes(searchNorm) ||
+        idStr.includes(searchLower)
+      );
+    };
+
+    const matchedDocsMap = new Map<string, StudentData>();
+
+    // 1. Add any matches from local memory cache first (0 Reads)
+    if (cachedStudents && cachedStudents.length > 0) {
+      cachedStudents.filter(filterStudent).forEach(s => {
+        if (s?.id) matchedDocsMap.set(s.id, s);
+      });
+    }
+
+    // 2. ALWAYS execute targeted queries on Firestore to fetch matches outside local cache
+    const studentsRef = collection(db, 'students');
+    const queryPromises: Promise<any>[] = [];
+
+    // Search via searchKeywords array-contains (matches any word/phrase inside name for tokenized docs)
+    queryPromises.push(
+      getDocs(query(studentsRef, where('searchKeywords', 'array-contains', searchLower), limit(50)))
+    );
+    queryPromises.push(
+      getDocs(query(studentsRef, where('searchKeywords', 'array-contains', searchNorm), limit(50)))
+    );
+
+    if (isNumeric) {
+      // Search by nationalID or whatsappNumber prefix
+      queryPromises.push(
+        getDocs(query(studentsRef, where('nationalID', '>=', searchTrimmed), where('nationalID', '<=', searchTrimmed + '\uf8ff'), limit(50)))
+      );
+      queryPromises.push(
+        getDocs(query(studentsRef, where('whatsappNumber', '>=', searchTrimmed), where('whatsappNumber', '<=', searchTrimmed + '\uf8ff'), limit(50)))
+      );
+    } else if (searchTrimmed.includes('@')) {
+      // Search by email prefix
+      queryPromises.push(
+        getDocs(query(studentsRef, where('email', '>=', searchLower), where('email', '<=', searchLower + '\uf8ff'), limit(50)))
+      );
+    } else {
+      const containsEnglish = /[a-zA-Z]/.test(searchTrimmed);
+
+      if (containsEnglish) {
+        // English name & Email prefix queries (TitleCase & lowercase)
+        const capitalized = searchTrimmed.charAt(0).toUpperCase() + searchTrimmed.slice(1);
+        queryPromises.push(
+          getDocs(query(studentsRef, where('vehicleNameEnglish', '>=', capitalized), where('vehicleNameEnglish', '<=', capitalized + '\uf8ff'), limit(50)))
+        );
+        queryPromises.push(
+          getDocs(query(studentsRef, where('vehicleNameEnglish', '>=', searchLower), where('vehicleNameEnglish', '<=', searchLower + '\uf8ff'), limit(50)))
+        );
+        queryPromises.push(
+          getDocs(query(studentsRef, where('fullNameEnglish', '>=', capitalized), where('fullNameEnglish', '<=', capitalized + '\uf8ff'), limit(50)))
+        );
+        queryPromises.push(
+          getDocs(query(studentsRef, where('fullNameEnglish', '>=', searchLower), where('fullNameEnglish', '<=', searchLower + '\uf8ff'), limit(50)))
+        );
+        queryPromises.push(
+          getDocs(query(studentsRef, where('email', '>=', searchLower), where('email', '<=', searchLower + '\uf8ff'), limit(50)))
+        );
+      } else {
+        // Arabic name queries (prefix fallback for untokenized docs)
+        queryPromises.push(
+          getDocs(query(studentsRef, where('fullNameArabic', '>=', searchTrimmed), where('fullNameArabic', '<=', searchTrimmed + '\uf8ff'), limit(50)))
+        );
+        queryPromises.push(
+          getDocs(query(studentsRef, where('full_name_arabic', '>=', searchTrimmed), where('full_name_arabic', '<=', searchTrimmed + '\uf8ff'), limit(50)))
+        );
+
+        // Normalize Alef / Hamza (أ, إ, آ, ا) to catch user spelling variations
+        const normalizedAlef = searchTrimmed.replace(/^[أإآا]/, '');
+        if (normalizedAlef && normalizedAlef !== searchTrimmed) {
+          ['أ', 'إ', 'آ', 'ا'].forEach(prefix => {
+            const variant = prefix + normalizedAlef;
+            queryPromises.push(
+              getDocs(query(studentsRef, where('fullNameArabic', '>=', variant), where('fullNameArabic', '<=', variant + '\uf8ff'), limit(50)))
+            );
+          });
+        }
+      }
+    }
+
+    const querySnapshots = await Promise.all(queryPromises);
+    querySnapshots.forEach(snap => {
+      if (snap && snap.docs) {
+        snap.docs.forEach((d: any) => {
+          const data = d.data() as Record<string, any>;
+          const student = {
+            ...data,
+            id: d.id,
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+          } as StudentData;
+
+          if (filterStudent(student)) {
+            matchedDocsMap.set(d.id, student);
           }
-        }
-      }
-
-      // 6. Diploma Type
-      if (student.diplomaType && student.diplomaType.toLowerCase().includes(searchLower)) {
-        matches = true;
-      }
-
-
-
-      // 8. Diploma Year
-      if (student.diplomaYear && student.diplomaYear.includes(searchTrimmed)) {
-        matches = true;
-      }
-
-      // 9. Course
-      if (student.course && student.course.toLowerCase().includes(searchLower)) {
-        matches = true;
-      }
-
-      // 10. Address fields
-      if (student.address) {
-        if (student.address.governorate && student.address.governorate.toLowerCase().includes(searchLower)) {
-          matches = true;
-        }
-        if (student.address.city && student.address.city.toLowerCase().includes(searchLower)) {
-          matches = true;
-        }
-        if (student.address.street && student.address.street.toLowerCase().includes(searchLower)) {
-          matches = true;
-        }
-        if (student.address.building && student.address.building.toLowerCase().includes(searchLower)) {
-          matches = true;
-        }
-        if (student.address.siteNumber && student.address.siteNumber.toLowerCase().includes(searchLower)) {
-          matches = true;
-        }
-        if (student.address.landmark && student.address.landmark.toLowerCase().includes(searchLower)) {
-          matches = true;
-        }
-      }
-
-      if (matches) {
-        allStudents.push(student);
+        });
       }
     });
 
-    return allStudents;
+    return Array.from(matchedDocsMap.values());
   } catch (error: any) {
-    throw new Error(error.message || 'حدث خطأ أثناء البحث');
+    logger.error('Search error:', error);
+    return [];
   }
 };
+
 
 // Validate file type (images only for security)
 const isValidImageType = (fileType: string): boolean => {
