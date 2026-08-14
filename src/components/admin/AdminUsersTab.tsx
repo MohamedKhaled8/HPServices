@@ -231,7 +231,9 @@ const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                     const flagKey = `student-${student.id}`;
                     const studentFlags = toggledFlags[flagKey] || { f1: false, f2: false, f3: false };
                     const isFlagged = studentFlags.f1 || studentFlags.f2 || studentFlags.f3;
-                    const addressStr = [student.address?.governorate, student.address?.city, student.address?.street].filter(Boolean).join(' - ') || '';
+                    const addressStr = typeof student.address === 'object' && student.address
+                      ? [student.address.governorate, student.address.city, student.address.street].filter(Boolean).join(' - ')
+                      : typeof student.address === 'string' ? student.address : '';
 
                     return (
                       <tr key={student.id} style={{

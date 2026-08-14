@@ -6528,7 +6528,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 استعادة وفحص وإصلاح الطلبات
               </h3>
               <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
-                أدوات استعادة الطلبات من Cloudinary وإثراء البيانات — <strong>محمية بكلمة مرور</strong> لتجنّب التشغيل بالخطأ وتحسين سرعة الموقع.
+                أدوات استعادة الطلبات وإثراء البيانات — <strong>محمية بكلمة مرور</strong> لتجنّب التشغيل بالخطأ وتحسين سرعة الموقع.
               </p>
 
               {!restoreToolsUnlocked ? (
@@ -6665,6 +6665,48 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         {label}
                       </button>
                     ))}
+                  </div>
+
+                  {/* ⚠️ Danger Zone — Clean Old Completed Requests (Included in Password-Protected Area) */}
+                  <div style={{
+                    marginTop: '24px',
+                    padding: '18px 20px',
+                    borderRadius: '14px',
+                    border: '2px dashed #fca5a5',
+                    background: '#fff5f5'
+                  }}>
+                    <h4 style={{ margin: '0 0 8px', fontSize: '15px', fontWeight: 800, color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Trash2 size={17} color="#b91c1c" />
+                      منطقة الخطر — حذف الطلبات القديمة المكتملة
+                    </h4>
+                    <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#7f1d1d', lineHeight: 1.7 }}>
+                      يقوم هذا الإجراء بحذف <strong>جميع طلبات الخدمات المكتملة</strong> التي مر عليها أكثر من <strong>3 أشهر</strong> من قاعدة البيانات نهائياً لا رجعة فيه.
+                      <br />
+                      <strong style={{ color: '#15803d' }}>✅ حسابات الطلاب والمستخدمين محمية 100% ولن تُمس إطلاقاً.</strong>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleCleanOldCompletedRequests}
+                      disabled={isCleaningOldRequests}
+                      style={{
+                        padding: '10px 22px',
+                        backgroundColor: isCleaningOldRequests ? '#94a3b8' : '#dc2626',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '10px',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: isCleaningOldRequests ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 14px rgba(220,38,38,0.3)',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      {isCleaningOldRequests ? 'جاري التنظيف...' : 'تنظيف الطلبات المكتملة القديمة (+3 أشهر) 🔒'}
+                    </button>
                   </div>
                 </div>
               )}
@@ -6978,47 +7020,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               </AnimatePresence>
             </div>
 
-            {/* ⚠️ Danger Zone — Clean Old Completed Requests */}
-            <div style={{
-              marginTop: '48px',
-              padding: '24px',
-              borderRadius: '16px',
-              border: '2px dashed #fca5a5',
-              background: '#fff5f5'
-            }}>
-              <h4 style={{ margin: '0 0 8px', fontSize: '15px', fontWeight: 800, color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Trash2 size={17} color="#b91c1c" />
-                منطقة الخطر — حذف الطلبات القديمة المكتملة
-              </h4>
-              <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#7f1d1d', lineHeight: 1.7 }}>
-                يقوم هذا الإجراء بحذف <strong>جميع طلبات الخدمات المكتملة</strong> التي مر عليها أكثر من <strong>3 أشهر</strong> من قاعدة البيانات نهائياً لا رجعة فيه.
-                <br />
-                <strong style={{ color: '#15803d' }}>✅ حسابات الطلاب والمستخدمين محمية 100% ولن تُمس إطلاقاً.</strong>
-              </p>
-              <button
-                type="button"
-                onClick={handleCleanOldCompletedRequests}
-                disabled={isCleaningOldRequests}
-                style={{
-                  padding: '12px 28px',
-                  backgroundColor: isCleaningOldRequests ? '#94a3b8' : '#dc2626',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  cursor: isCleaningOldRequests ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 14px rgba(220,38,38,0.3)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <Trash2 size={16} />
-                {isCleaningOldRequests ? 'جاري التنظيف...' : 'تنظيف الطلبات المكتملة القديمة (+3 أشهر) 🔒'}
-              </button>
-            </div>
+
           </div>
         )
       }

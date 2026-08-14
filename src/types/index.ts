@@ -14,8 +14,8 @@ export interface StudentData {
   whatsappNumber: string;
   diplomaYear: string;
   diplomaType: string;
-  nationalID: string;
-  address: {
+  fullNameEnglish?: string;
+  address: string | {
     governorate: string;
     city: string;
     street: string;
@@ -42,6 +42,7 @@ export interface StudentData {
   track_name?: string;
   /** أكمل إجبار «سجل بياناتك» (يُضبط تلقائياً بعد طلب الخدمة 1) */
   routeRegistrationCompleted?: boolean;
+  nationalID?: string;
 }
 
 export interface Service {

@@ -311,9 +311,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
         if (service.id === '1' || service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') {
             const initialData: Record<string, any> = {};
-            const addressString = student.address
+            const addressString = student.address && typeof student.address === 'object'
                 ? `${student.address.governorate || ''}, ${student.address.city || ''}, ${student.address.street || ''}, ${student.address.building || ''}, ${student.address.siteNumber || ''}${student.address.landmark ? `, ${student.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
-                : '';
+                : typeof student.address === 'string' ? student.address : '';
 
             service.fields.forEach(field => {
                 if (field.type === 'editable') {
