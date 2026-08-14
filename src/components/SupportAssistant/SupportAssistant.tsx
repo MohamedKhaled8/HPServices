@@ -239,7 +239,11 @@ const SupportAssistant: React.FC<SupportAssistantProps> = ({
 
   useEffect(() => {
     if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
+      if (messages.length <= 1) {
+        listRef.current.scrollTop = 0;
+      } else {
+        listRef.current.scrollTop = listRef.current.scrollHeight;
+      }
     }
   }, [messages, open, typing]);
 
@@ -291,7 +295,7 @@ const SupportAssistant: React.FC<SupportAssistantProps> = ({
                   مساعد HP
                   <Sparkles size={14} className="sa-sparkle" />
                 </h3>
-                <p>اكتب «حالة مصروفاتي» أو «اتقبلت؟»</p>
+                <p><span className="sa-status-dot"></span> متصل الآن — كيف يمكنني مساعدتك؟</p>
               </div>
             </div>
             <div className="sa-header-actions">
@@ -344,13 +348,28 @@ const SupportAssistant: React.FC<SupportAssistantProps> = ({
             )}
           </div>
 
+          <div className="sa-quick-bar">
+            <button type="button" onClick={() => applyPayload('action:faq_main')}>
+              الأسئلة الشائعة ❓
+            </button>
+            <button type="button" onClick={() => applyPayload('action:all_status')}>
+              طلباتي 📋
+            </button>
+            <button type="button" onClick={() => applyPayload('action:services_list')}>
+              الخدمات 🌐
+            </button>
+            <button type="button" onClick={() => applyPayload('action:whatsapp')}>
+              واتساب 💬
+            </button>
+          </div>
+
           <div className="sa-footer">
             <input
               className="sa-input"
               placeholder={
                 pending?.type === 'national_id'
                   ? 'الرقم القومي (14 رقم)...'
-                  : 'مثال: حالة مصروفاتي / اتقبلت؟'
+                  : 'اسأل عن أي خدمة أو استفسار...'
               }
               value={input}
               onChange={(e) => setInput(e.target.value)}

@@ -1,4 +1,5 @@
 import { SERVICES } from '../constants/services';
+import { FAQ_CATEGORIES, FAQ_ITEMS, FaqItem, FaqCategory } from '../constants/faqData';
 import {
   ServiceRequest,
   ServiceRequestWorkflowStatus,
@@ -295,6 +296,126 @@ export function buildRequestCard(
   };
 }
 
+export function normalizeArabic(text: string): string {
+  return text
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[\u064B-\u0652]/g, '')
+    .replace(/[^\w\s\u0600-\u06FF]/gi, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function matchFaqFromText(text: string): { type: 'exact'; faq: FaqItem } | { type: 'multiple'; faqs: FaqItem[] } | null {
+  const normInput = normalizeArabic(text);
+  if (!normInput || normInput.length < 2) return null;
+
+  for (const item of FAQ_ITEMS) {
+    const normQ = normalizeArabic(item.question);
+    if (normQ === normInput || (normInput.length >= 6 && normQ.includes(normInput))) {
+      return { type: 'exact', faq: item };
+    }
+  }
+
+  const inputWords = normInput.split(/\s+/).filter(w => w.length > 1);
+  const scoredItems: { item: FaqItem; score: number }[] = [];
+
+  for (const item of FAQ_ITEMS) {
+    let score = 0;
+    const normQ = normalizeArabic(item.question);
+
+    for (const word of inputWords) {
+      if (normQ.includes(word)) score += 3;
+      for (const kw of item.keywords) {
+        const normKw = normalizeArabic(kw);
+        if (normKw === word) score += 4;
+        else if (word.length >= 3 && (normKw.includes(word) || word.includes(normKw))) score += 2;
+      }
+    }
+
+    if (score >= 4) {
+      scoredItems.push({ item, score });
+    }
+  }
+
+  scoredItems.sort((a, b) => b.score - a.score);
+
+  if (scoredItems.length === 1 || (scoredItems.length > 1 && scoredItems[0].score >= scoredItems[1].score + 4)) {
+    return { type: 'exact', faq: scoredItems[0].item };
+  }
+
+  if (scoredItems.length > 1) {
+    return { type: 'multiple', faqs: scoredItems.slice(0, 5).map(s => s.item) };
+  }
+
+  return null;
+}
+
+export function handleFaqMainPayload(): AssistantReply {
+  return {
+    text: '❓ **الأسئلة الشائعة والمعلومات العامة**\n\nتفضل بتصفح الأقسام للحصول على إجابة فورية:',
+    chipGroups: [
+      {
+        title: 'أقسام الأسئلة',
+        chips: FAQ_CATEGORIES.map((cat) => ({
+          id: `cat-${cat.id}`,
+          label: cat.title,
+          payload: `faq:cat:${cat.id}`,
+          variant: 'primary' as const,
+        })),
+      },
+    ],
+    chips: [{ id: 'back', label: 'رجوع للقائمة الرئيسية 🏠', payload: 'action:welcome', variant: 'outline' }],
+  };
+}
+
+export function handleFaqCategoryPayload(catId: string): AssistantReply {
+  const category = FAQ_CATEGORIES.find((c) => c.id === catId);
+  const items = FAQ_ITEMS.filter((i) => i.categoryId === catId);
+
+  if (!category || items.length === 0) {
+    return handleFaqMainPayload();
+  }
+
+  return {
+    text: `📌 **${category.title}**\n\nاختر السؤال لمشاهدة الإجابة:`,
+    chipGroups: [
+      {
+        title: 'الأسئلة المتوفرة',
+        chips: items.map((item, idx) => ({
+          id: `q-${item.id}`,
+          label: `${idx + 1}. ${item.question}`,
+          payload: `faq:q:${item.id}`,
+          variant: 'outline' as const,
+        })),
+      },
+    ],
+    chips: [
+      { id: 'back_cat', label: 'رجوع للأقسام 🔙', payload: 'action:faq_main', variant: 'secondary' },
+      { id: 'back_home', label: 'الرئيسية 🏠', payload: 'action:welcome', variant: 'outline' },
+    ],
+  };
+}
+
+export function handleFaqQuestionPayload(faqId: string): AssistantReply {
+  const item = FAQ_ITEMS.find((i) => i.id === faqId);
+  if (!item) {
+    return handleFaqMainPayload();
+  }
+
+  const category = FAQ_CATEGORIES.find((c) => c.id === item.categoryId);
+
+  return {
+    text: `❓ **${item.question}**\n\n💬 ${item.answer}`,
+    chips: [
+      { id: 'cat_rel', label: `أسئلة ${category?.title || 'أخرى'} 📂`, payload: `faq:cat:${item.categoryId}`, variant: 'primary' },
+      { id: 'all_faq', label: 'كل الأقسام ❓', payload: 'action:faq_main', variant: 'outline' },
+      { id: 'wa', label: 'الدعم الفني 💬', payload: 'action:whatsapp', variant: 'secondary' },
+    ],
+  };
+}
+
 function welcomeChipGroups(requests: ServiceRequest[]): AssistantReply['chipGroups'] {
   const distinct = distinctServiceIdsFromRequests(requests);
   const groups: NonNullable<AssistantReply['chipGroups']> = [];
@@ -314,6 +435,7 @@ function welcomeChipGroups(requests: ServiceRequest[]): AssistantReply['chipGrou
   groups.push({
     title: 'سريع',
     chips: [
+      { id: 'faq', label: 'الأسئلة الشائعة ❓', payload: 'action:faq_main', variant: 'primary' },
       { id: 'all', label: 'كل طلباتي', payload: 'action:all_status', variant: 'outline' },
       { id: 'browse', label: 'كل خدمات المنصة', payload: 'action:services_list', variant: 'outline' },
       { id: 'human', label: 'واتساب', payload: 'action:whatsapp', variant: 'secondary' },
@@ -455,10 +577,9 @@ export function buildGreetingReply(
   requests: ServiceRequest[]
 ): AssistantReply {
   const firstName = (student?.fullNameArabic || 'صديقي').split(/\s+/)[0];
-  const hint = requests.length > 0 ? 'عايز تعرف حالة طلبك؟' : 'عايز تعرف عن الخدمات؟';
 
   return {
-    text: `أهلاً **${firstName}**! 😊\n\n${hint}\n\nاكتب زي ما بتحكي — هفهمك:`,
+    text: `أهلاً بك **${firstName}** 👋 كيف يمكنني مساعدتك اليوم؟\n\nتفضل باختيار من الخيارات المتاحة بالأسفل أو اكتب استفسارك مباشرة:`,
     chipGroups: welcomeChipGroups(requests),
   };
 }
@@ -519,20 +640,11 @@ export function buildStatusChangeReply(request: ServiceRequest): AssistantReply 
 export function buildWelcomeReply(student: StudentData | null, requests: ServiceRequest[]): AssistantReply {
   const firstName = (student?.fullNameArabic || 'صديقي').split(/\s+/)[0];
 
-  if (requests.length === 0) {
-    return {
-      text:
-        `أهلاً **${firstName}** 👋\n\n` +
-        `أنا مساعدك — اتكلم عادي زي الواتساب، واسأل عن أي خدمة.`,
-      chipGroups: welcomeChipGroups(requests),
-    };
-  }
-
   return {
     text:
-      `أهلاً **${firstName}** 👋\n\n` +
-      `اتكلم عادي — «حالة مصروفاتي»، «اتقبلت؟»، «كود فوري»…\n\n` +
-      `أو اختار خدمتك من تحت 👇`,
+      `أهلاً بك **${firstName}** في المساعد الذكي لمركز اتش بي 🌸\n\n` +
+      `يسعدني مساعدتك في الإجابة عن كافة الاستفسارات، الخدمات، وتتبع الطلبات.\n\n` +
+      `تفضل بتصفح **الأسئلة الشائعة ❓** أو اختار من الخدمات بالأسفل 👇`,
     chipGroups: welcomeChipGroups(requests),
   };
 }
@@ -581,6 +693,20 @@ function dispatchAssistantPayload(
 
   if (payload === 'action:welcome') {
     return { reply: buildWelcomeReply(student, requests), pending: null };
+  }
+
+  if (payload === 'action:faq_main') {
+    return { reply: handleFaqMainPayload(), pending: null };
+  }
+
+  if (payload.startsWith('faq:cat:')) {
+    const catId = payload.replace('faq:cat:', '');
+    return { reply: handleFaqCategoryPayload(catId), pending: null };
+  }
+
+  if (payload.startsWith('faq:q:')) {
+    const faqId = payload.replace('faq:q:', '');
+    return { reply: handleFaqQuestionPayload(faqId), pending: null };
   }
 
   if (payload === 'action:all_status') {
@@ -1039,6 +1165,39 @@ export function handleFreeText(
     );
   }
 
+  if (/أسئلة|اسئلة|أسئله|اسئله|شائع|سوال|سؤال|faq|شائعة|شائعه/.test(t)) {
+    return handleAssistantPayload('action:faq_main', ctx);
+  }
+
+  const faqMatch = matchFaqFromText(text);
+  if (faqMatch) {
+    if (faqMatch.type === 'exact') {
+      return wrapTurn(handleFaqQuestionPayload(faqMatch.faq.id), null, ctx);
+    } else if (faqMatch.type === 'multiple') {
+      return wrapTurn(
+        {
+          text: `وجدنا عدة إجابات قد تهمك بشأن «**${text}**» 👇`,
+          chipGroups: [
+            {
+              title: 'الأسئلة المقترحة',
+              chips: faqMatch.faqs.map((f, i) => ({
+                id: `mfq-${f.id}`,
+                label: `${i + 1}. ${f.question}`,
+                payload: `faq:q:${f.id}`,
+                variant: 'primary' as const,
+              })),
+            },
+          ],
+          chips: [
+            { id: 'faq_m', label: 'تصفح كل الأسئلة ❓', payload: 'action:faq_main', variant: 'outline' },
+          ],
+        },
+        null,
+        ctx
+      );
+    }
+  }
+
   if (/واتس|whatsapp|دعم|موظف|تواصل/.test(t)) {
     return handleAssistantPayload('action:whatsapp', ctx);
   }
@@ -1105,9 +1264,8 @@ export function handleFreeText(
   return wrapTurn(
     {
       text:
-        'مش متأكد قصدك على إيه 🤔\n\n' +
-        'قولي اسم الخدمة أو اسأل زي ما بتحكي:\n' +
-        '«حالة مصروفاتي» — «اتقبلت؟» — «كود فوري»',
+        'لم أستطع تحديد طلبك بدقة 🤔\n\n' +
+        'تفضل بتصفح الأسئلة الشائعة أو اختار القسم المطلوب بالأسفل 👇',
       chipGroups: welcomeChipGroups(ctx.requests),
     },
     null,
