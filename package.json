@@ -14,7 +14,9 @@
     "automation:set-api-url": "node scripts/setVercelAutomationApiUrl.cjs",
     "automation:restore-local-env": "node scripts/restoreAutomationPublicToEnvLocal.cjs",
     "automation:vercel-env-ps": "node scripts/runVercelEnvAddPs.cjs",
-    "crypto:provision": "node scripts/provisionAutomationCrypto.cjs"
+    "crypto:provision": "node scripts/provisionAutomationCrypto.cjs",
+    "restore:orders": "node scripts/restoreOrdersFromCloudinary.cjs",
+    "restore:enrich": "node scripts/enrichRestoredOrders.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.93.1",

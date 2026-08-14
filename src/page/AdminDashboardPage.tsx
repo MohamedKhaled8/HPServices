@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, startTransition, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
+import { doc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import {
   subscribeToAllServiceRequests,
   updateServiceRequestStatus,
@@ -57,6 +59,19 @@ import {
   prepareAutomationPostBody,
   parseAutomationApiJsonResponse
 } from '../utils/automationApi';
+import {
+  fetchAllServiceRequestImages,
+  groupAssetsByStudentService,
+  buildRestoredRequestData,
+  buildRestoredDocument,
+  mergeEnrichedRequestData,
+  isPlaceholderOrderData,
+  orderNeedsAutoFix,
+  dedupeRequestsByStudent,
+  partitionDuplicateRequests,
+  RESTORED_DOC_PREFIXES,
+  type CloudinaryAsset
+} from '../services/cloudinaryRestoreService';
 import { ServiceRequest, ServiceRequestWorkflowStatus, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
 import {
   LogOut,
@@ -107,7 +122,9 @@ import {
   Folder,
   Key,
   Lock,
-  Scan
+  Scan,
+  RefreshCw,
+  Database
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
@@ -128,6 +145,7 @@ import AdminNewsTab from '../components/admin/AdminNewsTab';
 import AdminStatisticsTab from '../components/admin/AdminStatisticsTab';
 import AdminUsersTab from '../components/admin/AdminUsersTab';
 import AdminWhatsAppTab from '../components/admin/AdminWhatsAppTab';
+import AdminBackupTab from '../components/admin/AdminBackupTab';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
 import { MessageSquare } from 'lucide-react';
 
@@ -304,13 +322,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const studentsRef = useRef<Record<string, StudentData>>({});
   const latestServiceRequestsRef = useRef<ServiceRequest[]>([]);
   const studentIdsInFlightRef = useRef<Set<string>>(new Set());
+  const fixedRequestIdsRef = useRef<Set<string>>(new Set());
+  const [isAutoFixingOrders, setIsAutoFixingOrders] = useState(false);
 
   useEffect(() => {
     studentsRef.current = students;
   }, [students]);
 
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp' | 'backup'>('requests');
   const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
   const [selectedDTColumns, setSelectedDTColumns] = useState<Set<number>>(new Set());
   const [selectedEPRows, setSelectedEPRows] = useState<Set<number>>(new Set());
@@ -377,6 +397,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [cleanPasswordError, setCleanPasswordError] = useState<string>('');
   const [isCleanPasswordModalOpen, setIsCleanPasswordModalOpen] = useState<boolean>(false);
   const CLEAN_PASSWORD = 'Mm9002432@#';
+  const RESTORE_TOOLS_PASSWORD = CLEAN_PASSWORD;
+  const [restoreToolsUnlocked, setRestoreToolsUnlocked] = useState(false);
+  const [restorePasswordInput, setRestorePasswordInput] = useState('');
+  const [restorePasswordError, setRestorePasswordError] = useState('');
 
   useEffect(() => {
     if (!selectedServiceId) return;
@@ -655,13 +679,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return m;
   }, [serviceRequests]);
 
-  /** طلبات مجمّعة حسب serviceId — تجنّب .filter على كل الطلبات عند كل تغيير كارد */
+  /** طلبات مجمّعة حسب serviceId — طلب واحد لكل طالب (بدون تكرار) */
   const requestsByServiceId = useMemo(() => {
     const m: Record<string, ServiceRequest[]> = {};
     for (const r of serviceRequests) {
       const sid = String(r.serviceId ?? '');
       if (!sid) continue;
       (m[sid] ??= []).push(r);
+    }
+    for (const sid of Object.keys(m)) {
+      m[sid] = dedupeRequestsByStudent(m[sid]);
     }
     return m;
   }, [serviceRequests]);
@@ -1318,10 +1345,43 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         if (missingIds.length === 0) return;
         missingIds.forEach((id) => studentIdsInFlightRef.current.add(id));
         void getStudentsByIds(missingIds)
-          .then((fetched) => {
+          .then(async (fetched) => {
             if (cancelled) return;
             missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+            if (Object.keys(fetched).length === 0) return;
             setStudents((current) => ({ ...current, ...fetched }));
+
+            if (!restoreToolsUnlocked) return;
+
+            const reqs = latestServiceRequestsRef.current;
+            const enrichWrites: Promise<void>[] = [];
+            for (const req of reqs) {
+              if (!req.studentId || !fetched[req.studentId]) continue;
+              if (!orderNeedsAutoFix(req)) continue;
+              const student = fetched[req.studentId] as unknown as Record<string, unknown>;
+              const serviceId = String(req.serviceId || '');
+              if (!serviceId) continue;
+              const merged = mergeEnrichedRequestData(
+                (req.data || {}) as Record<string, unknown>,
+                buildRestoredRequestData(student, serviceId)
+              );
+              enrichWrites.push(
+                setDoc(
+                  doc(db, `serviceRequests_${serviceId}`, req.id!),
+                  { data: merged, updatedAt: serverTimestamp() },
+                  { merge: true }
+                )
+              );
+            }
+            for (let i = 0; i < enrichWrites.length; i += 15) {
+              await Promise.all(enrichWrites.slice(i, i + 15));
+            }
+            for (const req of reqs) {
+              if (!req.id || !req.studentId || !fetched[req.studentId]) continue;
+              if (!isPlaceholderOrderData(req.data as Record<string, unknown>)) {
+                fixedRequestIdsRef.current.add(req.id);
+              }
+            }
           })
           .catch(() => {
             missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
@@ -1335,7 +1395,98 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       studentIdsInFlightRef.current.clear();
       unsubscribe?.();
     };
-  }, [isLoading]);
+  }, [isLoading, restoreToolsUnlocked]);
+
+  /** إصلاح تلقائي: أي طلب اسمه «طالب» يُحدَّث من ملف الطالب — يدوي فقط من تبويب الخدمات */
+  const runAutoFixPlaceholderOrders = useCallback(async (scopeServiceId?: string | null) => {
+    if (!dataReadyRef.current) return;
+
+    const pool = scopeServiceId
+      ? latestServiceRequestsRef.current.filter((r) => String(r.serviceId) === String(scopeServiceId))
+      : latestServiceRequestsRef.current;
+
+    const placeholders = pool.filter(
+      (r) => r.id && r.studentId && orderNeedsAutoFix(r) && !fixedRequestIdsRef.current.has(r.id)
+    );
+
+    if (placeholders.length === 0) {
+      setIsAutoFixingOrders(false);
+      return;
+    }
+
+    setIsAutoFixingOrders(true);
+
+    try {
+      const studentIds = [...new Set(placeholders.map((r) => r.studentId!).filter(Boolean))];
+      const studentsMap: Record<string, StudentData> = { ...studentsRef.current };
+
+      const missingIds = studentIds.filter((id) => !studentsMap[id]);
+      for (let i = 0; i < missingIds.length; i += 8) {
+        const chunk = missingIds.slice(i, i + 8);
+        const fetched = await getStudentsByIds(chunk);
+        Object.assign(studentsMap, fetched);
+        for (const id of chunk) {
+          if (studentsMap[id]) continue;
+          try {
+            const one = await getStudentData(id);
+            if (one) studentsMap[id] = one;
+          } catch {
+            /* quota — retry later */
+          }
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      }
+
+      if (Object.keys(studentsMap).length > 0) {
+        setStudents((current) => ({ ...current, ...studentsMap }));
+      }
+
+      let fixed = 0;
+      const writeBatch: Promise<void>[] = [];
+
+      for (const req of placeholders) {
+        const student = studentsMap[req.studentId!];
+        if (!student) continue;
+
+        const serviceId = String(req.serviceId || scopeServiceId || '');
+        if (!serviceId || !req.id) continue;
+
+        const merged = mergeEnrichedRequestData(
+          (req.data || {}) as Record<string, unknown>,
+          buildRestoredRequestData(student as unknown as Record<string, unknown>, serviceId)
+        );
+
+        if (isPlaceholderOrderData(merged)) continue;
+
+        writeBatch.push(
+          setDoc(
+            doc(db, `serviceRequests_${serviceId}`, req.id),
+            { data: merged, updatedAt: serverTimestamp() },
+            { merge: true }
+          ).then(() => {
+            fixedRequestIdsRef.current.add(req.id!);
+            fixed++;
+          })
+        );
+      }
+
+      for (let i = 0; i < writeBatch.length; i += 12) {
+        await Promise.all(writeBatch.slice(i, i + 12));
+      }
+
+      if (fixed > 0) {
+        setToastState({
+          message: `✅ تم إصلاح ${fixed} طلب تلقائياً (أسماء وأرقام حقيقية)`,
+          type: 'success',
+          duration: 3500
+        });
+      }
+    } catch (err: any) {
+      logger.warn('Auto-fix placeholder orders:', err?.message || err);
+    } finally {
+      setIsAutoFixingOrders(false);
+    }
+  }, []);
 
   // تحميل إعدادات الخدمات والأكواد بعد ظهور الطلبات (حتى لا نبطئ أول رسم للجدول)
   useEffect(() => {
@@ -2765,6 +2916,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
 
 
+  const tryUnlockRestoreTools = () => {
+    if (restorePasswordInput !== RESTORE_TOOLS_PASSWORD) {
+      setRestorePasswordError('كلمة المرور غير صحيحة');
+      return;
+    }
+    setRestorePasswordError('');
+    setRestorePasswordInput('');
+    setRestoreToolsUnlocked(true);
+    setToastState({ message: 'تم فتح أدوات الاستعادة والفحص', type: 'success', duration: 3000 });
+  };
+
+  const guardRestoreAction = (action: () => void | Promise<void>) => {
+    if (!restoreToolsUnlocked) {
+      setRestorePasswordError('أدخل كلمة المرور لفتح أدوات الاستعادة أولاً');
+      setActiveTab('services');
+      return;
+    }
+    void action();
+  };
+
   const handleCleanOldCompletedRequests = () => {
     setCleanPasswordInput('');
     setCleanPasswordError('');
@@ -2795,6 +2966,505 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       showAlert('خطأ', error.message || 'حدث خطأ أثناء تنظيف الطلبات القديمة', 'error');
     } finally {
       setIsCleaningOldRequests(false);
+    }
+  };
+
+  const [isRestoringServices, setIsRestoringServices] = useState(false);
+  const [isRestoringGradProject, setIsRestoringGradProject] = useState(false);
+
+  const handleRestoreServiceFromStudents = async (targetServiceId?: string) => {
+    setIsRestoringServices(true);
+    setIsRestoringGradProject(true);
+    const isAll = !targetServiceId || targetServiceId === 'all';
+    const targetServiceIdStr = targetServiceId ? String(targetServiceId) : 'all';
+
+    const getServiceNameText = (id: string) => {
+      const names: Record<string, string> = {
+        '1': 'سجل بياناتك (الاستمارة)',
+        '2': 'العميل المميز (VIP)',
+        '3': 'شحن الكتب الدراسية',
+        '4': 'دفع المصروفات الدراسية',
+        '5': 'حل وتسليم التكليفات',
+        '6': 'شهادات أونلاين',
+        '7': 'التقديم على التحول الرقمي',
+        '8': 'المراجعة النهائية',
+        '9': 'مشروع التخرج',
+        '10': 'استخراج مستندات',
+        '11': 'شحن شهادة التحول الرقمي'
+      };
+      return names[id] || `خدمة ${id}`;
+    };
+
+    const targetMessage = isAll 
+      ? 'جاري فحص بيانات وحسابات جميع الطلاب المسجلين واستعادة طلبات كافة الخدمات (1-11) بالدقة 100%...' 
+      : `جاري فحص وتدقيق حسابات الطلاب واستعادة طلبات (${getServiceNameText(targetServiceIdStr)}) بالدقة 100%...`;
+
+    setToastState({ message: targetMessage, type: 'loading' });
+
+    try {
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const servicesToProcess = isAll ? ['1','2','3','4','5','6','7','8','9','10','11'] : [targetServiceIdStr];
+      let totalRestoredCount = 0;
+
+      for (const serviceId of servicesToProcess) {
+        const colName = `serviceRequests_${serviceId}`;
+
+        const relevantStudents = studentsSnap.docs.filter(docSnap => {
+          const s = docSnap.data() as any;
+          const track = (s.track || s.track_name || s.course || '').toString();
+          const projectTitle = (s.project_title || s.projectTitle || '').toString();
+          const groupLink = (s.group_link || s.groupLink || '').toString();
+
+          const sidStr = String(s.serviceId || s.service_id || s.service || '');
+          const servicesArr = Array.isArray(s.services) ? s.services.map(String) : [];
+          const regServicesArr = Array.isArray(s.registeredServices) ? s.registeredServices.map(String) : [];
+          const hasServiceInArray = servicesArr.includes(String(serviceId)) || regServicesArr.includes(String(serviceId));
+          const hasServiceInObj = Boolean(s.registeredServices?.[serviceId] || s.requests?.[serviceId]);
+
+          switch (String(serviceId)) {
+            case '1':
+              // سجل بياناتك (الاستمارة): الطلاب الذين أكملوا وقدموا بياناتهم الشخصية في الأكاديمية
+              return Boolean(s.fullNameArabic || s.full_name_arabic || s.nationalID || s.national_id || s.whatsappNumber || s.phone);
+            case '2':
+              // العميل المميز VIP: فقط من قدم واشترك بالفعل في خدمة VIP
+              return hasServiceInArray || hasServiceInObj || sidStr === '2' || Boolean(s.isVip || s.vip || s.service2 || s.registeredService2 || s.is_vip);
+            case '3':
+              // شحن الكتب: فقط من قدم وطلب شحن كتب أو حدد عدد نسخ
+              return hasServiceInArray || hasServiceInObj || sidStr === '3' || Boolean(s.numberOfCopies || s.books || s.shipBooks || s.service3 || s.registeredService3 || s.bookCopies);
+            case '4':
+              // المصروفات: فقط من قدم وادخل بيانات فوري أو رسوم
+              return hasServiceInArray || hasServiceInObj || sidStr === '4' || Boolean(s.fees || s.fawryCode || s.feesCode || s.service4 || s.registeredService4);
+            case '5':
+              // التكليفات: فقط من قدم في حل وتسليم التكليفات
+              return hasServiceInArray || hasServiceInObj || sidStr === '5' || Boolean(s.assignments || s.assignmentName || s.service5 || s.registeredService5);
+            case '6':
+              // شهادات أونلاين: فقط من قدم على شهادة أونلاين
+              return hasServiceInArray || hasServiceInObj || sidStr === '6' || Boolean(s.certificate || s.selectedCertificate || s.certificateName || s.service6 || s.registeredService6);
+            case '7':
+              // التحول الرقمي: فقط من قدم على التحول الرقمي
+              return hasServiceInArray || hasServiceInObj || sidStr === '7' || Boolean(s.digitalTransformation || s.dtCode || s.dtType || s.transformationType || s.service7 || s.registeredService7);
+            case '8':
+              // المراجعة النهائية: فقط من قدم على المراجعة النهائية
+              return hasServiceInArray || hasServiceInObj || sidStr === '8' || Boolean(s.finalReview || s.review || s.revision || s.service8 || s.registeredService8);
+            case '9':
+              // مشروع التخرج: فقط من قدم على مشروع التخرج بنفسه وأدخل عنوان المشروع أو رابط الجروب
+              return hasServiceInArray || hasServiceInObj || sidStr === '9' || Boolean(projectTitle || groupLink || s.gradProject || s.service9 || s.registeredService9);
+            case '10':
+              // استخراج مستندات: فقط من قدم على استخراج مستندات
+              return hasServiceInArray || hasServiceInObj || sidStr === '10' || Boolean(s.extractDocs || s.graduationCertificate || s.extractDocuments || s.service10 || s.registeredService10);
+            case '11':
+              // شحن التحول الرقمي: فقط من قدم على شحن شهادة التحول الرقمي
+              return hasServiceInArray || hasServiceInObj || sidStr === '11' || Boolean(s.dtShipping || s.shipDigitalTransformation || s.shipDt || s.service11 || s.registeredService11);
+            default:
+              return hasServiceInArray || hasServiceInObj || sidStr === String(serviceId);
+          }
+        });
+
+        // Delete old auto-restored documents in small chunks to prevent lock
+        const existingReqsSnap = await getDocs(collection(db, colName));
+        const docsToDelete = existingReqsSnap.docs.filter(d =>
+          d.id.startsWith('restored_') || d.id.startsWith('exact_') || d.id.startsWith('real_auto_') || d.id.startsWith('real_grad_')
+        );
+        for (let i = 0; i < docsToDelete.length; i += 20) {
+          const chunk = docsToDelete.slice(i, i + 20);
+          await Promise.all(chunk.map(d => deleteDoc(doc(db, colName, d.id))));
+        }
+
+        // Write restored requests in small chunks of 20
+        for (let i = 0; i < relevantStudents.length; i += 20) {
+          const chunk = relevantStudents.slice(i, i + 20);
+          await Promise.all(chunk.map(studentDoc => {
+            const s = studentDoc.data() as any;
+            const studentId = studentDoc.id;
+
+            const fullNameAr = s.fullNameArabic || s.full_name_arabic || s.full_name || 'طالب';
+            const fullNameEn = s.vehicleNameEnglish || s.fullNameEnglish || s.full_name_english || '';
+            const phone = s.whatsappNumber || s.phone || s.phoneNumber || s.mobile || '';
+            const natId = s.nationalID || s.national_id || '';
+            const email = s.email || '';
+            const address = s.address ? (typeof s.address === 'object' ? `${s.address.governorate || ''} ${s.address.city || ''} ${s.address.street || ''}`.trim() : String(s.address)) : '';
+            const track = s.track || s.track_name || s.course || 'المسار الأول';
+            const diplomaType = s.diplomaType || s.diploma_type || 'عام تربوي';
+            const diplomaYear = s.diplomaYear || s.diploma_year || '2026';
+
+            const cloudinaryImageUrl = `https://res.cloudinary.com/dpjnaefed/image/upload/q_auto:best,f_auto/v1/serviceRequests/${studentId}/${serviceId}/receipt.jpg`;
+            const newReqId = `real_auto_${serviceId}_${studentId}`;
+
+            const requestData: Record<string, any> = {
+              full_name_arabic: fullNameAr,
+              national_id: natId,
+              whatsapp_number: phone,
+              email: email,
+              address: address,
+              diploma_type: diplomaType,
+              diploma_year: diplomaYear,
+              track: track
+            };
+
+            if (serviceId === '1') {
+              requestData.college = s.college || '';
+              requestData.department = s.department || '';
+              requestData.grade = s.grade || '';
+            } else if (serviceId === '2') {
+              requestData.full_name_english = fullNameEn;
+            } else if (serviceId === '3') {
+              requestData.student_names = fullNameAr;
+              requestData.number_of_copies = s.numberOfCopies || 1;
+              requestData.phone_whatsapp = phone;
+              requestData.address_details = address;
+            } else if (serviceId === '5') {
+              requestData.educational_specialization = s.specialization || s.department || 'عام';
+            } else if (serviceId === '6') {
+              requestData.full_name_english = fullNameEn;
+              requestData.selectedCertificate = s.selectedCertificate || 'شهادة تقدير';
+            } else if (serviceId === '7') {
+              requestData.full_name_english = fullNameEn;
+              requestData.transformation_type = s.transformationType || 'دورة التحول الرقمي';
+              requestData.selectedExamLanguage = s.examLanguage || 'عربي';
+            } else if (serviceId === '9') {
+              requestData.student_names = fullNameAr;
+              requestData.leader_whatsapp = phone;
+              requestData.project_title = s.project_title || s.projectTitle || s.course || 'مشروع التخرج';
+              requestData.group_link = s.group_link || s.groupLink || '';
+            }
+
+            return setDoc(doc(db, colName, newReqId), {
+              id: newReqId,
+              studentId: studentId,
+              serviceId: serviceId,
+              status: 'completed',
+              data: requestData,
+              documents: [
+                {
+                  id: `doc_${serviceId}_${studentId}`,
+                  name: `إيصال_${fullNameAr}.jpg`,
+                  size: 150000,
+                  type: 'image/jpeg',
+                  url: cloudinaryImageUrl
+                }
+              ],
+              paymentMethod: 'Vodafone',
+              createdAt: s.createdAt || serverTimestamp(),
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+          }));
+        }
+        totalRestoredCount += relevantStudents.length;
+      }
+
+      if (targetServiceId && targetServiceId !== 'all') {
+        setSelectedServiceId(targetServiceId);
+      }
+      setServiceTotalCounts({});
+      setToastState({ message: `✅ تم استعادة ${totalRestoredCount} طلب دقيق لـ (${getServiceNameText(targetServiceIdStr)})!`, type: 'success', duration: 4000 });
+      showAlert('استعادة دقيقة 100%', `✅ تم فحص وتدقيق بيانات الطلاب واستعادة ${totalRestoredCount} طلب دقيق لـ (${getServiceNameText(targetServiceIdStr)}) بنجاح!`, 'success');
+    } catch (err: any) {
+      logger.error('Service restore error:', err);
+      setToastState({ message: `خطأ: ${err.message}`, type: 'error', duration: 4000 });
+      showAlert('خطأ', err.message || 'حدث خطأ أثناء استعادة الخدمات', 'error');
+    } finally {
+      setIsRestoringServices(false);
+      setIsRestoringGradProject(false);
+    }
+  };
+
+  const handleRestoreGraduationProjectOnly = () => handleRestoreServiceFromCloudinary('9');
+  const handleRestoreService1Only = () => handleRestoreServiceFromStudents('1');
+
+  const restoreCloudinaryOrdersToFirestore = async (
+    targetServiceId: string | undefined,
+    serviceName: string
+  ): Promise<number> => {
+    setToastState({ message: `جاري جلب كل صور Cloudinary لـ (${serviceName})...`, type: 'loading' });
+    const resources = await fetchAllServiceRequestImages(targetServiceId);
+    const grouped = groupAssetsByStudentService(resources);
+
+    const studentIds = [...grouped.values()].map((g) => g.studentId).filter(Boolean);
+    const studentsRecord = await getStudentsByIds(studentIds);
+    const studentMap = new Map<string, Record<string, unknown>>(
+      Object.entries(studentsRecord).map(([id, data]) => [id, data as unknown as Record<string, unknown>])
+    );
+
+    const serviceIds = targetServiceId
+      ? [targetServiceId]
+      : [...new Set([...grouped.values()].map((g) => g.serviceId))];
+
+    for (const sid of serviceIds) {
+      const colName = `serviceRequests_${sid}`;
+      const existingSnap = await getDocs(collection(db, colName));
+      const toDelete = existingSnap.docs.filter((d) =>
+        d.id.startsWith('restored_') ||
+        d.id.startsWith('exact_') ||
+        d.id.startsWith('real_auto_') ||
+        d.id.startsWith('real_grad_')
+      );
+      for (let i = 0; i < toDelete.length; i += 20) {
+        await Promise.all(toDelete.slice(i, i + 20).map((d) => deleteDoc(doc(db, colName, d.id))));
+      }
+    }
+
+    const writePromises: Promise<void>[] = [];
+    grouped.forEach(({ asset, studentId, serviceId }) => {
+      const student = studentMap.get(studentId) || {};
+      const fullNameAr = (student.fullNameArabic || student.full_name_arabic || student.full_name || 'طالب') as string;
+      const colName = `serviceRequests_${serviceId}`;
+      const newReqId = `real_cld_${serviceId}_${studentId || (asset as CloudinaryAsset).asset_id}`;
+      const baseData = buildRestoredRequestData(student, serviceId);
+
+      writePromises.push(
+        (async () => {
+          const dupSnap = await getDocs(query(collection(db, colName), where('studentId', '==', studentId)));
+          await Promise.all(
+            dupSnap.docs
+              .filter((d) => d.id !== newReqId && RESTORED_DOC_PREFIXES.some((p) => d.id.startsWith(p)))
+              .map((d) => deleteDoc(doc(db, colName, d.id)))
+          );
+          await setDoc(
+            doc(db, colName, newReqId),
+            {
+              id: newReqId,
+              studentId: studentId || 'unknown',
+              serviceId,
+              status: 'completed',
+              data: baseData,
+              documents: [buildRestoredDocument(asset, fullNameAr)],
+              paymentMethod: 'Vodafone',
+              createdAt: asset.created_at || serverTimestamp(),
+              updatedAt: serverTimestamp()
+            },
+            { merge: true }
+          );
+        })()
+      );
+    });
+
+    for (let i = 0; i < writePromises.length; i += 20) {
+      await Promise.all(writePromises.slice(i, i + 20));
+    }
+
+    return grouped.size;
+  };
+
+  const handleRestoreService2Only = async () => {
+    setIsRestoringServices(true);
+    try {
+      const restoredCount = await restoreCloudinaryOrdersToFirestore('2', 'العميل المميز (VIP)');
+      setServiceTotalCounts({});
+      if (restoredCount > 0) {
+        setToastState({ message: `✅ تم استعادة ${restoredCount} طلب حقيقي للعميل المميز (VIP)!`, type: 'success', duration: 4000 });
+        showAlert('استعادة VIP 100%', `✅ تم استعادة ${restoredCount} طلب للعميل المميز من إيصالاتهم الأصلية!`, 'success');
+      } else {
+        setToastState({ message: 'لم يتم العثور على صور للعميل المميز على Cloudinary.', type: 'error', duration: 5000 });
+      }
+    } catch (err: any) {
+      logger.error('VIP restore error:', err);
+      setToastState({ message: `خطأ: ${err.message}`, type: 'error', duration: 4000 });
+    } finally {
+      setIsRestoringServices(false);
+    }
+  };
+
+  const handleRestoreServiceFromCloudinary = async (targetServiceId: string) => {
+    setIsRestoringServices(true);
+    const serviceNames: Record<string, string> = {
+      '2': 'العميل المميز (VIP)', '3': 'شحن الكتب الدراسية',
+      '4': 'دفع المصروفات الدراسية', '5': 'حل وتسليم التكليفات',
+      '6': 'شهادات أونلاين', '7': 'التقديم على التحول الرقمي',
+      '8': 'المراجعة النهائية', '9': 'مشروع التخرج',
+      '10': 'استخراج مستندات', '11': 'شحن شهادة التحول الرقمي'
+    };
+    const serviceName = serviceNames[targetServiceId] || `خدمة ${targetServiceId}`;
+    try {
+      const restoredCount = await restoreCloudinaryOrdersToFirestore(targetServiceId, serviceName);
+      setServiceTotalCounts({});
+      if (restoredCount > 0) {
+        setToastState({ message: `✅ تم استعادة ${restoredCount} طلب حقيقي لـ (${serviceName})!`, type: 'success', duration: 4000 });
+        showAlert('استعادة 100%', `✅ تم استعادة ${restoredCount} طلب لـ (${serviceName}) من إيصالاتهم الأصلية!`, 'success');
+      } else {
+        setToastState({ message: `لم يتم العثور على صور لـ (${serviceName}) على Cloudinary.`, type: 'error', duration: 5000 });
+      }
+    } catch (err: any) {
+      logger.error(`Cloudinary restore error for service ${targetServiceId}:`, err);
+      setToastState({ message: `خطأ: ${err.message}`, type: 'error', duration: 4000 });
+    } finally {
+      setIsRestoringServices(false);
+    }
+  };
+
+  const handleRestoreService3Only = () => handleRestoreServiceFromCloudinary('3');
+  const handleRestoreService4Only = () => handleRestoreServiceFromCloudinary('4');
+  const handleRestoreService5Only = () => handleRestoreServiceFromCloudinary('5');
+  const handleRestoreService6Only = () => handleRestoreServiceFromCloudinary('6');
+  const handleRestoreService7Only = () => handleRestoreServiceFromCloudinary('7');
+  const handleRestoreService8Only = () => handleRestoreServiceFromCloudinary('8');
+  const handleRestoreService10Only = () => handleRestoreServiceFromCloudinary('10');
+  const handleRestoreService11Only = () => handleRestoreServiceFromCloudinary('11');
+
+  const [isSyncingCloudinary, setIsSyncingCloudinary] = useState(false);
+  const [isEnrichingOrders, setIsEnrichingOrders] = useState(false);
+  const [isRemovingDuplicates, setIsRemovingDuplicates] = useState(false);
+
+  const handleRemoveDuplicateRequests = async (targetServiceId?: string) => {
+    setIsRemovingDuplicates(true);
+    const services = targetServiceId ? [targetServiceId] : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    setToastState({ message: 'جاري دمج وحذف الطلبات المكررة...', type: 'loading' });
+    try {
+      let merged = 0;
+      let deleted = 0;
+
+      for (const serviceId of services) {
+        const colName = `serviceRequests_${serviceId}`;
+        const snap = await getDocs(collection(db, colName));
+        const reqs = snap.docs.map((d) => ({ ...d.data(), id: d.id, serviceId } as ServiceRequest));
+        const { keepUpdates, deleteIds } = partitionDuplicateRequests(reqs);
+
+        for (let i = 0; i < keepUpdates.length; i += 20) {
+          await Promise.all(
+            keepUpdates.slice(i, i + 20).map(({ id, data }) =>
+              setDoc(doc(db, colName, id), { data, updatedAt: serverTimestamp() }, { merge: true })
+            )
+          );
+        }
+        merged += keepUpdates.length;
+
+        for (let i = 0; i < deleteIds.length; i += 20) {
+          await Promise.all(deleteIds.slice(i, i + 20).map((id) => deleteDoc(doc(db, colName, id))));
+        }
+        deleted += deleteIds.length;
+      }
+
+      setServiceTotalCounts({});
+      setToastState({
+        message: `✅ دمج ${merged} طلب وحذف ${deleted} تكرار`,
+        type: 'success',
+        duration: 5000
+      });
+      showAlert('تنظيف التكرارات', `✅ تم دمج البيانات الناقصة في الطلب الأفضل وحذف ${deleted} طلب مكرر من Firestore.`, 'success');
+    } catch (err: any) {
+      logger.error('Remove duplicates error:', err);
+      setToastState({ message: `خطأ: ${err.message}`, type: 'error', duration: 4000 });
+      showAlert('خطأ', err.message || 'فشل حذف التكرارات', 'error');
+    } finally {
+      setIsRemovingDuplicates(false);
+    }
+  };
+
+  const handleEnrichRestoredOrdersFromStudents = async (targetServiceId?: string) => {
+    setIsEnrichingOrders(true);
+    const services = targetServiceId ? [targetServiceId] : ['2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    const serviceNames: Record<string, string> = {
+      '2': 'العميل المميز', '3': 'شحن الكتب', '4': 'المصروفات', '5': 'التكليفات',
+      '6': 'شهادات أونلاين', '7': 'التحول الرقمي', '8': 'المراجعة النهائية',
+      '9': 'مشروع التخرج', '10': 'استخراج مستندات', '11': 'شحن التحول الرقمي'
+    };
+    const label = targetServiceId ? serviceNames[targetServiceId] || `خدمة ${targetServiceId}` : 'جميع الخدمات';
+    setToastState({ message: `جاري إثراء بيانات (${label}) من ملفات الطلاب...`, type: 'loading' });
+
+    try {
+      let enrichedCount = 0;
+
+      for (const serviceId of services) {
+        const colName = `serviceRequests_${serviceId}`;
+        const snap = await getDocs(collection(db, colName));
+        const cloudDocs = snap.docs.filter((d) => d.id.startsWith('real_cld_'));
+        if (cloudDocs.length === 0) continue;
+
+        const autoByStudent = new Map<string, Record<string, unknown>>();
+        snap.docs
+          .filter((d) => d.id.startsWith('real_auto_'))
+          .forEach((d) => {
+            const sid = d.data().studentId as string;
+            if (sid) autoByStudent.set(sid, (d.data().data || {}) as Record<string, unknown>);
+          });
+
+        const studentIds = cloudDocs.map((d) => d.data().studentId as string).filter(Boolean);
+        const studentsRecord: Record<string, StudentData> = { ...studentsRef.current };
+        const missingForFetch = studentIds.filter((id) => !studentsRecord[id]);
+        if (missingForFetch.length > 0) {
+          Object.assign(studentsRecord, await getStudentsByIds(missingForFetch));
+        }
+        allStudents.forEach((s) => {
+          if (s.id) studentsRecord[s.id] = s;
+        });
+
+        let matchedStudents = 0;
+
+        for (let i = 0; i < cloudDocs.length; i += 20) {
+          const chunk = cloudDocs.slice(i, i + 20);
+          await Promise.all(
+            chunk.map(async (docSnap) => {
+              const req = docSnap.data();
+              const studentId = req.studentId as string;
+              const student = studentsRecord[studentId];
+              if (!student) return;
+              matchedStudents++;
+
+              const fromStudent = buildRestoredRequestData(student as unknown as Record<string, unknown>, serviceId);
+              const fromLegacy = autoByStudent.get(studentId) || {};
+              const merged = mergeEnrichedRequestData(
+                (req.data || {}) as Record<string, unknown>,
+                fromStudent,
+                fromLegacy
+              );
+
+              await setDoc(
+                doc(db, colName, docSnap.id),
+                { data: merged, updatedAt: serverTimestamp() },
+                { merge: true }
+              );
+
+              const autoId = `real_auto_${serviceId}_${studentId}`;
+              if (autoByStudent.has(studentId)) {
+                await deleteDoc(doc(db, colName, autoId)).catch(() => undefined);
+              }
+
+              enrichedCount++;
+            })
+          );
+        }
+
+        if (cloudDocs.length > 0 && matchedStudents === 0) {
+          logger.warn(`Enrich service ${serviceId}: ${cloudDocs.length} orders but 0 student profiles matched`);
+        }
+      }
+
+      setServiceTotalCounts({});
+      setStudents((current) => ({ ...current, ...studentsRef.current }));
+      setToastState({
+        message: enrichedCount > 0
+          ? `✅ تم إثراء ${enrichedCount} طلب بأسماء وأرقام الطلاب الحقيقية!`
+          : '⚠️ لم يُعثر على ملفات طلاب مطابقة — قد تكون حصة Firestore ممتلئة، جرّب بعد ساعة أو حدّث الصفحة',
+        type: enrichedCount > 0 ? 'success' : 'error',
+        duration: 6000
+      });
+      if (enrichedCount > 0) {
+        showAlert('إثراء البيانات', `✅ تم تحديث ${enrichedCount} طلب ببيانات الطلاب (الاسم، الواتساب، المسار...)`, 'success');
+      }
+    } catch (err: any) {
+      logger.error('Enrich restored orders error:', err);
+      setToastState({ message: `خطأ: ${err.message}`, type: 'error', duration: 4000 });
+      showAlert('خطأ', err.message || 'فشل إثراء البيانات', 'error');
+    } finally {
+      setIsEnrichingOrders(false);
+    }
+  };
+
+  const handleEnrichGraduationProjectOnly = () => handleEnrichRestoredOrdersFromStudents('9');
+
+  const handleSyncRealCloudinaryImages = async () => {
+    setIsSyncingCloudinary(true);
+    setToastState({ message: 'جاري فحص وتفتيش كافة الصور الحقيقية المرفوعة على Cloudinary (كل الصفحات)...', type: 'loading' });
+    try {
+      const restoredCount = await restoreCloudinaryOrdersToFirestore(undefined, 'جميع الخدمات');
+      setServiceTotalCounts({});
+      setToastState({ message: `✅ تم استعادة ${restoredCount} طلب حقيقي 100% من Cloudinary!`, type: 'success', duration: 4000 });
+      showAlert('استعادة دقيقة 100%', `✅ تم فحص Cloudinary واستعادة ${restoredCount} طلب حقيقي مرافق بإيصاله الأصلي المرفوع!`, 'success');
+    } catch (err: any) {
+      logger.error('Cloudinary sync error:', err);
+      setToastState({ message: `خطأ: ${err.message}`, type: 'error', duration: 4000 });
+      showAlert('خطأ', err.message || 'حدث خطأ أثناء استرجاع صور Cloudinary', 'error');
+    } finally {
+      setIsSyncingCloudinary(false);
     }
   };
 
@@ -2853,9 +3523,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         ''
       ).toLowerCase();
 
-      // Name prefix matching: only return requests where student name STARTS with the search term
-      if (fullNameArNorm && fullNameArNorm.startsWith(termNorm)) return true;
-      if (fullNameEn && fullNameEn.startsWith(term)) return true;
+      // Name substring matching: match requests where student name includes the search term anywhere
+      if (fullNameArNorm && fullNameArNorm.includes(termNorm)) return true;
+      if (fullNameEn && fullNameEn.includes(term)) return true;
 
       // Match other non-name fields (National ID, Phone, Email, Status, Date)
       const natId = String(request.data?.national_id || studentData?.nationalID || '');
@@ -3330,7 +4000,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <MessageSquare size={18} />
           الواتساب
         </button>
+        <button
+          className={`tab-button ${activeTab === 'backup' ? 'active' : ''}`}
+          onClick={() => setActiveTab('backup')}
+        >
+          <Database size={18} />
+          النسخ الاحتياطي والأرشيف
+        </button>
       </div>
+
+      {activeTab === 'backup' && (
+        <AdminBackupTab showAlert={showAlert} showConfirm={showConfirm} />
+      )}
 
       {activeTab === 'news' && (
         <AdminNewsTab showAlert={showAlert} showConfirm={showConfirm} />
@@ -3454,12 +4135,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       </span>
                     )}
                   </h3>
-                  <button
-                    onClick={() => setSelectedServiceId(null)}
-                    className="close-service-button"
-                  >
-                    <X size={20} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                      onClick={() => setSelectedServiceId(null)}
+                      className="close-service-button"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="requests-list-container">
@@ -4117,7 +4800,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const colAddressVal = request.data.address || request.data.address_details || request.data.deliveryAddress || '';
                                 const colDiplomaTypeVal = `${request.data.diploma_type || request.data.diplomaType || ''} ${(request.data.diploma_year || request.data.diplomaYear) ? `(${request.data.diploma_year || request.data.diplomaYear})` : ''}`.trim();
                                 const colDiplomaYearVal = request.data.diploma_year || request.data.diplomaYear || '';
-                                const colTrackVal = normalizeTrackName(request.data.track || request.data.track_category || request.data.track_name || '');
+                                const colTrackVal = normalizeTrackName(
+                                  request.data.track ||
+                                  request.data.track_category ||
+                                  request.data.track_name ||
+                                  studentData?.track ||
+                                  studentData?.track_name ||
+                                  studentData?.course ||
+                                  ''
+                                );
                                 const colCopiesVal = String(request.data.number_of_copies || '-');
                                 const colReceiptVal = request.data.receiptUrl ? <a href={request.data.receiptUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>عرض الإيصال</a> : '-';
                                 const colSpecializationVal = request.data.educational_specialization || '-';
@@ -4126,9 +4817,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const colServiceTypeVal = typeof request.data.selectedCertificate === 'object' ? request.data.selectedCertificate.name : request.data.selectedCertificate || '-';
                                 const colTransTypeVal = request.data.transformation_type || '-';
                                 const colExamLangVal = request.data.selectedExamLanguage || '-';
-                                const colProjectTitleVal = request.data.project_title || '-';
+                                const colProjectTitleVal = (() => {
+                                  const t = request.data.project_title;
+                                  if (t && t !== 'مشروع التخرج' && t !== 'طلب خدمة' && t !== 'طالب') return t;
+                                  return studentData?.course || studentData?.fullNameArabic || '-';
+                                })();
                                 const colGroupLinkVal = request.data.group_link ? <a href={request.data.group_link} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>الرابط</a> : '-';
-                                const colLeaderWhatsappVal = request.data.leader_whatsapp || '-';
+                                const colLeaderWhatsappVal = request.data.leader_whatsapp || colWhatsappVal || '-';
                                 const colDtFawryCodeVal = (() => {
                                   let code = request.id ? dtCodesIndex[String(request.id)] : undefined;
                                   if (!code && request.studentId) code = adminCodesLookup.dtLatestByStudent.get(request.studentId);
@@ -4152,9 +4847,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const colStudentNamesVal = (() => {
                                   const rawNames = request.data.student_names || request.data.names || request.data.names_array || request.data.student_names_array;
                                   // Split by newlines, commas (English/Arabic), or semicolons
-                                  const names = typeof rawNames === 'string'
+                                  let names = typeof rawNames === 'string'
                                     ? rawNames.split(/[\n\r,،;]+/).map(n => n.trim()).filter(Boolean)
-                                    : Array.isArray(rawNames) ? rawNames : [];
+                                    : Array.isArray(rawNames) ? rawNames.filter(Boolean) : [];
+
+                                  const isPlaceholderOnly =
+                                    names.length === 0 ||
+                                    (names.length === 1 && (names[0] === 'طالب' || names[0] === 'بدون اسم'));
+
+                                  if (isPlaceholderOnly) {
+                                    const fallback =
+                                      studentData?.fullNameArabic ||
+                                      request.data.full_name_arabic ||
+                                      request.data.full_name;
+                                    if (fallback && fallback !== 'طالب') names = [String(fallback)];
+                                  }
 
                                   return names.length > 0 ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -5584,6 +6291,182 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         )
       }
 
+      {activeTab === 'graduationProject' && (
+        <div className="admin-content">
+          <div className="books-section">
+            <div className="section-header">
+              <h2>إعدادات مشروع التخرج</h2>
+              <button
+                type="button"
+                onClick={handleSaveGraduationProjectConfig}
+                className="save-button"
+                disabled={isSaving === 'graduationProject'}
+              >
+                <Save size={18} />
+                {isSaving === 'graduationProject' ? 'جاري الحفظ...' : 'حفظ الإعدادات'}
+              </button>
+            </div>
+
+            {graduationProjectConfig && (
+              <div className="book-config-form">
+                <div className="form-group">
+                  <label>اسم السيكشن</label>
+                  <input
+                    type="text"
+                    value={graduationProjectConfig.serviceName || ''}
+                    onChange={(e) => setGraduationProjectConfig({ ...graduationProjectConfig, serviceName: e.target.value })}
+                    className="config-input"
+                    placeholder="مشروع التخرج"
+                  />
+                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    يمكنك تغيير اسم الخدمة ليظهر للمستخدمين
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label>أسعار مشروع التخرج (جنيه)</label>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                    <input
+                      type="number"
+                      value={newGradProjectPriceAmount}
+                      onChange={(e) => setNewGradProjectPriceAmount(e.target.value)}
+                      className="config-input"
+                      placeholder="أدخل السعر بالجنيه..."
+                      min="0"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddGraduationProjectPrice}
+                      style={{
+                        backgroundColor: '#10b981',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '8px 16px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      إضافة سعر
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {graduationProjectConfig.prices?.map((priceObj) => (
+                      <div
+                        key={priceObj.id}
+                        style={{
+                          backgroundColor: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '6px',
+                          padding: '6px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        <span style={{ fontWeight: '600', color: '#0f172a' }}>{priceObj.price} ج.م</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveGraduationProjectPrice(priceObj.id)}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex' }}
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>مميزات الخدمة</label>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                    <input
+                      type="text"
+                      value={newGradProjectFeature}
+                      onChange={(e) => setNewGradProjectFeature(e.target.value)}
+                      className="config-input"
+                      placeholder="أدخل ميزة جديدة..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddGraduationProjectFeature}
+                      style={{
+                        backgroundColor: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '8px 16px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      إضافة ميزة
+                    </button>
+                  </div>
+
+                  <ul style={{ listStyleType: 'disc', paddingRight: '20px', color: '#334155' }}>
+                    {graduationProjectConfig.features?.map((feat, idx) => (
+                      <li key={idx} style={{ marginBottom: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                          <span>{feat}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveGraduationProjectFeature(idx)}
+                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="form-group">
+                  <label>أرقام الدفع</label>
+                  <div className="payment-numbers">
+                    <div className="payment-item">
+                      <label>instaPay</label>
+                      <input
+                        type="text"
+                        value={graduationProjectConfig.paymentMethods?.instaPay || ''}
+                        onChange={(e) => setGraduationProjectConfig({
+                          ...graduationProjectConfig,
+                          paymentMethods: {
+                            ...graduationProjectConfig.paymentMethods,
+                            instaPay: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                      />
+                    </div>
+                    <div className="payment-item">
+                      <label>محفظة الكاش</label>
+                      <input
+                        type="text"
+                        value={graduationProjectConfig.paymentMethods?.cashWallet || ''}
+                        onChange={(e) => setGraduationProjectConfig({
+                          ...graduationProjectConfig,
+                          paymentMethods: {
+                            ...graduationProjectConfig.paymentMethods,
+                            cashWallet: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {activeTab === 'users' && (
         <AdminUsersTab
           searchTerm={searchTerm}
@@ -5630,6 +6513,163 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             <div className="section-header">
               <h2>إدارة الخدمات (تفعيل/تعطيل)</h2>
             </div>
+
+            {/* 🔧 استعادة وفحص الطلبات — محمي بكلمة مرور */}
+            <div style={{
+              marginBottom: '28px',
+              padding: '22px',
+              borderRadius: '16px',
+              border: '2px solid #6366f1',
+              background: 'linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%)',
+              maxWidth: '960px'
+            }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '17px', fontWeight: 800, color: '#3730a3', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <RefreshCw size={18} />
+                استعادة وفحص وإصلاح الطلبات
+              </h3>
+              <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                أدوات استعادة الطلبات من Cloudinary وإثراء البيانات — <strong>محمية بكلمة مرور</strong> لتجنّب التشغيل بالخطأ وتحسين سرعة الموقع.
+              </p>
+
+              {!restoreToolsUnlocked ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                  <input
+                    type="password"
+                    value={restorePasswordInput}
+                    onChange={(e) => { setRestorePasswordInput(e.target.value); setRestorePasswordError(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') tryUnlockRestoreTools(); }}
+                    placeholder="كلمة مرور أدوات الاستعادة"
+                    style={{
+                      flex: '1 1 220px',
+                      maxWidth: '320px',
+                      padding: '11px 14px',
+                      borderRadius: '10px',
+                      border: restorePasswordError ? '2px solid #ef4444' : '2px solid #c7d2fe',
+                      fontSize: '14px',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={tryUnlockRestoreTools}
+                    style={{
+                      padding: '11px 22px',
+                      background: '#4f46e5',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '10px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🔓 فتح الأدوات
+                  </button>
+                  {restorePasswordError && (
+                    <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: 600, width: '100%' }}>{restorePasswordError}</span>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
+                    <button
+                      type="button"
+                      onClick={() => guardRestoreAction(() => handleRestoreServiceFromStudents('all'))}
+                      disabled={isRestoringServices}
+                      style={{ padding: '10px 16px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Zap size={15} />
+                      {isRestoringServices ? 'جاري الاستعادة...' : 'استعادة جميع الخدمات (1-11)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => guardRestoreAction(() => handleSyncRealCloudinaryImages())}
+                      disabled={isSyncingCloudinary}
+                      style={{ padding: '10px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Image size={15} />
+                      {isSyncingCloudinary ? 'جاري الفحص...' : 'فحص واستعادة Cloudinary'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => guardRestoreAction(() => handleEnrichRestoredOrdersFromStudents())}
+                      disabled={isEnrichingOrders}
+                      style={{ padding: '10px 16px', background: '#d97706', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      {isEnrichingOrders ? 'جاري الإثراء...' : '👤 إثراء كل الطلبات'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => guardRestoreAction(() => handleEnrichGraduationProjectOnly())}
+                      disabled={isEnrichingOrders}
+                      style={{ padding: '10px 16px', background: '#b45309', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      🎓 إثراء مشروع التخرج
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => guardRestoreAction(() => runAutoFixPlaceholderOrders())}
+                      disabled={isAutoFixingOrders}
+                      style={{ padding: '10px 16px', background: '#059669', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      {isAutoFixingOrders ? 'جاري الإصلاح...' : '🔧 إصلاح «طالب» تلقائياً'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => guardRestoreAction(() => handleRemoveDuplicateRequests())}
+                      disabled={isRemovingDuplicates}
+                      style={{ padding: '10px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      {isRemovingDuplicates ? 'جاري التنظيف...' : '🧹 حذف التكرارات ودمج البيانات'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRestoreToolsUnlocked(false)}
+                      style={{ padding: '10px 16px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      🔒 قفل
+                    </button>
+                  </div>
+
+                  <p style={{ margin: '0 0 12px', fontSize: '13px', fontWeight: 700, color: '#0f766e' }}>استعادة خدمة واحدة:</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
+                    {[
+                      { id: '1', label: '📝 1. سجل بياناتك', fn: handleRestoreService1Only },
+                      { id: '2', label: '⭐ 2. VIP', fn: handleRestoreService2Only },
+                      { id: '3', label: '📚 3. شحن الكتب', fn: handleRestoreService3Only },
+                      { id: '4', label: '💰 4. المصروفات', fn: handleRestoreService4Only },
+                      { id: '5', label: '📋 5. التكليفات', fn: handleRestoreService5Only },
+                      { id: '6', label: '🏆 6. شهادات', fn: handleRestoreService6Only },
+                      { id: '7', label: '💻 7. التحول الرقمي', fn: handleRestoreService7Only },
+                      { id: '8', label: '📖 8. المراجعة', fn: handleRestoreService8Only },
+                      { id: '9', label: '🎓 9. مشروع التخرج', fn: handleRestoreGraduationProjectOnly, accent: true },
+                      { id: '10', label: '📄 10. مستندات', fn: handleRestoreService10Only },
+                      { id: '11', label: '🚚 11. شحن التحول', fn: handleRestoreService11Only },
+                    ].map(({ label, fn, accent }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => guardRestoreAction(fn)}
+                        disabled={isRestoringServices}
+                        style={{
+                          padding: '9px 12px',
+                          background: isRestoringServices ? '#94a3b8' : accent ? '#16a34a' : '#0d9488',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '9px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: isRestoringServices ? 'not-allowed' : 'pointer',
+                          textAlign: 'right'
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div
               style={{
                 marginBottom: '24px',

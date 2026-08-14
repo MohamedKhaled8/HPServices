@@ -321,7 +321,23 @@ export const getStudentsByIds = async (userIds: string[]): Promise<Record<string
     });
     return result;
   } catch (error: any) {
-    logger.error('Error getting students by ids:', error);
+    logger.error('Error getting students by ids (batch):', error);
+    for (const id of uniqueIds) {
+      if (result[id]) continue;
+      try {
+        const docSnap = await getDoc(doc(db, 'students', id));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          result[id] = {
+            ...data,
+            id: docSnap.id,
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+          } as StudentData;
+        }
+      } catch (singleErr: any) {
+        logger.warn(`getStudentsByIds fallback failed for ${id}:`, singleErr?.message);
+      }
+    }
     return result;
   }
 };
@@ -1786,7 +1802,7 @@ export const subscribeToAllServiceRequests = (
 
   serviceIds.forEach(serviceId => {
     const collectionName = `serviceRequests_${serviceId}`;
-    const q = query(collection(db, collectionName), orderBy('createdAt', 'desc'), limit(100));
+    const q = query(collection(db, collectionName), orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const requests: ServiceRequest[] = querySnapshot.docs.map(doc => {
