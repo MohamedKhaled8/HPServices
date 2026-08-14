@@ -242,7 +242,12 @@ const SupportAssistant: React.FC<SupportAssistantProps> = ({
       if (messages.length <= 1) {
         listRef.current.scrollTop = 0;
       } else {
-        listRef.current.scrollTop = listRef.current.scrollHeight;
+        const lastMsg = listRef.current.querySelector('.sa-msg-row:last-child');
+        if (lastMsg) {
+          lastMsg.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        } else {
+          listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
       }
     }
   }, [messages, open, typing]);

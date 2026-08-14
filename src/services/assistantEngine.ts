@@ -561,15 +561,17 @@ function wrapTurn(
 }
 
 export function isGreetingText(text: string): boolean {
-  const cleaned = text.trim().toLowerCase().replace(/[!؟?.,،]/g, '');
-  if (
-    /^(اهلا|أهلا|اهلاً|أهلاً|هلا|هلاً|مرحبا|مرحباً|السلام عليكم|سلام عليكم|سلام|صباح الخير|مساء الخير|هاي|hi|hello|hey|yo)$/.test(
-      cleaned
-    )
-  ) {
-    return true;
-  }
-  return /^(اهلا|أهلا|هلا|مرحبا|سلام)\b/.test(cleaned);
+  const cleaned = text.trim().replace(/[!؟?.,،\s]+/g, ' ').trim();
+  // exact single-word or phrase matches
+  const exactPatterns = /^(اهلا|أهلا|اهلاً|أهلاً|هلا|هلاً|مرحبا|مرحباً|السلام عليكم|سلام عليكم|سلام|صباح الخير|مساء الخير|هاي|hi|hello|hey|yo|ازيك|ازك|اخبارك|عامل ايه|عامل إيه|كيفك|شخبارك|اخبارك ايه|اخبارك اي|ازيك اخبارك|ازيك اخبارك ايه|ازيك اخبارك اي|ازك اخبارك اي|ازك اخبارك|عامل اي|ايه الاخبار|إيه الأخبار|كيف حالك|كيف الحال|يا هلا)$/i.test(cleaned);
+  if (exactPatterns) return true;
+  // keyword-based: if the text contains greeting keywords
+  const greetingKeywords = ['ازيك', 'ازك', 'اخبارك', 'عامل ايه', 'عامل اي', 'كيفك', 'شخبارك', 'كيف حالك', 'ايه الاخبار', 'السلام عليكم', 'سلام عليكم', 'صباح الخير', 'مساء الخير'];
+  const lower = cleaned.toLowerCase();
+  const hasGreetingWord = greetingKeywords.some(kw => lower.includes(kw));
+  // only treat as greeting if the text is short (< 8 words) — otherwise it's probably a real question
+  if (hasGreetingWord && cleaned.split(/\s+/).length <= 7) return true;
+  return /^(اهلا|أهلا|هلا|مرحبا|سلام)\b/.test(lower);
 }
 
 export function buildGreetingReply(
@@ -579,7 +581,7 @@ export function buildGreetingReply(
   const firstName = (student?.fullNameArabic || 'صديقي').split(/\s+/)[0];
 
   return {
-    text: `أهلاً بك **${firstName}** 👋 كيف يمكنني مساعدتك اليوم؟\n\nتفضل باختيار من الخيارات المتاحة بالأسفل أو اكتب استفسارك مباشرة:`,
+    text: `الحمد لله بخير دائماً! 😊 أهلاً بك **${firstName}**.\n\nيسعدني مساعدتك، تفضل باختيار من الأقسام التالية أو اكتب استفسارك مباشرة:`,
     chipGroups: welcomeChipGroups(requests),
   };
 }
@@ -1198,8 +1200,32 @@ export function handleFreeText(
     }
   }
 
-  if (/واتس|whatsapp|دعم|موظف|تواصل/.test(t)) {
+  if (/واتس|whatsapp|دعم|موظف|تواصل|ادارة|إدارة|اداره|إداره|مدير|خدمة عملاء|خدمه عملاء|مشكلة|مشكله|شكو|اشتكي|مسؤول|مسئول|بشري|انسان|إنسان|حد يكلمني|اتكلم مع حد/.test(t)) {
     return handleAssistantPayload('action:whatsapp', ctx);
+  }
+  if (/سجل|حساب جديد|انشاء حساب|إنشاء حساب|تسجيل حساب|تسجيل جديد|اعمل حساب/.test(t)) {
+    return handleAssistantPayload('nav:service:1', ctx);
+  }
+  if (/ادفع|دفع|فلوس|مصاريف|مصروفات|رسوم/.test(t)) {
+    return handleAssistantPayload('service:7:menu', ctx);
+  }
+  if (/استخراج شهادة|شهادة تخرج|شهاده تخرج|شهادات/.test(t)) {
+    return handleAssistantPayload('service:5:menu', ctx);
+  }
+  if (/شحن كتب|كتب|ملازم|ملازم دراسية/.test(t)) {
+    return handleAssistantPayload('service:9:menu', ctx);
+  }
+  if (/مشروع تخرج|مشروع التخرج|مشروعي|بحوث/.test(t)) {
+    return handleAssistantPayload('service:10:menu', ctx);
+  }
+  if (/مراجعة|مراجعات|مراجعة نهائية|اختبارات|امتحانات/.test(t)) {
+    return handleAssistantPayload('service:11:menu', ctx);
+  }
+  if (/تحول رقمي|التحول الرقمي|موديولات/.test(t)) {
+    return handleAssistantPayload('faq:cat:digital_transform', ctx);
+  }
+  if (/باص|باصات|مواصلات|سعيد|حجز باص/.test(t)) {
+    return handleAssistantPayload('faq:cat:transportation', ctx);
   }
   if (/كل الطلب|كل طلبات|ملخص|طلباتي|عرض طلب/.test(t)) {
     return handleAssistantPayload('action:all_status', ctx);
