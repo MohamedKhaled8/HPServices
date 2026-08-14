@@ -37,13 +37,18 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
   };
 
   const handleAddressChange = (field: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      address: {
-        ...prev.address!,
-        [field]: value
-      }
-    }));
+    setFormData(prev => {
+      const currentAddress = typeof prev.address === 'object' && prev.address !== null
+        ? prev.address
+        : { governorate: '', city: '', street: '', building: '', siteNumber: '', landmark: '' };
+      return {
+        ...prev,
+        address: {
+          ...currentAddress,
+          [field]: value
+        }
+      };
+    });
     setErrors(prev => prev.filter(e => !e.field.startsWith('address.')));
   };
 
@@ -287,7 +292,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                 <select
                   id="governorate"
                   disabled={!isEditing}
-                  value={displayData.address?.governorate || ''}
+                  value={(typeof displayData.address === 'object' && displayData.address?.governorate) || ''}
                   onChange={(e) => handleAddressChange('governorate', e.target.value)}
                 >
                   <option value="">اختر المحافظة</option>
@@ -303,7 +308,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   id="city"
                   type="text"
                   disabled={!isEditing}
-                  value={displayData.address?.city || ''}
+                  value={(typeof displayData.address === 'object' && displayData.address?.city) || ''}
                   onChange={(e) => handleAddressChange('city', e.target.value)}
                 />
               </div>
@@ -316,7 +321,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   id="street"
                   type="text"
                   disabled={!isEditing}
-                  value={displayData.address?.street || ''}
+                  value={(typeof displayData.address === 'object' && displayData.address?.street) || ''}
                   onChange={(e) => handleAddressChange('street', e.target.value)}
                 />
               </div>
@@ -327,7 +332,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   id="building"
                   type="text"
                   disabled={!isEditing}
-                  value={displayData.address?.building || ''}
+                  value={(typeof displayData.address === 'object' && displayData.address?.building) || ''}
                   onChange={(e) => handleAddressChange('building', e.target.value)}
                 />
               </div>
@@ -340,7 +345,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   id="siteNumber"
                   type="text"
                   disabled={!isEditing}
-                  value={displayData.address?.siteNumber || ''}
+                  value={(typeof displayData.address === 'object' && displayData.address?.siteNumber) || ''}
                   onChange={(e) => handleAddressChange('siteNumber', e.target.value)}
                 />
               </div>
@@ -351,7 +356,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   id="landmark"
                   type="text"
                   disabled={!isEditing}
-                  value={displayData.address?.landmark || ''}
+                  value={(typeof displayData.address === 'object' && displayData.address?.landmark) || ''}
                   onChange={(e) => handleAddressChange('landmark', e.target.value)}
                 />
               </div>

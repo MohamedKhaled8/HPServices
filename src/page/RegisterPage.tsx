@@ -180,7 +180,18 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
 
   const handleAddressChange = (field: string, value: string) => {
     setSubmitError('');
-    setFormData((prev) => ({ ...prev, address: { ...prev.address!, [field]: value } }));
+    setFormData((prev) => {
+      const currentAddress = typeof prev.address === 'object' && prev.address !== null
+        ? prev.address
+        : { governorate: '', city: '', street: '', building: '', siteNumber: '', landmark: '' };
+      return {
+        ...prev,
+        address: {
+          ...currentAddress,
+          [field]: value
+        }
+      };
+    });
     setErrors((prev) => prev.filter((e) => !e.field.startsWith('address.')));
   };
 
@@ -351,7 +362,10 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
 
       // Auto-submit Service 1 (سجل بياناتك) request
       try {
-        const addressString = `${studentData.address.governorate || ''}, ${studentData.address.city || ''}, ${studentData.address.street || ''}, ${studentData.address.building || ''}, ${studentData.address.siteNumber || ''}${studentData.address.landmark ? `, ${studentData.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',');
+        const addressObj = typeof studentData.address === 'object' && studentData.address !== null ? studentData.address : undefined;
+        const addressString = addressObj
+          ? `${addressObj.governorate || ''}, ${addressObj.city || ''}, ${addressObj.street || ''}, ${addressObj.building || ''}, ${addressObj.siteNumber || ''}${addressObj.landmark ? `, ${addressObj.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
+          : String(studentData.address || '');
         const service1Request = {
           studentId: user.uid,
           serviceId: '1',
@@ -651,7 +665,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           <label htmlFor="governorate">المحافظة <span className="req">*</span></label>
           <select
             id="governorate"
-            value={formData.address?.governorate || ''}
+            value={(typeof formData.address === 'object' && formData.address?.governorate) || ''}
             onChange={(e) => handleAddressChange('governorate', e.target.value)}
             onBlur={() => markTouched('address.governorate')}
             className={getFieldError('address.governorate') ? 'has-error' : ''}
@@ -665,7 +679,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           <label htmlFor="city">المدينة <span className="req">*</span></label>
           <input
             id="city" type="text" placeholder="اسم المدينة"
-            value={formData.address?.city || ''}
+            value={(typeof formData.address === 'object' && formData.address?.city) || ''}
             onChange={(e) => handleAddressChange('city', e.target.value)}
             onBlur={() => markTouched('address.city')}
             className={getFieldError('address.city') ? 'has-error' : ''}
@@ -679,7 +693,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           <label htmlFor="street">الشارع <span className="req">*</span></label>
           <input
             id="street" type="text" placeholder="اسم الشارع"
-            value={formData.address?.street || ''}
+            value={(typeof formData.address === 'object' && formData.address?.street) || ''}
             onChange={(e) => handleAddressChange('street', e.target.value)}
             onBlur={() => markTouched('address.street')}
             className={getFieldError('address.street') ? 'has-error' : ''}
@@ -690,7 +704,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
           <label htmlFor="building">رقم المبنى <span className="req">*</span></label>
           <input
             id="building" type="text" placeholder="رقم المبنى"
-            value={formData.address?.building || ''}
+            value={(typeof formData.address === 'object' && formData.address?.building) || ''}
             onChange={(e) => handleAddressChange('building', e.target.value)}
             onBlur={() => markTouched('address.building')}
             className={getFieldError('address.building') ? 'has-error' : ''}
@@ -703,7 +717,7 @@ const RegisterPage: React.FC<{ onRegistrationSuccess: () => void; onGoToLogin: (
         <label htmlFor="landmark">معلم قريب (اختياري)</label>
         <input
           id="landmark" type="text" placeholder="مسجد، مدرسة، مستشفى..."
-          value={formData.address?.landmark || ''}
+          value={(typeof formData.address === 'object' && formData.address?.landmark) || ''}
           onChange={(e) => handleAddressChange('landmark', e.target.value)}
         />
       </div>

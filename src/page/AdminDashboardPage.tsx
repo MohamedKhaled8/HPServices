@@ -7351,11 +7351,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       <label>المحافظة</label>
                       <input
                         type="text"
-                        value={editedStudentData.address?.governorate || ''}
+                        value={(typeof editedStudentData.address === 'object' && editedStudentData.address?.governorate) || ''}
                         onChange={(e) => setEditedStudentData({
                           ...editedStudentData,
                           address: {
-                            ...editedStudentData.address,
+                            ...(typeof editedStudentData.address === 'object' && editedStudentData.address !== null ? editedStudentData.address : { governorate: '', city: '', street: '', building: '', siteNumber: '' }),
                             governorate: e.target.value
                           }
                         })}
@@ -7366,11 +7366,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       <label>المدينة</label>
                       <input
                         type="text"
-                        value={editedStudentData.address?.city || ''}
+                        value={(typeof editedStudentData.address === 'object' && editedStudentData.address?.city) || ''}
                         onChange={(e) => setEditedStudentData({
                           ...editedStudentData,
                           address: {
-                            ...editedStudentData.address,
+                            ...(typeof editedStudentData.address === 'object' && editedStudentData.address !== null ? editedStudentData.address : { governorate: '', city: '', street: '', building: '', siteNumber: '' }),
                             city: e.target.value
                           }
                         })}
@@ -7384,11 +7384,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       <label>الشارع</label>
                       <input
                         type="text"
-                        value={editedStudentData.address?.street || ''}
+                        value={(typeof editedStudentData.address === 'object' && editedStudentData.address?.street) || ''}
                         onChange={(e) => setEditedStudentData({
                           ...editedStudentData,
                           address: {
-                            ...editedStudentData.address,
+                            ...(typeof editedStudentData.address === 'object' && editedStudentData.address !== null ? editedStudentData.address : { governorate: '', city: '', street: '', building: '', siteNumber: '' }),
                             street: e.target.value
                           }
                         })}
@@ -7399,11 +7399,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       <label>رقم المبنى</label>
                       <input
                         type="text"
-                        value={editedStudentData.address?.building || ''}
+                        value={(typeof editedStudentData.address === 'object' && editedStudentData.address?.building) || ''}
                         onChange={(e) => setEditedStudentData({
                           ...editedStudentData,
                           address: {
-                            ...editedStudentData.address,
+                            ...(typeof editedStudentData.address === 'object' && editedStudentData.address !== null ? editedStudentData.address : { governorate: '', city: '', street: '', building: '', siteNumber: '' }),
                             building: e.target.value
                           }
                         })}

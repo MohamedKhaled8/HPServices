@@ -140,7 +140,7 @@ export const validateStudentData = (data: Partial<StudentData>): ValidationError
 
   if (!data.address) {
     errors.push({ field: 'address', message: 'هذا الحقل مطلوب' });
-  } else {
+  } else if (typeof data.address === 'object') {
     if (!data.address.governorate) {
       errors.push({ field: 'address.governorate', message: 'هذا الحقل مطلوب' });
     }
