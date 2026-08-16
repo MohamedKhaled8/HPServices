@@ -4,7 +4,13 @@ import {
   ServiceRequest,
   ServiceRequestWorkflowStatus,
   StudentData,
+  TrainedQA,
 } from '../types';
+import {
+  logUnansweredQuestion,
+  incrementQAUsage,
+  normalizeTextForSearch,
+} from './chatbotTrainingService';
 
 export type StatusBadgeVariant = ServiceRequestWorkflowStatus;
 
@@ -69,6 +75,7 @@ export type AssistantContext = {
   dtCodes: DtCodeRow[];
   epCodes: EpCodeRow[];
   conversation?: ConversationContext;
+  trainedQAs?: TrainedQA[];
 };
 
 export type AssistantTurnResult = {
@@ -350,6 +357,51 @@ export function matchFaqFromText(text: string): { type: 'exact'; faq: FaqItem } 
   }
 
   return null;
+}
+
+export function matchTrainedQA(text: string, trainedQAs?: TrainedQA[]): TrainedQA | null {
+  if (!text || !trainedQAs || trainedQAs.length === 0) return null;
+  const activeQAs = trainedQAs.filter((qa) => qa.isActive !== false);
+  if (activeQAs.length === 0) return null;
+
+  const normUserText = normalizeTextForSearch(text);
+  if (!normUserText || normUserText.length < 2) return null;
+
+  // 1. Exact match or sub-string match on full question
+  for (const qa of activeQAs) {
+    const normQ = normalizeTextForSearch(qa.question);
+    if (!normQ) continue;
+    if (normUserText === normQ || (normUserText.length >= 4 && normQ.includes(normUserText)) || (normQ.length >= 4 && normUserText.includes(normQ))) {
+      return qa;
+    }
+  }
+
+  // 2. Keyword match
+  let bestMatch: TrainedQA | null = null;
+  let maxScore = 0;
+
+  for (const qa of activeQAs) {
+    let score = 0;
+    const keywords = qa.keywords || [];
+    for (const kw of keywords) {
+      const normKw = normalizeTextForSearch(kw);
+      if (normKw && normUserText.includes(normKw)) {
+        score += 2;
+      }
+    }
+    const normQ = normalizeTextForSearch(qa.question);
+    const words = normQ.split(' ').filter(w => w.length > 2);
+    for (const word of words) {
+      if (normUserText.includes(word)) score += 1;
+    }
+
+    if (score >= 2 && score > maxScore) {
+      maxScore = score;
+      bestMatch = qa;
+    }
+  }
+
+  return bestMatch;
 }
 
 export function handleFaqMainPayload(): AssistantReply {
@@ -1167,15 +1219,34 @@ export function handleFreeText(
     );
   }
 
+  // 1. الأولوية الأولى المطلقة: فحص المطابقة مع الأسئلة المدربة في الأدمن (Knowledge Base)
+  const trainedMatch = matchTrainedQA(text, ctx.trainedQAs);
+  if (trainedMatch) {
+    if (trainedMatch.id) {
+      incrementQAUsage(trainedMatch.id);
+    }
+    return wrapTurn(
+      {
+        text: trainedMatch.answer,
+        chipGroups: welcomeChipGroups(ctx.requests),
+      },
+      null,
+      ctx
+    );
+  }
+
   if (/أسئلة|اسئلة|أسئله|اسئله|شائع|سوال|سؤال|faq|شائعة|شائعه/.test(t)) {
     return handleAssistantPayload('action:faq_main', ctx);
   }
 
+  // 2. فحص الأسئلة الشائعة الثابتة
   const faqMatch = matchFaqFromText(text);
   if (faqMatch) {
     if (faqMatch.type === 'exact') {
       return wrapTurn(handleFaqQuestionPayload(faqMatch.faq.id), null, ctx);
     } else if (faqMatch.type === 'multiple') {
+      // إرسال السؤال المعلق للأدمن للتدريب لأن البوت لم يجد إجابة تامة واحدة
+      logUnansweredQuestion(text);
       return wrapTurn(
         {
           text: `وجدنا عدة إجابات قد تهمك بشأن «**${text}**» 👇`,
@@ -1286,6 +1357,9 @@ export function handleFreeText(
     }
     return handleAssistantPayload('action:all_status', ctx);
   }
+
+  // 3. Fallback: إذا لم يجد الشات بوت أي إجابة محددة، يتم إرسال السؤال للأدمن للتدريب وتنبيه الطالب
+  logUnansweredQuestion(text);
 
   return wrapTurn(
     {

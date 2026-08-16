@@ -146,8 +146,9 @@ import AdminStatisticsTab from '../components/admin/AdminStatisticsTab';
 import AdminUsersTab from '../components/admin/AdminUsersTab';
 import AdminWhatsAppTab from '../components/admin/AdminWhatsAppTab';
 import AdminBackupTab from '../components/admin/AdminBackupTab';
+import AdminBotTrainingTab from '../components/admin/AdminBotTrainingTab';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Brain } from 'lucide-react';
 
 
 interface AdminDashboardPageProps {
@@ -330,7 +331,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [students]);
 
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp' | 'backup'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp' | 'backup' | 'botTraining'>('requests');
   const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
   const [selectedDTColumns, setSelectedDTColumns] = useState<Set<number>>(new Set());
   const [selectedEPRows, setSelectedEPRows] = useState<Set<number>>(new Set());
@@ -4007,7 +4008,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <Database size={18} />
           النسخ الاحتياطي والأرشيف
         </button>
+        <button
+          className={`tab-button ${activeTab === 'botTraining' ? 'active' : ''}`}
+          onClick={() => setActiveTab('botTraining')}
+        >
+          <Brain size={18} />
+          تدريب الشات بوت
+        </button>
       </div>
+
+      {activeTab === 'botTraining' && (
+        <AdminBotTrainingTab showAlert={showAlert} showConfirm={showConfirm} />
+      )}
 
       {activeTab === 'backup' && (
         <AdminBackupTab showAlert={showAlert} showConfirm={showConfirm} />

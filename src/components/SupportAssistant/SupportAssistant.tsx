@@ -14,7 +14,8 @@ import {
   AssistantTurnResult,
   nextConversation,
 } from '../../services/assistantEngine';
-import { ServiceRequest, StudentData } from '../../types';
+import { ServiceRequest, StudentData, TrainedQA } from '../../types';
+import { subscribeToTrainedQAs } from '../../services/chatbotTrainingService';
 import { AssistantMessageBody } from './AssistantMessageRenderer';
 import '../../styles/SupportAssistant.css';
 
@@ -54,6 +55,7 @@ const SupportAssistant: React.FC<SupportAssistantProps> = ({
   const [typing, setTyping] = useState(false);
   const [newActivity, setNewActivity] = useState(0);
   const [conversation, setConversation] = useState<ConversationContext>({});
+  const [trainedQAs, setTrainedQAs] = useState<TrainedQA[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   const welcomedRef = useRef(false);
   const knownRequestIdsRef = useRef<Set<string>>(new Set());
@@ -62,9 +64,16 @@ const SupportAssistant: React.FC<SupportAssistantProps> = ({
   const bootstrapPendingRef = useRef(true);
   const sawEmptyRequestsRef = useRef(false);
 
+  useEffect(() => {
+    const unsub = subscribeToTrainedQAs((items) => {
+      setTrainedQAs(items);
+    });
+    return () => unsub();
+  }, []);
+
   const ctx = useMemo(
-    () => ({ student, requests: serviceRequests, dtCodes, epCodes, conversation }),
-    [student, serviceRequests, dtCodes, epCodes, conversation]
+    () => ({ student, requests: serviceRequests, dtCodes, epCodes, conversation, trainedQAs }),
+    [student, serviceRequests, dtCodes, epCodes, conversation, trainedQAs]
   );
 
   const pendingCount = useMemo(

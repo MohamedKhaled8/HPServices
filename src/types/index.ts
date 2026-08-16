@@ -217,3 +217,28 @@ export interface ServiceSettings {
     disabledFields?: string[];
   };
 }
+
+export interface TrainedQA {
+  id: string;
+  question: string;
+  answer: string;
+  keywords?: string[];
+  category?: string;
+  createdAt?: any;
+  updatedAt?: any;
+  source?: 'manual' | 'trained_from_unanswered';
+  usageCount?: number;
+  isActive?: boolean;
+}
+
+export interface UnansweredQuestion {
+  id: string;
+  question: string;
+  normalizedQuestion: string;
+  askCount: number;
+  lastAskedAt?: any;
+  firstAskedAt?: any;
+  status: 'pending' | 'trained' | 'ignored';
+  trainedAnswer?: string;
+}
+
