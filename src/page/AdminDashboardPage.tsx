@@ -147,8 +147,9 @@ import AdminUsersTab from '../components/admin/AdminUsersTab';
 import AdminWhatsAppTab from '../components/admin/AdminWhatsAppTab';
 import AdminBackupTab from '../components/admin/AdminBackupTab';
 import AdminBotTrainingTab from '../components/admin/AdminBotTrainingTab';
+import AdminAssistantTab from '../components/admin/AdminAssistantTab';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
-import { MessageSquare, Brain } from 'lucide-react';
+import { MessageSquare, Brain, Bot } from 'lucide-react';
 
 
 interface AdminDashboardPageProps {
@@ -331,7 +332,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [students]);
 
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp' | 'backup' | 'botTraining'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp' | 'backup' | 'botTraining' | 'adminAssistant'>('requests');
   const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
   const [selectedDTColumns, setSelectedDTColumns] = useState<Set<number>>(new Set());
   const [selectedEPRows, setSelectedEPRows] = useState<Set<number>>(new Set());
@@ -2347,8 +2348,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     try {
       setToastState({ message: 'جاري تجهيز ملف الصور المضغوط...', type: 'loading', duration: 4000 });
 
+      // بناء اسم الملف من اسم الطالب ورقم تليفونه
+      const rawName: string = String(
+        request.data?.full_name_arabic ||
+        request.data?.full_name ||
+        request.data?.student_names ||
+        ''
+      ).trim();
+      const rawPhone: string = String(
+        request.data?.whatsapp_number ||
+        request.data?.phone_whatsapp ||
+        request.data?.phone ||
+        ''
+      ).replace(/\D/g, '').trim();
+
+      const safeName = rawName.replace(/[\\/:*?"<>|]/g, '_') || `request_${request.id || 'unknown'}`;
+      const zipBaseName = rawPhone ? `${safeName}_${rawPhone}` : safeName;
+      const folderLabel = zipBaseName;
+
       const zip = new JSZip();
-      const folder = zip.folder(`request_${request.id || 'unknown'}`) || zip;
+      const folder = zip.folder(folderLabel) || zip;
 
       for (const img of imagesToDownload) {
         try {
@@ -2361,7 +2380,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
-      const zipName = `request_${request.id || 'attachments'}.zip`;
+      const zipName = `${zipBaseName}.zip`;
       saveAs(content, zipName);
 
       setToastState({ message: 'تم تجهيز ملف الصور المضغوط للتحميل', type: 'success', duration: 3000 });
@@ -4015,7 +4034,25 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           <Brain size={18} />
           تدريب الشات بوت
         </button>
+        <button
+          className={`tab-button ${activeTab === 'adminAssistant' ? 'active' : ''}`}
+          onClick={() => setActiveTab('adminAssistant')}
+          style={{ background: activeTab === 'adminAssistant' ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : undefined, color: activeTab === 'adminAssistant' ? '#fff' : undefined }}
+        >
+          <Bot size={18} />
+          المساعد الذكي للاستعلامات
+        </button>
       </div>
+
+      {activeTab === 'adminAssistant' && (
+        <AdminAssistantTab
+          serviceRequests={serviceRequests}
+          students={students}
+          showAlert={showAlert}
+          dtCodes={dtCodes}
+          epCodes={epCodes}
+        />
+      )}
 
       {activeTab === 'botTraining' && (
         <AdminBotTrainingTab showAlert={showAlert} showConfirm={showConfirm} />
@@ -8714,96 +8751,170 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         );
       })()}
 
-      {/* Custom Alert Modal */}
+      {/* Custom Compact Responsive Alert Modal */}
       {alertConfig.isOpen && (
-        <div className="request-modal-overlay">
-          <div className="request-modal" style={{ maxWidth: '450px', height: 'auto', maxHeight: '90vh', padding: '0', borderRadius: '20px', overflow: 'hidden' }}>
-            <div className="modal-header" style={{
-              background: alertConfig.type === 'error' ? '#fef2f2' : alertConfig.type === 'success' ? '#f0fdf4' : '#f8fafc',
-              borderBottom: '1px solid #e2e8f0',
-              padding: '20px'
-            }}>
-              <h2 style={{
-                fontSize: '18px',
-                color: alertConfig.type === 'error' ? '#ef4444' : alertConfig.type === 'success' ? '#16a34a' : '#1e293b',
-                margin: 0,
+        <div
+          className="request-modal-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '16px'
+          }}
+          onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div
+            className="request-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '380px',
+              height: 'auto',
+              borderRadius: '16px',
+              background: '#ffffff',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+              overflow: 'hidden',
+              border: '1px solid var(--border-color, #e2e8f0)'
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px'
-              }}>
-                {alertConfig.type === 'success' && <CheckCircle size={20} />}
-                {alertConfig.type === 'error' && <XCircle size={20} />}
-                {alertConfig.type === 'info' && <Bell size={20} />}
-                {alertConfig.title || (alertConfig.type === 'error' ? 'تنبيه' : alertConfig.type === 'success' ? 'نجاح' : 'معلومة')}
-              </h2>
-              <button
-                onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
-                className="close-button"
-                style={{ width: '32px', height: '32px' }}
+                justifyContent: 'space-between',
+                padding: '14px 18px',
+                background: alertConfig.type === 'error' ? '#fef2f2' : alertConfig.type === 'success' ? '#f0fdf4' : '#f8fafc',
+                borderBottom: '1px solid var(--border-color, #f1f5f9)'
+              }}
+            >
+              <h3
+                style={{
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  color: alertConfig.type === 'error' ? '#dc2626' : alertConfig.type === 'success' ? '#16a34a' : '#1e293b',
+                  margin: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
               >
-                <X size={18} />
+                {alertConfig.type === 'success' && <CheckCircle size={18} color="#16a34a" />}
+                {alertConfig.type === 'error' && <XCircle size={18} color="#dc2626" />}
+                {alertConfig.type === 'info' && <Bell size={18} color="#4f46e5" />}
+                {alertConfig.type === 'warning' && <Bell size={18} color="#d97706" />}
+                {alertConfig.title || (alertConfig.type === 'error' ? 'تنبيه' : alertConfig.type === 'success' ? 'تم بنجاح' : 'إشعار')}
+              </h3>
+
+              <button
+                type="button"
+                onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'rgba(0, 0, 0, 0.05)',
+                  color: '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s'
+                }}
+              >
+                <X size={15} />
               </button>
             </div>
-            <div className="modal-content" style={{ padding: '32px 24px', textAlign: 'center' }}>
-              <p style={{ fontSize: '16px', color: '#1e293b', fontWeight: '600', lineHeight: '1.6', margin: 0 }}>
+
+            {/* Content Body */}
+            <div style={{ padding: '20px 18px', textAlign: 'center' }}>
+              <p
+                style={{
+                  fontSize: '14px',
+                  color: '#334155',
+                  fontWeight: 600,
+                  lineHeight: '1.6',
+                  margin: 0,
+                  whiteSpace: 'pre-wrap'
+                }}
+              >
                 {alertConfig.message}
               </p>
             </div>
-            <div className="modal-footer" style={{ justifyContent: 'center', padding: '16px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', gap: '12px' }}>
+
+            {/* Footer Buttons */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                padding: '12px 18px',
+                background: '#f8fafc',
+                borderTop: '1px solid var(--border-color, #f1f5f9)'
+              }}
+            >
               {alertConfig.onConfirm ? (
                 <>
                   <button
+                    type="button"
+                    onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#ffffff',
+                      color: '#64748b',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    تراجع
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       alertConfig.onConfirm?.();
                       setAlertConfig(prev => ({ ...prev, isOpen: false }));
                     }}
                     style={{
-                      padding: '12px 24px',
-                      background: '#ef4444',
-                      color: 'white',
+                      padding: '8px 20px',
+                      background: alertConfig.type === 'error' ? '#ef4444' : '#4f46e5',
+                      color: '#ffffff',
                       border: 'none',
-                      borderRadius: '10px',
-                      fontWeight: '700',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '13px',
                       cursor: 'pointer',
-                      minWidth: '100px',
-                      boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.2)',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
                     }}
                   >
-                    {alertConfig.confirmLabel || 'نعم، حذف'}
-                  </button>
-                  <button
-                    onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
-                    style={{
-                      padding: '12px 24px',
-                      background: '#f1f5f9',
-                      color: '#475569',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '10px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      minWidth: '100px',
-                    }}
-                  >
-                    تراجع
+                    {alertConfig.confirmLabel || 'تأكيد'}
                   </button>
                 </>
               ) : (
                 <button
+                  type="button"
                   onClick={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
                   style={{
-                    padding: '12px 32px',
-                    background: alertConfig.type === 'error' ? '#ef4444' : '#2563eb',
-                    color: 'white',
+                    padding: '8px 24px',
+                    background: alertConfig.type === 'error' ? '#ef4444' : 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)',
+                    color: '#ffffff',
                     border: 'none',
-                    borderRadius: '10px',
-                    fontWeight: '700',
+                    borderRadius: '8px',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
                     cursor: 'pointer',
-                    minWidth: '120px',
-                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-                    transition: 'transform 0.2s'
+                    boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)',
+                    transition: 'all 0.15s ease'
                   }}
-                  onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                  onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                 >
                   حسناً
                 </button>

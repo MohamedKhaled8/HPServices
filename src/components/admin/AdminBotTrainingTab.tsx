@@ -110,6 +110,8 @@ export const AdminBotTrainingTab: React.FC<AdminBotTrainingTabProps> = ({
     setSubmittingIds((prev) => ({ ...prev, [item.id]: true }));
     try {
       await trainFromUnanswered(item.id, item.question, draftAnswer);
+      // إزالة السؤال المعلق فوراً من شاشة العرض والعداد المحلي
+      setUnansweredList((prev) => prev.filter((q) => q.id !== item.id && q.question !== item.question));
       showAlert('تم التدريب 🎯', 'تمت إضافة الإجابة وتدريب الشات بوت بنجاح! وسيرد بها من الآن فصاعداً.', 'success');
       setAnswerDrafts((prev) => {
         const copy = { ...prev };
@@ -127,7 +129,8 @@ export const AdminBotTrainingTab: React.FC<AdminBotTrainingTabProps> = ({
   // تجاهل سؤال معلق
   const handleIgnore = async (item: UnansweredQuestion) => {
     try {
-      await ignoreUnansweredQuestion(item.id);
+      await ignoreUnansweredQuestion(item.id, item.question);
+      setUnansweredList((prev) => prev.filter((q) => q.id !== item.id && q.question !== item.question));
       showAlert('تم الاستبعاد', 'تم نقل السؤال إلى قائمة التجاهل.', 'info');
     } catch (error: any) {
       logger.error('Error ignoring question:', error);
@@ -136,10 +139,11 @@ export const AdminBotTrainingTab: React.FC<AdminBotTrainingTabProps> = ({
   };
 
   // حذف سؤال معلق نهائياً
-  const handleDeleteUnanswered = async (id: string) => {
+  const handleDeleteUnanswered = async (id: string, questionText?: string) => {
     showConfirm('حذف السؤال', 'هل أنت متأكد من حذف هذا السؤال نهائياً؟', async () => {
       try {
-        await deleteUnansweredQuestion(id);
+        await deleteUnansweredQuestion(id, questionText);
+        setUnansweredList((prev) => prev.filter((q) => q.id !== id));
         showAlert('تم الحذف', 'تم حذف السؤال من القائمة بنجاح.', 'success');
       } catch (error: any) {
         logger.error('Error deleting unanswered:', error);
@@ -182,7 +186,10 @@ export const AdminBotTrainingTab: React.FC<AdminBotTrainingTabProps> = ({
   // تفعيل / تعطيل سؤال مدرب
   const handleToggleActive = async (item: TrainedQA) => {
     try {
-      await updateTrainedQA(item.id, { isActive: !item.isActive });
+      await updateTrainedQA(item.id, { isActive: !item.isActive }, item.question);
+      setTrainedList((prev) =>
+        prev.map((q) => (q.id === item.id || q.question === item.question ? { ...q, isActive: !item.isActive } : q))
+      );
       showAlert(
         'تم التحديث',
         item.isActive ? 'تم تعطيل هذا السؤال مؤقتاً' : 'تم تفعيل هذا السؤال بنجاح',
@@ -195,10 +202,11 @@ export const AdminBotTrainingTab: React.FC<AdminBotTrainingTabProps> = ({
   };
 
   // حذف سؤال مدرب
-  const handleDeleteTrained = (id: string) => {
+  const handleDeleteTrained = (item: TrainedQA) => {
     showConfirm('حذف السؤال المدرب', 'هل أنت متأكد من حذف هذا السؤال من قاعدة المعرفة؟ لن يستطيع الشات بوت الرد به بعد الآن.', async () => {
       try {
-        await deleteTrainedQA(id);
+        await deleteTrainedQA(item.id, item.question);
+        setTrainedList((prev) => prev.filter((q) => q.id !== item.id && q.question !== item.question));
         showAlert('تم الحذف', 'تم حذف السؤال بنجاح من قاعدة المعرفة', 'success');
       } catch (error: any) {
         logger.error('Error deleting trained QA:', error);
@@ -223,7 +231,14 @@ export const AdminBotTrainingTab: React.FC<AdminBotTrainingTabProps> = ({
         question: editQuestionText.trim(),
         answer: editAnswerText.trim(),
         category: editCategory
-      });
+      }, editingQA.question);
+      setTrainedList((prev) =>
+        prev.map((q) =>
+          q.id === editingQA.id || q.question === editingQA.question
+            ? { ...q, question: editQuestionText.trim(), answer: editAnswerText.trim(), category: editCategory }
+            : q
+        )
+      );
       showAlert('تم التعديل', 'تمت تحديث الإجابة بنجاح', 'success');
       setEditingQA(null);
     } catch (error: any) {
@@ -531,7 +546,7 @@ export const AdminBotTrainingTab: React.FC<AdminBotTrainingTabProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteUnanswered(item.id)}
+                          onClick={() => handleDeleteUnanswered(item.id, item.question)}
                           style={{
                             padding: '6px 10px',
                             borderRadius: '6px',
@@ -779,7 +794,7 @@ export const AdminBotTrainingTab: React.FC<AdminBotTrainingTabProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteTrained(qa.id)}
+                          onClick={() => handleDeleteTrained(qa)}
                           style={{
                             padding: '4px 8px',
                             borderRadius: '6px',

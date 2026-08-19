@@ -41,8 +41,8 @@ interface AdminBackupTabProps {
   showConfirm?: (title: string, message: string, onConfirm: () => void) => void;
 }
 
-// SHA-256 Hash of 'Hp_Cloud!@#' for in-memory encrypted verification
-const TARGET_PASSWORD_HASH = '46a81bf668e1a1415df8e19c0b2fbe8e1f0e4708761a669bc9a68b5fa21d234a';
+// SHA-256 Hash of backup-tab password for in-memory encrypted verification
+const TARGET_PASSWORD_HASH = '0dcc63cd5736f21c0c28966460732ed5ae889b3f46e6f6434fc0ec17295abda7';
 
 const AdminBackupTab: React.FC<AdminBackupTabProps> = ({ showAlert, showConfirm }) => {
   // Lock / Unlock Password Protection State (Isolated to Backup Tab)
@@ -102,7 +102,7 @@ const AdminBackupTab: React.FC<AdminBackupTabProps> = ({ showAlert, showConfirm 
     try {
       const inputHash = await hashPasswordSHA256(passwordInput.trim());
       // Encrypted in-memory comparison
-      if (inputHash === TARGET_PASSWORD_HASH || passwordInput.trim() === 'Hp_Cloud!@#') {
+      if (inputHash === TARGET_PASSWORD_HASH) {
         setIsUnlocked(true);
         sessionStorage.setItem('hp_backup_tab_unlocked', 'true');
         setPasswordInput('');

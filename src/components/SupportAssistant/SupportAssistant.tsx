@@ -68,7 +68,18 @@ const SupportAssistant: React.FC<SupportAssistantProps> = ({
     const unsub = subscribeToTrainedQAs((items) => {
       setTrainedQAs(items);
     });
-    return () => unsub();
+
+    // Polling كل 30 ثانية كـ fallback لضمان ظهور الإجابات الجديدة بدون Refresh
+    const pollInterval = setInterval(async () => {
+      subscribeToTrainedQAs((items) => {
+        setTrainedQAs(items);
+      });
+    }, 30_000);
+
+    return () => {
+      unsub();
+      clearInterval(pollInterval);
+    };
   }, []);
 
   const ctx = useMemo(

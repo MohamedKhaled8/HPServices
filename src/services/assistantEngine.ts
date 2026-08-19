@@ -325,24 +325,48 @@ export function matchFaqFromText(text: string): { type: 'exact'; faq: FaqItem } 
     }
   }
 
-  const inputWords = normInput.split(/\s+/).filter(w => w.length > 1);
-  const scoredItems: { item: FaqItem; score: number }[] = [];
+  // استبعاد أدوات الاستفهام والكلمات النحوية حتى لا تتسبب في مطابقة خاطئة
+  const stopWords = new Set([
+    'هل', 'من', 'في', 'عن', 'على', 'إلى', 'الي', 'مع', 'ما', 'ماذا', 'متى', 'كيف',
+    'اين', 'أين', 'هو', 'هي', 'تم', 'كان', 'يكون', 'ان', 'أن', 'لا', 'يا', 'لو',
+    'اريد', 'أريد', 'عايز', 'عاوز', 'ممكن', 'بشأن'
+  ]);
+
+  const inputWords = normInput
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !stopWords.has(w));
+
+  if (inputWords.length === 0) return null;
+
+  const scoredItems: { item: FaqItem; score: number; matchCount: number }[] = [];
 
   for (const item of FAQ_ITEMS) {
     let score = 0;
+    let matchCount = 0;
     const normQ = normalizeArabic(item.question);
 
     for (const word of inputWords) {
-      if (normQ.includes(word)) score += 3;
+      let wordMatched = false;
+      if (normQ.includes(word)) {
+        score += 3;
+        wordMatched = true;
+      }
       for (const kw of item.keywords) {
         const normKw = normalizeArabic(kw);
-        if (normKw === word) score += 4;
-        else if (word.length >= 3 && (normKw.includes(word) || word.includes(normKw))) score += 2;
+        if (normKw === word) {
+          score += 4;
+          wordMatched = true;
+        } else if (word.length >= 3 && (normKw.includes(word) || word.includes(normKw))) {
+          score += 2;
+          wordMatched = true;
+        }
       }
+      if (wordMatched) matchCount++;
     }
 
-    if (score >= 4) {
-      scoredItems.push({ item, score });
+    // يشترط مطابقة كلمتين جوهريتين على الأقل (أو كلمة واحدة إذا كان السؤال كله كلمة مفتاحية واحدة)
+    if (score >= 6 && (matchCount >= 2 || (inputWords.length === 1 && matchCount === 1))) {
+      scoredItems.push({ item, score, matchCount });
     }
   }
 
@@ -365,37 +389,59 @@ export function matchTrainedQA(text: string, trainedQAs?: TrainedQA[]): TrainedQ
   if (activeQAs.length === 0) return null;
 
   const normUserText = normalizeTextForSearch(text);
-  if (!normUserText || normUserText.length < 2) return null;
+  const rawLower = text.trim().toLowerCase();
 
-  // 1. Exact match or sub-string match on full question
+  // 0. Raw text exact match (للأسئلة التي تحتوي على رموز فقط أو مطابقة تامة)
   for (const qa of activeQAs) {
-    const normQ = normalizeTextForSearch(qa.question);
-    if (!normQ) continue;
-    if (normUserText === normQ || (normUserText.length >= 4 && normQ.includes(normUserText)) || (normQ.length >= 4 && normUserText.includes(normQ))) {
+    if (qa.question.trim().toLowerCase() === rawLower) {
       return qa;
     }
   }
 
-  // 2. Keyword match
+  if (!normUserText || normUserText.length < 2) return null;
+
+  // 1. Exact match or high-confidence substring match on full question
+  for (const qa of activeQAs) {
+    const normQ = normalizeTextForSearch(qa.question);
+    if (!normQ) continue;
+    if (normUserText === normQ) {
+      return qa;
+    }
+    // إذا كان المستخدم كتب جزءاً كافياً من سؤال طويل مدرب
+    if (normUserText.length >= 4 && normQ.includes(normUserText)) {
+      return qa;
+    }
+    // إذا كان السؤال المدرب محتوى داخل نص المستخدم، يشترط أن يكون طول السؤال المدرب كافياً ونسبة تغطية عالية (70%+)
+    if (normQ.length >= 12 && normUserText.includes(normQ)) {
+      const ratio = normQ.length / normUserText.length;
+      if (ratio >= 0.7) {
+        return qa;
+      }
+    }
+  }
+
+  // 2. Keyword match & scoring
   let bestMatch: TrainedQA | null = null;
   let maxScore = 0;
 
   for (const qa of activeQAs) {
     let score = 0;
     const keywords = qa.keywords || [];
+    const normQ = normalizeTextForSearch(qa.question);
+    const qWords = normQ.split(' ').filter(w => w.length > 2);
+
     for (const kw of keywords) {
       const normKw = normalizeTextForSearch(kw);
       if (normKw && normUserText.includes(normKw)) {
-        score += 2;
+        score += 3;
       }
     }
-    const normQ = normalizeTextForSearch(qa.question);
-    const words = normQ.split(' ').filter(w => w.length > 2);
-    for (const word of words) {
+    for (const word of qWords) {
       if (normUserText.includes(word)) score += 1;
     }
 
-    if (score >= 2 && score > maxScore) {
+    // يشترط سكور مرتفع (5 فأكثر) لمنع المطابقات الخاطئة العشوائية
+    if (score >= 5 && score > maxScore) {
       maxScore = score;
       bestMatch = qa;
     }
@@ -1193,6 +1239,22 @@ export function handleFreeText(
   const t = text.trim().toLowerCase();
   const lastSid = ctx.conversation?.lastServiceId;
 
+  // ✅ الأولوية المطلقة: الإجابات المدربة من الأدمن تسبق كل شيء حتى التحيات
+  const trainedMatchEarly = matchTrainedQA(text, ctx.trainedQAs);
+  if (trainedMatchEarly) {
+    if (trainedMatchEarly.id) {
+      incrementQAUsage(trainedMatchEarly.id);
+    }
+    return wrapTurn(
+      {
+        text: trainedMatchEarly.answer,
+        chipGroups: welcomeChipGroups(ctx.requests),
+      },
+      null,
+      ctx
+    );
+  }
+
   if (isGreetingText(text)) {
     return wrapTurn(buildGreetingReply(ctx.student, ctx.requests), null, ctx);
   }
@@ -1271,51 +1333,57 @@ export function handleFreeText(
     }
   }
 
+  const isQuestionSentence = /[\?؟]/.test(t) || /^(هل|متى|امتى|إمتى|فين|ازاي|ازاى|ليه|مين|كام|بكم|طريقة|طريقه|كيف|إمكانية|امكانية|امكانيه)/.test(t) || /جديد|جديدة|قريبا|قريب/.test(t);
+
   if (/واتس|whatsapp|دعم|موظف|تواصل|ادارة|إدارة|اداره|إداره|مدير|خدمة عملاء|خدمه عملاء|مشكلة|مشكله|شكو|اشتكي|مسؤول|مسئول|بشري|انسان|إنسان|حد يكلمني|اتكلم مع حد/.test(t)) {
     return handleAssistantPayload('action:whatsapp', ctx);
   }
-  if (/سجل|حساب جديد|انشاء حساب|إنشاء حساب|تسجيل حساب|تسجيل جديد|اعمل حساب/.test(t)) {
-    return handleAssistantPayload('nav:service:1', ctx);
-  }
-  if (/ادفع|دفع|فلوس|مصاريف|مصروفات|رسوم/.test(t)) {
-    return handleAssistantPayload('service:7:menu', ctx);
-  }
-  if (/استخراج شهادة|شهادة تخرج|شهاده تخرج|شهادات/.test(t)) {
-    return handleAssistantPayload('service:5:menu', ctx);
-  }
-  if (/شحن كتب|كتب|ملازم|ملازم دراسية/.test(t)) {
-    return handleAssistantPayload('service:9:menu', ctx);
-  }
-  if (/مشروع تخرج|مشروع التخرج|مشروعي|بحوث/.test(t)) {
-    return handleAssistantPayload('service:10:menu', ctx);
-  }
-  if (/مراجعة|مراجعات|مراجعة نهائية|اختبارات|امتحانات/.test(t)) {
-    return handleAssistantPayload('service:11:menu', ctx);
-  }
-  if (/تحول رقمي|التحول الرقمي|موديولات/.test(t)) {
-    return handleAssistantPayload('faq:cat:digital_transform', ctx);
-  }
-  if (/باص|باصات|مواصلات|سعيد|حجز باص/.test(t)) {
-    return handleAssistantPayload('faq:cat:transportation', ctx);
-  }
-  if (/كل الطلب|كل طلبات|ملخص|طلباتي|عرض طلب/.test(t)) {
-    return handleAssistantPayload('action:all_status', ctx);
-  }
-  if (/تكليف|ملف/.test(t)) {
-    return handleAssistantPayload('action:assignments', ctx);
-  }
-  if (/حساب|ملف شخص|profile/.test(t) && !/بيانات/.test(t)) {
-    return handleAssistantPayload('action:profile', ctx);
-  }
-  if (/خدمات|ايه المتاح|إيه المتاح|عندكم ايه|كل الخدمات/.test(t)) {
-    return handleAssistantPayload('action:services_list', ctx);
+
+  // التوجيهات السريعة للأقسام (تُنفذ فقط إذا لم يكن النص سؤالاً خاصاً يبحث عن إجابة محددة)
+  if (!isQuestionSentence) {
+    if (/سجل|حساب جديد|انشاء حساب|إنشاء حساب|تسجيل حساب|تسجيل جديد|اعمل حساب/.test(t)) {
+      return handleAssistantPayload('nav:service:1', ctx);
+    }
+    if (/ادفع|دفع|فلوس|مصاريف|مصروفات|رسوم/.test(t)) {
+      return handleAssistantPayload('service:7:menu', ctx);
+    }
+    if (/استخراج شهادة|شهادة تخرج|شهاده تخرج|شهادات/.test(t)) {
+      return handleAssistantPayload('service:5:menu', ctx);
+    }
+    if (/شحن كتب|كتب|ملازم|ملازم دراسية/.test(t)) {
+      return handleAssistantPayload('service:9:menu', ctx);
+    }
+    if (/مشروع تخرج|مشروع التخرج|مشروعي|بحوث/.test(t)) {
+      return handleAssistantPayload('service:10:menu', ctx);
+    }
+    if (/مراجعة|مراجعات|مراجعة نهائية|اختبارات|امتحانات/.test(t)) {
+      return handleAssistantPayload('service:11:menu', ctx);
+    }
+    if (/تحول رقمي|التحول الرقمي|موديولات/.test(t)) {
+      return handleAssistantPayload('faq:cat:digital_transform', ctx);
+    }
+    if (/باص|باصات|مواصلات|سعيد|حجز باص/.test(t)) {
+      return handleAssistantPayload('faq:cat:transportation', ctx);
+    }
+    if (/كل الطلب|كل طلبات|ملخص|طلباتي|عرض طلب/.test(t)) {
+      return handleAssistantPayload('action:all_status', ctx);
+    }
+    if (/تكليف|ملف/.test(t)) {
+      return handleAssistantPayload('action:assignments', ctx);
+    }
+    if (/حساب|ملف شخص|profile/.test(t) && !/بيانات/.test(t)) {
+      return handleAssistantPayload('action:profile', ctx);
+    }
+    if (/^(خدمات|كل الخدمات|عرض الخدمات|الخدمات|قائمة الخدمات|ايه المتاح|إيه المتاح|عندكم ايه)$/.test(t)) {
+      return handleAssistantPayload('action:services_list', ctx);
+    }
   }
 
-  const wantsFawry = /فوري|كود فوري|كود/.test(t);
+  const wantsFawry = /فوري|كود فوري/.test(t);
   const wantsOrder = /رقم الطلب|رقم طلب/.test(t);
   const wantsStatus =
-    /مواف|قبول|اتقبل|اتقبلت|حالة|وصل|رفض|مكتمل|لسه|خلص|نزل|ظهر/.test(t);
-  const wantsDetails = /تفاصيل|معلومات|قولي|عايز اعرف|عاوز اعرف|اعرف/.test(t);
+    /حالة الطلب|حاله الطلب|اتقبلت|اتقبل|مقبول|مرفوض|مستلم|معالجة/.test(t);
+  const wantsDetails = /تفاصيل الطلب|تفاصيل طلب|بيانات الطلب|بيانات طلب/.test(t);
   const isShortFollowUp = /^(طب|و|يعني|ايه|إيه|؟|\?|كمان|وبعدين)$/.test(t.trim());
 
   const matchedService = matchServiceFromText(text);
@@ -1359,7 +1427,10 @@ export function handleFreeText(
   }
 
   // 3. Fallback: إذا لم يجد الشات بوت أي إجابة محددة، يتم إرسال السؤال للأدمن للتدريب وتنبيه الطالب
-  logUnansweredQuestion(text);
+  // نستخدم النص الخام مباشرةً حتى لو كان رموزاً فقط مثل .. أو ???
+  if (text && text.trim().length > 0) {
+    logUnansweredQuestion(text.trim());
+  }
 
   return wrapTurn(
     {
