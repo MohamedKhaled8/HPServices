@@ -10,13 +10,15 @@ interface FileUploadProps {
   acceptedFormats?: string[];
   key?: string; // Allow key prop for resetting component
   resetTrigger?: number; // Trigger reset when this changes
+  buttonLabel?: string;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesSelected,
   maxFileSize = 10 * 1024 * 1024, // 10 MB - Security: Reduced from 20MB for better safety
   acceptedFormats = ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF'],
-  resetTrigger
+  resetTrigger,
+  buttonLabel = 'حمل اسكرين تحويل المبلغ'
 }) => {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [error, setError] = useState<string>('');
@@ -195,7 +197,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         ) : (
           <>
             <Upload size={18} />
-            رفع صورة الإيصال
+            {buttonLabel}
           </>
         )}
       </button>

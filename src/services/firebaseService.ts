@@ -93,7 +93,17 @@ export const registerUser = async (email: string, password: string, studentData:
 
     return user;
   } catch (error: any) {
-    throw new Error(error.message || 'حدث خطأ أثناء التسجيل');
+    let errorMessage = 'حدث خطأ أثناء التسجيل، يرجى المحاولة مرة أخرى.';
+    if (error.code === 'auth/email-already-in-use') {
+      errorMessage = 'هذا البريد الإلكتروني مسجل بالفعل. يرجى تسجيل الدخول أو استخدام بريد إلكتروني آخر.';
+    } else if (error.code === 'auth/invalid-email') {
+      errorMessage = 'البريد الإلكتروني المدخل غير صالح.';
+    } else if (error.code === 'auth/weak-password') {
+      errorMessage = 'كلمة المرور ضعيفة جداً. يجب أن تتكون من 6 أحرف على الأقل.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    throw new Error(errorMessage);
   }
 };
 

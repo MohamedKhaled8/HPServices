@@ -565,11 +565,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             return;
         }
 
-        // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات ومشروع التخرج واستخراج المستندات، يجب رفع صورة الإيصال
+        // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات ومشروع التخرج واستخراج المستندات، يجب رفع اسكرين تحويل المبلغ
         if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && receiptFiles.length === 0) {
             setSubmitMessage({
                 type: 'error',
-                text: 'يرجى رفع صورة الإيصال أولاً'
+                text: 'يرجى تحميل اسكرين تحويل المبلغ أولاً'
             });
             setIsSubmitting(false);
             return;
@@ -1951,7 +1951,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
                     {!disabledFields.includes('receipt_upload') && (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && (
                         <section className={`form-section section-receipt ${(formAttempted && missingFieldNames.includes('receipt_upload')) ? 'error-border' : ''}`}>
-                            <h2>{service.id === '10' ? 'رفع المستندات وصورة الإيصال' : 'رفع صورة الإيصال'}</h2>
+                            <h2>{service.id === '10' ? 'رفع الأوراق والمستندات المطلوبة' : 'حمل اسكرين تحويل المبلغ'}</h2>
 
                             {service.id === '10' && (
                                 <div style={{ marginBottom: '20px', padding: '18px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius: '12px', border: '1px solid #f59e0b' }}>
@@ -1972,13 +1972,14 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
                             <p className="receipt-note">
                                 {service.id === '10'
-                                    ? 'يرجى رفع صور المستندات المطلوبة وصورة إيصال التحويل (يمكنك اختيار أكثر من ملف)'
-                                    : 'يرجى رفع صورة إيصال الدفع قبل تقديم الطلب'}
+                                    ? 'يرجى رفع صور المستندات المطلوبة واسكرين تحويل المبلغ (يمكنك اختيار أكثر من ملف)'
+                                    : 'يرجى تحميل اسكرين تحويل المبلغ قبل تقديم الطلب'}
                             </p>
                             <FileUpload
                                 onFilesSelected={setReceiptFiles}
                                 maxFileSize={5 * 1024 * 1024}
                                 acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF']}
+                                buttonLabel={service.id === '10' ? 'رفع الأوراق والمستندات (الميلاد - المؤهل - التحول - اسكرين التحويل)' : 'حمل اسكرين تحويل المبلغ'}
                             />
                         </section>
                     )}
@@ -2063,7 +2064,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     <h3 className="loading-title">
                                         <span>
                                             {uploadProgress.progress > 0
-                                                ? (receiptFiles.length > 0 ? 'جاري رفع الإيصال' : 'جاري معالجة الطلب')
+                                                ? (receiptFiles.length > 0 ? 'جاري رفع اسكرين تحويل المبلغ' : 'جاري معالجة الطلب')
                                                 : 'جاري التحضير'}
                                         </span>
                                     </h3>
