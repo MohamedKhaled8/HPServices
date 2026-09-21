@@ -4,6 +4,7 @@ import { SERVICES } from '../constants/services';
 
 import { checkIsAdmin, subscribeToServiceSettings, subscribeToLatestNews, subscribeToQuickNotification, subscribeToAdminPreferences } from '../services/firebaseService';
 import { ServiceSettings } from '../types';
+import { resolveHeroBackgroundUrls } from '../utils/backgroundImages';
 import '../styles/DashboardPage.css';
 import '../styles/GeometricShapes.css';
 import {
@@ -57,6 +58,8 @@ const HeroSlideshow = React.memo(({ images }: { images: string[] }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
+    if (images.length === 0) return;
+    setCurrentIndex((prev) => (prev >= images.length ? 0 : prev));
     let interval: any;
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -79,6 +82,10 @@ const HeroSlideshow = React.memo(({ images }: { images: string[] }) => {
       if (hero) observer.unobserve(hero);
     };
   }, [images.length]);
+
+  if (images.length === 0) {
+    return <div className="hero-slides" />;
+  }
 
   return (
     <div className="hero-slides">
@@ -123,22 +130,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [hoveredServiceId, setHoveredServiceId] = useState<string | null>(null);
   const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
   const [adminPrefs, setAdminPrefs] = useState<any>({ serviceOrder: [], profitCosts: {} });
-
-  const promoImages = [
-    "/images/optimized/0T8A9628.JPG",
-    "/images/optimized/0T8A9638.JPG",
-    "/images/optimized/0T8A9717.JPG",
-    "/images/optimized/0T8A9748.JPG",
-    "/images/optimized/0T8A9887.JPG",
-    "/images/optimized/0T8A9970.JPG",
-    "/images/optimized/4W3A0163.JPG",
-    "/images/optimized/4W3A0166.JPG",
-    "/images/optimized/4W3A0167.JPG",
-    "/images/optimized/4W3A0215.JPG",
-    "/images/optimized/4W3A0388.JPG",
-    "/images/optimized/4W3A0410.JPG",
-    "/images/optimized/4W3A0434.JPG"
-  ];
+  const promoImages = resolveHeroBackgroundUrls(adminPrefs?.heroBackgroundImages);
 
 
   // Scroll to top on mount

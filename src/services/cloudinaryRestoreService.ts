@@ -354,3 +354,43 @@ export function partitionDuplicateRequests<T extends { id?: string; studentId?: 
 
   return { keepUpdates, deleteIds };
 }
+
+async function sha1Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-1', data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function destroyCloudinaryAsset(publicId: string): Promise<void> {
+  const id = (publicId || '').trim();
+  if (!id) {
+    throw new Error('معرّف الصورة غير صالح');
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = await sha1Hex(`public_id=${id}&timestamp=${timestamp}${API_SECRET}`);
+  const body = new URLSearchParams({
+    public_id: id,
+    timestamp: String(timestamp),
+    api_key: API_KEY,
+    signature
+  });
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/destroy`, {
+    method: 'POST',
+    body
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`فشل حذف الصورة من Cloudinary (${response.status}): ${errText.slice(0, 200)}`);
+  }
+
+  const data = await response.json().catch(() => ({} as { result?: string; error?: { message?: string } }));
+  if (data.error?.message) {
+    throw new Error(data.error.message);
+  }
+  if (data.result && data.result !== 'ok' && data.result !== 'not found') {
+    throw new Error(`فشل حذف الصورة من Cloudinary: ${data.result}`);
+  }
+}

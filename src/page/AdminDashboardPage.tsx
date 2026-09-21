@@ -148,8 +148,12 @@ import AdminWhatsAppTab from '../components/admin/AdminWhatsAppTab';
 import AdminBackupTab from '../components/admin/AdminBackupTab';
 import AdminBotTrainingTab from '../components/admin/AdminBotTrainingTab';
 import AdminAssistantTab from '../components/admin/AdminAssistantTab';
+import AdminBackgroundImagesTab from '../components/admin/AdminBackgroundImagesTab';
+import AdminSidebarNav from '../components/admin/AdminSidebarNav';
+import { resolveHeroBackgroundImages } from '../utils/backgroundImages';
+import type { AdminTabId } from '../constants/adminNavigation';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
-import { MessageSquare, Brain, Bot } from 'lucide-react';
+import { MessageSquare, Brain, Bot, Menu } from 'lucide-react';
 
 
 interface AdminDashboardPageProps {
@@ -332,7 +336,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [students]);
 
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<'requests' | 'books' | 'fees' | 'certificates' | 'digitalTransformation' | 'digitalTransformationCodes' | 'electronicPaymentCodes' | 'finalReview' | 'graduationProject' | 'users' | 'news' | 'statistics' | 'services' | 'whatsapp' | 'backup' | 'botTraining' | 'adminAssistant'>('requests');
+  const [activeTab, setActiveTab] = useState<AdminTabId>('requests');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [selectedDTRows, setSelectedDTRows] = useState<Set<number>>(new Set());
   const [selectedDTColumns, setSelectedDTColumns] = useState<Set<number>>(new Set());
   const [selectedEPRows, setSelectedEPRows] = useState<Set<number>>(new Set());
@@ -3838,8 +3843,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     <div className="admin-dashboard-page">
       <div className="admin-header">
         <div className="admin-header-content">
-          <h1>لوحة تحكم الإدارة</h1>
-          <div className="admin-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div className="admin-header-start">
+            <button
+              type="button"
+              className="admin-nav-menu-btn"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="فتح قائمة الأقسام"
+            >
+              <Menu size={18} />
+            </button>
+          </div>
+          <h1 className="admin-header-title">لوحة تحكم الإدارة</h1>
+          <div className="admin-actions admin-header-end">
             {/* Server Automation Health Badge */}
             <div
               title={serverHealth.status === 'online' ? 'الخدمة متصلة وتعمل كالمعتاد' : serverHealth.status === 'offline' ? 'تعذر الاتصال بخدمة الأتمتة' : 'جاري التحقق من حالة الاتصال'}
@@ -3912,137 +3927,16 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         />
       )}
 
-      <div className="admin-tabs">
-        <button
-          className={`tab-button ${activeTab === 'news' ? 'active' : ''}`}
-          onClick={() => setActiveTab('news')}
-        >
-          <Newspaper size={18} />
-          أخر الأخبار
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'requests' ? 'active' : ''}`}
-          onClick={() => setActiveTab('requests')}
-        >
-          جميع الطلبات
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'statistics' ? 'active' : ''}`}
-          onClick={() => setActiveTab('statistics')}
-        >
-          <BarChart2 size={18} />
-          الإحصائيات والتقارير
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'books' ? 'active' : ''}`}
-          onClick={() => setActiveTab('books')}
-        >
-          <Package size={18} />
-          كتب
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'fees' ? 'active' : ''}`}
-          onClick={() => setActiveTab('fees')}
-        >
-          <CreditCard size={18} />
-          مصروفات
-        </button>
-        {onAssignmentsClick && (
-          <button
-            className="tab-button assignments-link-button"
-            onClick={onAssignmentsClick}
-            title="فتح صفحة إدارة التكليفات الدراسية الجزئية"
-          >
-            <FileCheck size={18} />
-            تكليف
-          </button>
-        )}
-        <button
-          className={`tab-button ${activeTab === 'certificates' ? 'active' : ''}`}
-          onClick={() => setActiveTab('certificates')}
-        >
-          <Award size={18} />
-          اونلاين
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'digitalTransformation' ? 'active' : ''}`}
-          onClick={() => setActiveTab('digitalTransformation')}
-        >
-          <Zap size={18} />
-          تحول
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'digitalTransformationCodes' ? 'active' : ''}`}
-          onClick={() => setActiveTab('digitalTransformationCodes')}
-        >
-          <Zap size={18} />
-          كود تحول
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'electronicPaymentCodes' ? 'active' : ''}`}
-          onClick={() => setActiveTab('electronicPaymentCodes')}
-        >
-          <CreditCard size={18} />
-          اكواد مصاريف
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'finalReview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('finalReview')}
-        >
-          <Search size={18} />
-          مراجعة
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'graduationProject' ? 'active' : ''}`}
-          onClick={() => setActiveTab('graduationProject')}
-        >
-          <GraduationCap size={18} />
-          مشروع
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'services' ? 'active' : ''}`}
-          onClick={() => setActiveTab('services')}
-        >
-          <Settings size={18} />
-          إدارة الخدمات
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
-          onClick={() => setActiveTab('users')}
-        >
-          <Users size={18} />
-          المستخدمين
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'whatsapp' ? 'active' : ''}`}
-          onClick={() => setActiveTab('whatsapp')}
-        >
-          <MessageSquare size={18} />
-          الواتساب
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'backup' ? 'active' : ''}`}
-          onClick={() => setActiveTab('backup')}
-        >
-          <Database size={18} />
-          النسخ الاحتياطي والأرشيف
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'botTraining' ? 'active' : ''}`}
-          onClick={() => setActiveTab('botTraining')}
-        >
-          <Brain size={18} />
-          تدريب الشات بوت
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'adminAssistant' ? 'active' : ''}`}
-          onClick={() => setActiveTab('adminAssistant')}
-          style={{ background: activeTab === 'adminAssistant' ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : undefined, color: activeTab === 'adminAssistant' ? '#fff' : undefined }}
-        >
-          <Bot size={18} />
-          المساعد الذكي للاستعلامات
-        </button>
-      </div>
+      <div className="admin-shell">
+        <AdminSidebarNav
+          activeTab={activeTab}
+          onSelectTab={setActiveTab}
+          showAssignments={!!onAssignmentsClick}
+          onAssignmentsClick={onAssignmentsClick}
+          mobileOpen={mobileNavOpen}
+          onMobileOpenChange={setMobileNavOpen}
+        />
+        <div className="admin-main">
 
       {activeTab === 'adminAssistant' && (
         <AdminAssistantTab
@@ -4064,6 +3958,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
       {activeTab === 'news' && (
         <AdminNewsTab showAlert={showAlert} showConfirm={showConfirm} />
+      )}
+
+      {activeTab === 'backgrounds' && (
+        <AdminBackgroundImagesTab
+          images={resolveHeroBackgroundImages(adminPrefs?.heroBackgroundImages)}
+          isAdmin={true}
+          showAlert={showAlert}
+          showConfirm={showConfirm}
+        />
       )}
 
       {activeTab === 'requests' && (
@@ -8992,6 +8895,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           disabledActions={['insertColumnLeft', 'insertColumnRight', 'deleteColumn', 'resizeColumn']}
         />
       )}
+
+      </div>
+      </div>
 
       {/* قائمة كليك يمين على الخلية: نسخ التحديد أو الخلية فقط */}
       {cellContextMenu.open && createPortal(

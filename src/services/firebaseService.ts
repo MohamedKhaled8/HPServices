@@ -1308,7 +1308,8 @@ export const updateAdminPreferences = async (config: any): Promise<void> => {
   try {
     await setDoc(doc(db, 'config', 'adminPreferences'), config, { merge: true });
   } catch (error: any) {
-    throw new Error('حدث خطأ أثناء حفظ التفضيلات');
+    logger.error('Error updating admin preferences:', error);
+    throw new Error(error?.message ? `حدث خطأ أثناء حفظ التفضيلات: ${error.message}` : 'حدث خطأ أثناء حفظ التفضيلات');
   }
 };
 

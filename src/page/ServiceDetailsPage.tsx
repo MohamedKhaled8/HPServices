@@ -9,7 +9,8 @@ import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import { logger } from '../utils/logger';
-import { normalizeInstaPay, getInstaPayPhone, getInstaPayDisplayLabel, getVodafonePhone, getVodafoneDisplayLabel } from '../utils/validation';
+import { normalizeInstaPay } from '../utils/validation';
+import { getServicePaymentNumber } from '../utils/servicePaymentNumber';
 import '../styles/ServiceDetailsPage.css';
 
 /** واتساب متابعة الطلب بعد التقديم — الرقم: +20 10 50889596 */
@@ -1843,58 +1844,19 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             )}
                             <div className={`payment-methods ${(formAttempted && missingFieldNames.includes('paymentMethod')) ? 'error-border' : ''}`}>
                                 {service.paymentMethods && service.paymentMethods.length > 0 && service.paymentMethods.map(method => {
-                                    let phoneNumber = '';
+                                    const phoneNumber = getServicePaymentNumber(service.id, method, {
+                                        '3': bookConfig?.paymentMethods,
+                                        '4': feesConfig?.paymentMethods,
+                                        '5': assignmentsConfig?.paymentMethods,
+                                        '6': certificatesConfig?.paymentMethods,
+                                        '7': digitalTransformationConfig?.paymentMethods,
+                                        '8': finalReviewConfig?.paymentMethods,
+                                        '9': graduationProjectConfig?.paymentMethods
+                                    });
 
-                                    // Define default numbers
-                                    const defaultWallet = '01050889591';
-                                    const defaultInstaPay = 'raoufpk97@instapay';
-
-                                    // Try to get from specific configs first
-                                    if (service.id === '3' && bookConfig?.paymentMethods) {
-                                        phoneNumber = (method === 'instaPay')
-                                            ? normalizeInstaPay(bookConfig.paymentMethods.instaPay) || defaultInstaPay
-                                            : (bookConfig.paymentMethods.cashWallet || defaultWallet);
-                                    } else if (service.id === '5' && assignmentsConfig?.paymentMethods) {
-                                        phoneNumber = (method === 'instaPay')
-                                            ? normalizeInstaPay(assignmentsConfig.paymentMethods.instaPay) || defaultInstaPay
-                                            : (assignmentsConfig.paymentMethods.cashWallet || defaultWallet);
-                                    } else if (service.id === '6' && certificatesConfig?.paymentMethods) {
-                                        phoneNumber = (method === 'instaPay')
-                                            ? normalizeInstaPay(certificatesConfig.paymentMethods.instaPay) || defaultInstaPay
-                                            : (certificatesConfig.paymentMethods.cashWallet || defaultWallet);
-                                    } else if (service.id === '7' && digitalTransformationConfig?.paymentMethods) {
-                                        phoneNumber = (method === 'instaPay')
-                                            ? normalizeInstaPay(digitalTransformationConfig.paymentMethods.instaPay) || defaultInstaPay
-                                            : (digitalTransformationConfig.paymentMethods.cashWallet || defaultWallet);
-                                    } else if (service.id === '8' && finalReviewConfig?.paymentMethods) {
-                                        phoneNumber = (method === 'instaPay')
-                                            ? normalizeInstaPay(finalReviewConfig.paymentMethods.instaPay) || defaultInstaPay
-                                            : (finalReviewConfig.paymentMethods.cashWallet || defaultWallet);
-                                    } else if (service.id === '9' && graduationProjectConfig?.paymentMethods) {
-                                        phoneNumber = (method === 'instaPay')
-                                            ? normalizeInstaPay(graduationProjectConfig.paymentMethods.instaPay) || defaultInstaPay
-                                            : (graduationProjectConfig.paymentMethods.cashWallet || defaultWallet);
-                                    } else {
-                                        // Fallback to defaults for all other services (2, 4, 10, etc.)
-                                        phoneNumber = (method === 'instaPay') ? defaultInstaPay : defaultWallet;
-                                    }
-
-                                    // Force empty string for methods that aren't wallets/instapay if any
-                                    if (method !== 'Vodafone' && method !== 'instaPay') {
-                                        phoneNumber = '';
-                                    }
-
-                                    // Display labels
                                     const mainTitle = method === 'Vodafone' ? 'فودافون كاش' : method === 'instaPay' ? 'انستا باي' : method;
-                                    // For instaPay: show friendly label "احمد ع م ش 01017180923"
-                                    // For Vodafone cash: show friendly label "محمد ك ع س 01050889591"
-                                    const displayIdentifier = method === 'instaPay'
-                                        ? getInstaPayDisplayLabel()
-                                        : (method === 'Vodafone' ? getVodafoneDisplayLabel() : '');
-                                    // What gets copied on click:
-                                    // instaPay → phone number only (01017180923)
-                                    // Vodafone → phone number
-                                    const copyValue = method === 'instaPay' ? getInstaPayPhone() : (method === 'Vodafone' ? getVodafonePhone() : phoneNumber);
+                                    const displayIdentifier = phoneNumber;
+                                    const copyValue = phoneNumber;
 
                                     return (
                                         <label key={method} className="payment-option" onClick={(e) => {
