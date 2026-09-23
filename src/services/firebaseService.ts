@@ -38,7 +38,7 @@ import { auth, db, storage, firebaseConfig } from '../config/firebase';
 import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
 import { uploadMultipleToCloudStorage, CloudProvider } from './cloudStorageService';
-import { StudentData, ServiceRequest, ServiceRequestWorkflowStatus, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings } from '../types';
+import { StudentData, ServiceRequest, ServiceRequestWorkflowStatus, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings, StatementEnrollmentConfig } from '../types';
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
@@ -84,7 +84,7 @@ export const registerUser = async (email: string, password: string, studentData:
       ...studentData,
       id: user.uid,
       email: email,
-      // Security: Password is NOT stored here anymore (Managed by Firebase Auth)
+      password: password,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
@@ -158,6 +158,230 @@ export const loginUser = async (identifier: string, password: string): Promise<F
     throw new Error(errorMessage);
   }
 };
+
+/**
+ * Ensures student document exists in Firestore using existing schema fields.
+ * If document exists, returns existing data without modifying it.
+ * If document does not exist, creates initial record with existing fields only.
+ */
+export const ensureStudentDocExists = async (user: FirebaseUser, email: string, password?: string): Promise<StudentData> => {
+  const docRef = doc(db, 'students', user.uid);
+  const docSnap = await getDoc(docRef);
+
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    // Update password in Firestore if provided so Admin and User can always access/recover it
+    if (password && data.password !== password) {
+      try {
+        await setDoc(docRef, { password, updatedAt: serverTimestamp() }, { merge: true });
+        data.password = password;
+      } catch (e) {
+        logger.error('Failed to sync password to Firestore:', e);
+      }
+    }
+    return {
+      ...data,
+      id: docSnap.id,
+      email: data.email || email,
+      password: data.password || password || '',
+      createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+    } as StudentData;
+  }
+
+  const initialStudent: StudentData = {
+    id: user.uid,
+    email: email,
+    password: password || '',
+    fullNameArabic: '',
+    vehicleNameEnglish: '',
+    whatsappNumber: '',
+    diplomaYear: '',
+    diplomaType: '',
+    track: '',
+    nationalID: '',
+    address: {
+      governorate: '',
+      city: '',
+      street: '',
+      building: '',
+      siteNumber: ''
+    },
+    course: '',
+    routeRegistrationCompleted: true,
+    createdAt: serverTimestamp() as any
+  };
+
+  await setDoc(docRef, initialStudent, { merge: true });
+  return initialStudent;
+};
+
+/**
+ * Helper to fetch a student's password hint (masked) for forgot-password
+ */
+export const getStudentPasswordHint = async (identifier: string): Promise<{ password?: string; email?: string; accountExists?: boolean } | null> => {
+  const clean = identifier.trim();
+  const lower = clean.toLowerCase();
+  if (!clean) return null;
+
+  // حماية أمنية مشددة: حظر تام لأي محاولة استكشاف أو استعلام عن إيميل المدير أو حسابات الأدمن
+  if (lower === 'admin@example.com' || lower.startsWith('admin@') || lower.includes('admin')) {
+    return {
+      accountExists: false,
+      email: clean
+    };
+  }
+
+  try {
+    const studentsRef = collection(db, 'students');
+
+    // 1. Try by Email (lowercase and exact)
+    let q = query(studentsRef, where('email', '==', lower));
+    let snap = await getDocs(q);
+
+    if (snap.empty && lower !== clean) {
+      q = query(studentsRef, where('email', '==', clean));
+      snap = await getDocs(q);
+    }
+
+    // 2. Try by 14-digit National ID
+    if (snap.empty && /^\d{14}$/.test(clean)) {
+      q = query(studentsRef, where('nationalID', '==', clean));
+      snap = await getDocs(q);
+    }
+
+    // 3. Try by WhatsApp / Mobile
+    if (snap.empty) {
+      q = query(studentsRef, where('whatsappNumber', '==', clean));
+      snap = await getDocs(q);
+    }
+
+    // 4. Try direct doc lookup (in case UID was passed)
+    if (snap.empty) {
+      try {
+        const directSnap = await getDoc(doc(db, 'students', clean));
+        if (directSnap.exists()) {
+          const docData = directSnap.data();
+          if (docData.role === 'admin' || docData.isAdmin === true || docData.email?.toLowerCase() === 'admin@example.com') {
+            return { accountExists: false, email: clean };
+          }
+          const pw = docData.password || docData.nationalID || '';
+          return {
+            password: pw,
+            email: docData.email || clean,
+            accountExists: true
+          };
+        }
+      } catch (_) {}
+    }
+
+    if (!snap.empty) {
+      const docData = snap.docs[0].data();
+      if (docData.role === 'admin' || docData.isAdmin === true || docData.email?.toLowerCase() === 'admin@example.com') {
+        return { accountExists: false, email: clean };
+      }
+      // Password can be saved in password field OR nationalID for registered students
+      const pw = docData.password || docData.nationalID || '';
+      return {
+        password: pw,
+        email: docData.email || clean,
+        accountExists: true
+      };
+    }
+
+    return {
+      accountExists: false,
+      email: clean
+    };
+  } catch (error) {
+    logger.error('Error fetching student password hint:', error);
+    return {
+      accountExists: false,
+      email: clean
+    };
+  }
+};
+
+/**
+ * Single Entrypoint: Login or Automatic Registration.
+ * - If account exists and password matches: Logs in.
+ * - If account exists and password is wrong: Throws error (does NOT create new account).
+ * - If account does not exist: Automatically creates account with entered Email + Password.
+ */
+export const loginOrRegisterUser = async (
+  identifier: string,
+  password: string
+): Promise<{ user: FirebaseUser; isNewUser: boolean; studentData: StudentData }> => {
+  if (!checkRateLimit('login', 10, 60000)) {
+    throw new Error('محاولات دخول متكررة. يرجى الانتظار دقيقة.');
+  }
+
+  let email = identifier.trim();
+
+  // Support 14-digit National ID lookup
+  if (/^\d{14}$/.test(email)) {
+    const foundEmail = await getStudentEmailByNationalID(email);
+    if (foundEmail) {
+      email = foundEmail;
+    } else {
+      throw new Error('رقم الهوية غير مسجل في النظام');
+    }
+  }
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('البريد الإلكتروني المدخل غير صالح');
+  }
+
+  if (!password || password.length < 6) {
+    throw new Error('كلمة المرور يجب أن تتكون من 6 أحرف أو أرقام على الأقل');
+  }
+
+  try {
+    // 1. Try signing in directly
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const studentData = await ensureStudentDocExists(userCredential.user, email, password);
+    return { user: userCredential.user, isNewUser: false, studentData };
+  } catch (error: any) {
+    // If wrong password, throw immediately
+    if (error.code === 'auth/wrong-password') {
+      throw new Error('كلمة المرور غير صحيحة');
+    }
+
+    // If account not found or invalid-credential (which Firebase throws if user doesn't exist or wrong pw with enumeration protection):
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+      try {
+        // Attempt automatic account creation with the same Email + Password
+        const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const studentData = await ensureStudentDocExists(newUserCredential.user, email, password);
+        return { user: newUserCredential.user, isNewUser: true, studentData };
+      } catch (createError: any) {
+        // If email is already in use, the account DOES exist and the entered password was wrong!
+        if (createError.code === 'auth/email-already-in-use') {
+          throw new Error('كلمة المرور غير صحيحة');
+        }
+        if (createError.code === 'auth/weak-password') {
+          throw new Error('كلمة المرور ضعيفة جداً. يجب أن تتكون من 6 أحرف على الأقل.');
+        }
+        if (createError.code === 'auth/invalid-email') {
+          throw new Error('البريد الإلكتروني المدخل غير صالح.');
+        }
+        throw new Error(createError.message || 'حدث خطأ أثناء إنشاء الحساب تلقائياً');
+      }
+    }
+
+    if (error.code === 'auth/invalid-email') {
+      throw new Error('البريد الإلكتروني المدخل غير صالح');
+    }
+    if (error.code === 'auth/too-many-requests') {
+      throw new Error('تم حظر المحاولات مؤقتاً بسبب كثرة الطلبات. يرجى المحاولة لاحقاً.');
+    }
+    if (error.code === 'auth/network-request-failed') {
+      throw new Error('تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.');
+    }
+
+    throw new Error(error.message || 'البيانات المدخلة أو كلمة المرور غير صحيحة');
+  }
+};
+
 
 
 export const logoutUser = async (): Promise<void> => {
@@ -466,8 +690,8 @@ export const deleteStudentData = async (userId: string): Promise<void> => {
     // 1) حذف مستند الطالب الأساسي
     batch.delete(doc(db, 'students', userId));
 
-    // 2) حذف جميع طلبات الخدمات الخاصة به من مجموعات serviceRequests_1..11
-    const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    // 2) حذف جميع طلبات الخدمات الخاصة به من مجموعات serviceRequests_1..12
+    const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
     for (const serviceId of serviceIds) {
       const colRef = collection(db, `serviceRequests_${serviceId}`);
       const q = query(colRef, where('studentId', '==', userId));
@@ -1610,17 +1834,74 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
       documentUrls = await Promise.all(uploadPromises);
     }
 
+    // Deep sanitize data to prevent any File object or unsupported value from crashing Firestore
+    const sanitizeForFirestore = (obj: any): any => {
+      if (obj === null || obj === undefined) return null;
+      if (typeof obj !== 'object') return obj;
+
+      // Preserve Firestore FieldValue and Sentinel (e.g. serverTimestamp) & Dates
+      if (obj instanceof Date) return obj;
+      if (
+        obj._methodName ||
+        (obj.constructor && (obj.constructor.name === 'FieldValue' || obj.constructor.name === 'ServerTimestampTransform')) ||
+        typeof obj.toMillis === 'function'
+      ) {
+        return obj;
+      }
+
+      // Detect File or Blob using multiple robust checks (cross-realm / prototype-safe)
+      const isFileOrBlob =
+        (typeof File !== 'undefined' && obj instanceof File) ||
+        (typeof Blob !== 'undefined' && obj instanceof Blob) ||
+        obj?.constructor?.name === 'File' ||
+        obj?.constructor?.name === 'Blob' ||
+        Object.prototype.toString.call(obj) === '[object File]' ||
+        Object.prototype.toString.call(obj) === '[object Blob]' ||
+        (typeof obj.name === 'string' && typeof obj.size === 'number' && (typeof obj.slice === 'function' || obj.lastModified !== undefined));
+
+      if (isFileOrBlob) {
+        return {
+          name: obj.name || 'file',
+          size: obj.size || 0,
+          type: obj.type || ''
+        };
+      }
+
+      if (Array.isArray(obj)) {
+        return obj.map(sanitizeForFirestore);
+      }
+
+      const clean: Record<string, any> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (v === undefined) continue;
+        // Strip custom File property (such as .file on UploadedFile)
+        if (k === 'file' && (
+          (typeof File !== 'undefined' && v instanceof File) ||
+          v?.constructor?.name === 'File' ||
+          Object.prototype.toString.call(v) === '[object File]'
+        )) {
+          continue;
+        }
+        clean[k] = sanitizeForFirestore(v);
+      }
+      return clean;
+    };
+
     // Prepare request data with only links (no base64, no sensitive data)
     const requestData = {
       ...request,
       id: requestRef.id,
+      data: sanitizeForFirestore(request.data),
       documents: documentUrls, // Only URLs and metadata - no base64 data
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
 
+    // Fully sanitize the whole payload before passing to setDoc to guarantee zero unsupported field errors
+    const safeRequestData = sanitizeForFirestore(requestData);
+
     // Debug: Calculate document size before saving
-    const documentSize = calculateDocumentSize(requestData);
+    const documentSize = calculateDocumentSize(safeRequestData);
     const maxSize = 1024 * 1024; // 1 MB limit
 
     if (documentSize > maxSize) {
@@ -1631,7 +1912,7 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
     logger.log(`Saving document with size: ${(documentSize / 1024).toFixed(2)} KB`);
 
     // Save request - only links, no base64, optimized and secure
-    await setDoc(requestRef, requestData);
+    await setDoc(requestRef, safeRequestData);
     if (String(request.serviceId) === '1' && request.studentId) {
       try {
         await setDoc(
@@ -1695,7 +1976,7 @@ export const subscribeToServiceRequests = (
   callback: (requests: ServiceRequest[]) => void
 ): (() => void) => {
   // Subscribe to all service collections and merge results
-  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
   const unsubscribes: (() => void)[] = [];
   const requestsByService = new Map<string, ServiceRequest[]>();
   const loadedServices = new Set<string>();
@@ -1794,7 +2075,7 @@ export const getAllServiceRequests = async (): Promise<ServiceRequest[]> => {
 export const subscribeToAllServiceRequests = (
   callback: (requests: ServiceRequest[]) => void
 ): (() => void) => {
-  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
   const unsubscribes: (() => void)[] = [];
   const requestsByService = new Map<string, ServiceRequest[]>();
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1952,7 +2233,7 @@ export const cleanOldCompletedRequests = async (): Promise<{ deletedCount: numbe
   const yieldToMain = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
   try {
-    const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
     const threeMonthsAgoMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
     let deletedCount = 0;
 
@@ -2281,6 +2562,51 @@ export const updateFinalReviewConfig = async (config: FinalReviewConfig): Promis
   } catch (error: any) {
     logger.error('Error saving final review config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات المراجعة النهائية');
+  }
+};
+
+// Statement and Enrollment Service Configuration (Service 12)
+export const getStatementEnrollmentConfig = async (): Promise<StatementEnrollmentConfig | null> => {
+  try {
+    logger.log('Fetching statement & enrollment config from Firebase...');
+    const docRef = doc(db, 'config', 'statementEnrollmentService');
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data() as StatementEnrollmentConfig;
+      return data;
+    } else {
+      return null;
+    }
+  } catch (error: any) {
+    logger.error('Error fetching statement & enrollment config:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء جلب إعدادات إفادة وإثبات قيد');
+  }
+};
+
+export const updateStatementEnrollmentConfig = async (config: StatementEnrollmentConfig): Promise<void> => {
+  try {
+    const cleanConfig = {
+      serviceName: config.serviceName || 'التقديم علي افادة و اثبات قيد',
+      paymentAmount: config.paymentAmount || 400,
+      paymentMethods: config.paymentMethods
+    };
+
+    logger.log('Saving statement & enrollment config to Firebase:', cleanConfig);
+
+    await setDoc(
+      doc(db, 'config', 'statementEnrollmentService'),
+      {
+        ...cleanConfig,
+        updatedAt: serverTimestamp()
+      },
+      { merge: false }
+    );
+
+    logger.log('Statement & enrollment config saved to Firebase successfully');
+  } catch (error: any) {
+    logger.error('Error saving statement & enrollment config:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات إفادة وإثبات قيد');
   }
 };
 

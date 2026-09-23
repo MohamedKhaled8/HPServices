@@ -23,12 +23,14 @@ export type AdminTabId =
   | 'requests'
   | 'books'
   | 'fees'
+  | 'assignments'
   | 'certificates'
   | 'digitalTransformation'
   | 'digitalTransformationCodes'
   | 'electronicPaymentCodes'
   | 'finalReview'
   | 'graduationProject'
+  | 'statementEnrollment'
   | 'users'
   | 'news'
   | 'statistics'
@@ -39,7 +41,7 @@ export type AdminTabId =
   | 'botTraining'
   | 'adminAssistant';
 
-export type AdminNavItemId = AdminTabId | 'assignments';
+export type AdminNavItemId = AdminTabId;
 
 export interface AdminNavItem {
   id: AdminNavItemId;
@@ -70,13 +72,14 @@ const ADMIN_NAVIGATION: AdminNavGroup[] = [
     items: [
       { id: 'books', label: 'كتب', icon: Package, kind: 'tab' },
       { id: 'fees', label: 'مصروفات', icon: CreditCard, kind: 'tab' },
-      { id: 'assignments', label: 'تكليف', icon: FileCheck, kind: 'external' },
+      { id: 'assignments', label: 'تكليف', icon: FileCheck, kind: 'tab' },
       { id: 'certificates', label: 'اونلاين', icon: Award, kind: 'tab' },
       { id: 'digitalTransformation', label: 'تحول', icon: Zap, kind: 'tab' },
       { id: 'digitalTransformationCodes', label: 'كود تحول', icon: Zap, kind: 'tab' },
       { id: 'electronicPaymentCodes', label: 'اكواد مصاريف', icon: CreditCard, kind: 'tab' },
       { id: 'finalReview', label: 'مراجعة', icon: Search, kind: 'tab' },
       { id: 'graduationProject', label: 'مشروع', icon: GraduationCap, kind: 'tab' },
+      { id: 'statementEnrollment', label: 'إفادة وإثبات قيد', icon: FileCheck, kind: 'tab' },
       { id: 'services', label: 'إدارة الخدمات', icon: Settings, kind: 'tab' },
       { id: 'backgrounds', label: 'صور الخلفية', icon: Image, kind: 'tab' }
     ]

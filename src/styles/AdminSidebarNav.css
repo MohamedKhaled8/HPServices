@@ -1,94 +1,270 @@
+/* ==========================================================================
+   Admin Dashboard & Premium Sidebar Navigation
+   Glassmorphism + Animated Gradients + Micro-interactions
+   ========================================================================== */
+
+/* Overall Page Viewport */
 .admin-dashboard-page {
   height: 100vh;
+  width: 100vw;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: #0a0e1a;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  position: relative;
 }
 
+/* App Shell: Side by Side (Sidebar on Right in RTL + Main Content) */
 .admin-shell {
   display: flex;
+  flex-direction: row;
   align-items: stretch;
   flex: 1;
   min-height: 0;
+  width: 100%;
+  height: 100vh;
   overflow: hidden;
   padding: 0;
+  margin: 0;
   gap: 0;
+  position: relative;
 }
 
+/* Main Content Area Wrapper */
+.admin-main-wrapper {
+  flex: 1;
+  min-width: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ==========================================================================
+   Admin Header (Seamless integration with sidebar)
+   ========================================================================== */
 .admin-dashboard-page .admin-header {
   position: relative;
-  z-index: 40;
+  z-index: 30;
   flex-shrink: 0;
-  height: 56px;
-  padding: 0 16px;
+  height: 64px;
+  min-height: 64px;
+  max-height: 64px;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+  box-sizing: border-box;
 }
 
 .admin-dashboard-page .admin-header-content {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) auto minmax(160px, 1fr);
+  display: flex;
   align-items: center;
-  gap: 8px;
-  max-width: none;
+  justify-content: space-between;
   width: 100%;
+  gap: 16px;
 }
 
 .admin-header-start {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  gap: 14px;
+}
+
+.admin-header-title-box {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .admin-header-title {
   margin: 0;
-  text-align: center;
-  justify-self: center;
   font-size: 18px !important;
   font-weight: 800 !important;
-  color: #0f172a;
-  letter-spacing: -0.3px;
+  color: #0f172a !important;
+  letter-spacing: -0.2px;
+  line-height: 1.25;
   white-space: nowrap;
+}
+
+.admin-header-subtitle {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
 }
 
 .admin-header-end {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 10px;
   flex-wrap: nowrap;
-  gap: 8px;
 }
 
-.admin-dashboard-page .admin-header h1 {
-  font-size: 18px;
-  font-weight: 800;
+/* Server Automation Health Badge */
+.admin-health-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  transition: all 0.15s ease;
+  user-select: none;
 }
 
+.admin-health-badge:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.admin-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.admin-health-dot.online {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+  animation: adminPulseGreen 2s ease-in-out infinite;
+}
+
+.admin-health-dot.offline {
+  background: #ef4444;
+}
+
+.admin-health-dot.checking {
+  background: #f59e0b;
+  animation: adminPulseAmber 1.5s ease-in-out infinite;
+}
+
+.admin-health-label {
+  color: #334155;
+  font-size: 12px;
+}
+
+/* Header Buttons: Back & Logout */
 .admin-dashboard-page .back-button,
 .admin-dashboard-page .logout-button {
-  padding: 7px 12px;
+  padding: 7px 14px;
   font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
+.admin-dashboard-page .back-button {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.admin-dashboard-page .back-button:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.admin-dashboard-page .logout-button {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fee2e2;
+}
+
+.admin-dashboard-page .logout-button:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* ==========================================================================
+   Admin Sidebar Navigation
+   Premium Dark Theme with Animated Gradient Accent Line
+   ========================================================================== */
 .admin-sidebar {
-  --admin-sidebar-width: 248px;
-  --admin-sidebar-collapsed: 68px;
+  --admin-sidebar-width: 260px;
+  --admin-sidebar-collapsed: 70px;
+  --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #0c1220 40%, #0a0f1e 100%);
+  --sidebar-accent: #6366f1;
+  --sidebar-accent-glow: rgba(99, 102, 241, 0.3);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.04);
+  --sidebar-active-bg: rgba(99, 102, 241, 0.12);
+  --sidebar-text: #94a3b8;
+  --sidebar-text-active: #f1f5f9;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+
   flex: 0 0 var(--admin-sidebar-width);
   width: var(--admin-sidebar-width);
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
   border: none;
-  border-inline-end: 1px solid #e2e8f0;
-  border-radius: 0;
-  box-shadow: none;
   position: relative;
-  height: 100%;
-  overflow: hidden;
-  z-index: 30;
-  transition: width 0.22s ease, flex-basis 0.22s ease;
+  height: 100vh;
+  overflow: visible;
+  z-index: 50;
+  transition: width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              flex-basis 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Animated gradient accent line on the left edge (LTR) or right edge (RTL) */
+.admin-sidebar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(
+    180deg,
+    #6366f1 0%,
+    #8b5cf6 25%,
+    #a855f7 50%,
+    #6366f1 75%,
+    #3b82f6 100%
+  );
+  background-size: 100% 200%;
+  animation: sidebarGradientFlow 4s ease-in-out infinite;
+  z-index: 60;
+  border-radius: 0 2px 2px 0;
+}
+
+html[dir="rtl"] .admin-sidebar::before {
+  right: auto;
+  left: 0;
+  border-radius: 2px 0 0 2px;
+}
+
+html[dir="ltr"] .admin-sidebar::before {
+  left: auto;
+  right: 0;
+  border-radius: 2px 0 0 2px;
+}
+
+/* Subtle floating geometric shapes in sidebar background */
+.admin-sidebar::after {
+  content: '';
+  position: absolute;
+  top: 120px;
+  right: 10px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  animation: sidebarFloat 8s ease-in-out infinite;
 }
 
 .admin-sidebar.is-collapsed {
@@ -101,16 +277,79 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
 }
 
+/* ==========================================================================
+   Sidebar Brand Header — Glowing badge + elegant text
+   ========================================================================== */
 .admin-sidebar-brand {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
-  min-height: 52px;
-  border-bottom: 1px solid #e2e8f0;
+  gap: 10px;
+  padding: 0 16px;
+  height: 64px;
+  min-height: 64px;
+  max-height: 64px;
+  box-sizing: border-box;
+  background: transparent;
+  border-bottom: 1px solid var(--sidebar-border);
+  position: relative;
+  z-index: 20;
+}
+
+.admin-sidebar-brand-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  user-select: none;
+}
+
+.admin-sidebar-brand-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  letter-spacing: -0.5px;
+  box-shadow:
+    0 4px 15px rgba(99, 102, 241, 0.4),
+    0 0 30px rgba(99, 102, 241, 0.15);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.3s ease;
+  position: relative;
+}
+
+.admin-sidebar-brand-badge::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(139, 92, 246, 0.3));
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.admin-sidebar-brand-badge:hover {
+  transform: scale(1.1) rotate(-3deg);
+  box-shadow:
+    0 6px 20px rgba(99, 102, 241, 0.5),
+    0 0 40px rgba(99, 102, 241, 0.2);
+}
+
+.admin-sidebar-brand-badge:hover::after {
+  opacity: 1;
 }
 
 .admin-sidebar-brand-copy {
@@ -122,19 +361,25 @@
 
 .admin-sidebar-kicker {
   font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #2563eb;
+  background: linear-gradient(90deg, #818cf8, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .admin-sidebar-brand-text {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 800;
-  color: #0f172a;
+  color: #f1f5f9;
   white-space: nowrap;
 }
 
+/* ==========================================================================
+   Collapse & Close Buttons — Glass effect
+   ========================================================================== */
 .admin-sidebar-collapse-btn,
 .admin-sidebar-close-btn,
 .admin-nav-menu-btn {
@@ -143,91 +388,133 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  color: #334155;
-  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  border-radius: 10px;
   cursor: pointer;
-  box-shadow: none;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  backdrop-filter: blur(8px);
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .admin-sidebar-collapse-btn:hover,
-.admin-sidebar-close-btn:hover,
-.admin-nav-menu-btn:hover {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
+.admin-sidebar-close-btn:hover {
+  background: rgba(99, 102, 241, 0.15);
+  color: #c7d2fe;
+  border-color: rgba(99, 102, 241, 0.3);
+  transform: scale(1.1);
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.15);
 }
 
-.admin-sidebar-collapse-btn:focus-visible,
-.admin-sidebar-close-btn:focus-visible,
-.admin-nav-menu-btn:focus-visible,
-.admin-nav-link:focus-visible,
-.admin-nav-group-toggle:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-.admin-sidebar-close-btn,
 .admin-nav-menu-btn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  display: none;
+  backdrop-filter: none;
+}
+
+.admin-nav-menu-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.admin-sidebar-close-btn {
   display: none;
 }
 
+/* ==========================================================================
+   Navigation Scroll Container
+   ========================================================================== */
 .admin-sidebar-nav {
   overflow-y: auto;
-  padding: 8px 8px 16px;
+  overflow-x: visible;
+  padding: 16px 0 24px;
   flex: 1;
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
 }
 
+.admin-sidebar-nav::-webkit-scrollbar {
+  width: 3px;
+}
+
+.admin-sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 3px;
+}
+
+/* ==========================================================================
+   Navigation Groups — Animated expand/collapse
+   ========================================================================== */
 .admin-nav-group + .admin-nav-group {
-  margin-top: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  position: relative;
+}
+
+.admin-nav-group + .admin-nav-group::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.15), transparent);
+}
+
+.admin-nav-group {
+  position: relative;
 }
 
 .admin-nav-group-toggle {
-  width: 100%;
+  width: calc(100% - 24px);
+  margin: 0 12px 4px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 6px 10px;
   border: none;
   background: transparent;
   color: #64748b;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 10.5px;
+  font-weight: 700;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
   border-radius: 8px;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 .admin-nav-group-toggle:hover {
-  color: #1e293b;
-  background: rgba(241, 245, 249, 0.9);
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.05);
 }
 
 .admin-nav-group.has-active .admin-nav-group-toggle {
-  color: #2563eb;
+  color: #a5b4fc;
 }
 
 .admin-nav-chevron {
-  transition: transform 0.22s ease;
-  opacity: 0.7;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 0.6;
 }
 
 .admin-nav-chevron.is-open {
   transform: rotate(180deg);
+  opacity: 1;
 }
 
 .admin-nav-list-wrap {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: grid-template-rows 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: visible;
 }
 
 .admin-nav-list-wrap.is-open {
@@ -237,119 +524,185 @@
 .admin-nav-list {
   list-style: none;
   margin: 0;
-  padding: 0 0 2px;
-  overflow: hidden;
+  padding: 0;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
+/* ==========================================================================
+   Navigation Links — Smooth hover with glow + animated active indicator
+   ========================================================================== */
 .admin-nav-link {
   position: relative;
-  width: 100%;
+  width: calc(100% - 20px);
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 6px 8px;
+  gap: 12px;
+  min-height: 42px;
+  padding: 8px 14px;
+  margin: 1px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 12px;
   background: transparent;
-  color: #475569;
-  font-size: 13px;
-  font-weight: 650;
+  color: var(--sidebar-text);
+  font-size: 13.5px;
+  font-weight: 600;
   cursor: pointer;
   text-align: start;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: visible;
 }
 
 .admin-nav-link:hover {
-  background: #f8fafc;
-  color: #0f172a;
-  transform: translateX(2px);
+  background: var(--sidebar-hover-bg);
+  color: var(--sidebar-text-active);
+  border-color: rgba(255, 255, 255, 0.03);
+  transform: translateX(-3px);
 }
 
 html[dir="ltr"] .admin-nav-link:hover {
-  transform: translateX(-2px);
+  transform: translateX(3px);
 }
 
+/* Icon wrapper — rounded glass pill */
 .admin-nav-icon-wrap {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #f8fafc;
-  flex: 0 0 28px;
-  transition: background 0.15s ease, color 0.15s ease;
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  flex: 0 0 32px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
 }
 
 .admin-nav-icon {
-  color: #64748b;
+  color: inherit;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .admin-nav-link:hover .admin-nav-icon-wrap {
-  background: #dbeafe;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  transform: scale(1.05);
 }
 
 .admin-nav-link:hover .admin-nav-icon {
-  color: #2563eb;
+  transform: rotate(-5deg);
 }
 
-.admin-nav-link-indicator {
+/* ==========================================================================
+   Active Tab — Glowing accent with animated left border
+   ========================================================================== */
+.admin-nav-link.is-active {
+  background: var(--sidebar-active-bg);
+  color: var(--sidebar-text-active);
+  font-weight: 700;
+  border-color: rgba(99, 102, 241, 0.2);
+  transform: none;
+  z-index: 10;
+  box-shadow:
+    0 0 20px rgba(99, 102, 241, 0.08),
+    inset 0 0 20px rgba(99, 102, 241, 0.03);
+}
+
+/* Animated accent bar on the active item (right edge in RTL, left in LTR) */
+.admin-nav-active-bar {
   position: absolute;
-  inset-inline-start: 0;
   top: 8px;
   bottom: 8px;
   width: 3px;
-  border-radius: 999px;
-  background: transparent;
-  transform: scaleY(0.4);
-  transition: transform 0.2s ease, background 0.2s ease;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #6366f1, #a855f7, #6366f1);
+  background-size: 100% 200%;
+  animation: activeBarPulse 2.5s ease-in-out infinite;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
 }
 
-.admin-nav-link.is-active {
-  background: #eff6ff;
-  border-color: transparent;
-  color: #1d4ed8;
-  box-shadow: none;
+html[dir="rtl"] .admin-nav-active-bar {
+  right: -1px;
+  left: auto;
 }
 
-.admin-nav-link.is-active .admin-nav-link-indicator {
-  background: #2563eb;
-  transform: scaleY(1);
+html[dir="ltr"] .admin-nav-active-bar {
+  left: -1px;
+  right: auto;
+}
+
+/* Remove old curved wave pseudo elements — replaced with glowing bar */
+.admin-nav-link.is-active::before,
+.admin-nav-link.is-active::after {
+  display: none;
 }
 
 .admin-nav-link.is-active .admin-nav-icon-wrap {
-  background: #2563eb;
-  box-shadow: none;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  box-shadow:
+    0 4px 12px rgba(99, 102, 241, 0.35),
+    0 0 20px rgba(99, 102, 241, 0.15);
+  transform: scale(1.02);
 }
 
-.admin-nav-link.is-active .admin-nav-icon {
-  color: #fff;
+.admin-nav-link.is-active .admin-nav-label {
+  color: var(--sidebar-text-active);
+  font-weight: 700;
 }
 
 .admin-nav-label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 0.2s ease;
 }
 
+/* ==========================================================================
+   Collapsed Sidebar — Centered icon pills with tooltips
+   ========================================================================== */
 .admin-sidebar.is-collapsed .admin-sidebar-brand-copy,
 .admin-sidebar.is-collapsed .admin-nav-label,
 .admin-sidebar.is-collapsed .admin-nav-group-toggle {
   display: none !important;
 }
 
+.admin-sidebar.is-collapsed .admin-sidebar-collapse-btn {
+  display: none !important;
+}
+
 .admin-sidebar.is-collapsed .admin-sidebar-brand {
   justify-content: center;
-  min-height: 48px;
-  padding: 8px 0;
+  padding: 0 8px;
+}
+
+.admin-sidebar.is-collapsed .admin-sidebar-brand-left {
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.admin-sidebar.is-collapsed .admin-sidebar-brand-badge {
+  cursor: pointer;
+  box-shadow:
+    0 4px 15px rgba(99, 102, 241, 0.45),
+    0 0 25px rgba(99, 102, 241, 0.15);
+}
+
+.admin-sidebar.is-collapsed .admin-sidebar-brand-badge:hover {
+  transform: scale(1.12) rotate(-5deg);
 }
 
 .admin-sidebar.is-collapsed .admin-nav-group + .admin-nav-group {
-  margin-top: 0;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.admin-sidebar.is-collapsed .admin-nav-group + .admin-nav-group::before {
+  left: 10px;
+  right: 10px;
 }
 
 .admin-sidebar.is-collapsed .admin-nav-list-wrap {
@@ -357,43 +710,55 @@ html[dir="ltr"] .admin-nav-link:hover {
 }
 
 .admin-sidebar.is-collapsed .admin-sidebar-nav {
-  padding: 6px 8px 12px;
+  padding: 10px 0 16px;
 }
 
 .admin-sidebar.is-collapsed .admin-nav-link {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  margin: 4px auto;
+  border-radius: 12px;
   justify-content: center;
   align-items: center;
-  min-height: 40px;
-  padding: 4px;
   gap: 0;
   transform: none;
 }
 
 .admin-sidebar.is-collapsed .admin-nav-link:hover {
-  transform: none;
+  background: rgba(99, 102, 241, 0.12);
+  transform: scale(1.1);
 }
 
-.admin-sidebar.is-collapsed .admin-nav-link-indicator {
-  display: none;
-}
-
-.admin-sidebar.is-collapsed .admin-nav-icon-wrap {
-  background: transparent;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+.admin-sidebar.is-collapsed .admin-nav-link.is-active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.15));
+  border-color: rgba(99, 102, 241, 0.3);
+  box-shadow:
+    0 4px 15px rgba(99, 102, 241, 0.2),
+    0 0 20px rgba(99, 102, 241, 0.1);
 }
 
 .admin-sidebar.is-collapsed .admin-nav-link.is-active .admin-nav-icon-wrap {
-  background: #2563eb;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.4);
 }
 
+.admin-sidebar.is-collapsed .admin-nav-active-bar {
+  display: none;
+}
+
+/* ==========================================================================
+   Main Content Area
+   ========================================================================== */
 .admin-main {
   flex: 1;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
-  background: transparent;
+  overflow-x: hidden;
+  background: #f8fafc;
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -401,43 +766,51 @@ html[dir="ltr"] .admin-nav-link:hover {
 
 .admin-dashboard-page .admin-content {
   max-width: none;
-  padding: 16px 20px 20px;
+  padding: 20px 24px 30px;
 }
 
 .admin-dashboard-page .requests-section-heading {
-  margin: 0 0 16px 0;
+  margin: 0 0 18px 0;
 }
 
 .admin-nav-backdrop {
   display: none;
 }
 
-@media (min-width: 1024px) {
-  .admin-dashboard-page .admin-content {
-    padding: 16px 20px 20px;
-  }
+/* ==========================================================================
+   Keyframe Animations
+   ========================================================================== */
+@keyframes sidebarGradientFlow {
+  0%, 100% { background-position: 0% 0%; }
+  50% { background-position: 0% 100%; }
 }
 
+@keyframes sidebarFloat {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
+  50% { transform: translateY(-15px) scale(1.1); opacity: 0.8; }
+}
+
+@keyframes activeBarPulse {
+  0%, 100% { background-position: 0% 0%; opacity: 1; }
+  50% { background-position: 0% 100%; opacity: 0.8; }
+}
+
+@keyframes adminPulseGreen {
+  0%, 100% { box-shadow: 0 0 3px rgba(16, 185, 129, 0.3); }
+  50% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); }
+}
+
+@keyframes adminPulseAmber {
+  0%, 100% { box-shadow: 0 0 3px rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.6); }
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   ========================================================================== */
 @media (max-width: 1023px) {
-  .admin-dashboard-page .admin-header-content {
-    grid-template-columns: auto 1fr auto;
-  }
-
-  .admin-header-title {
-    font-size: 16px !important;
-    white-space: normal;
-    line-height: 1.3;
-  }
-
-  .admin-shell {
-    display: block;
-    min-height: 0;
-    overflow: auto;
-    padding: 0;
-  }
-
-  .admin-main {
-    border-radius: 0;
+  .admin-header-subtitle {
+    display: none;
   }
 
   .admin-nav-menu-btn {
@@ -456,12 +829,12 @@ html[dir="ltr"] .admin-nav-link:hover {
     position: fixed;
     inset-block: 0;
     inset-inline-start: 0;
-    width: min(88vw, 320px);
+    width: min(88vw, 300px);
     max-height: 100vh;
     height: 100vh;
     transform: translateX(110%);
-    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
-    z-index: 80;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 100;
     box-shadow: none;
   }
 
@@ -471,33 +844,8 @@ html[dir="ltr"] .admin-nav-link:hover {
 
   .admin-sidebar.is-mobile-open {
     transform: translateX(0) !important;
-    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
-  }
-
-  .admin-sidebar.is-collapsed {
-    width: min(88vw, 320px);
-    flex-basis: auto;
-  }
-
-  .admin-sidebar.is-collapsed .admin-sidebar-brand-copy,
-  .admin-sidebar.is-collapsed .admin-nav-label,
-  .admin-sidebar.is-collapsed .admin-nav-group-toggle {
-    opacity: 1;
-    width: auto;
-    height: auto;
-    overflow: visible;
-    pointer-events: auto;
-    padding: initial;
-    margin: initial;
-  }
-
-  .admin-sidebar.is-collapsed .admin-nav-group-toggle {
-    padding: 8px 12px;
-  }
-
-  .admin-sidebar.is-collapsed .admin-nav-link {
-    justify-content: flex-start;
-    padding: 10px 12px;
+    box-shadow: -8px 0 50px rgba(99, 102, 241, 0.15),
+                -4px 0 30px rgba(0, 0, 0, 0.4);
   }
 
   .admin-nav-backdrop {
@@ -505,10 +853,10 @@ html[dir="ltr"] .admin-nav-link:hover {
     position: fixed;
     inset: 0;
     border: none;
-    background: rgba(15, 23, 42, 0.42);
+    background: rgba(10, 14, 26, 0.7);
     backdrop-filter: blur(6px);
-    z-index: 70;
-    animation: adminNavFade 0.2s ease;
+    z-index: 90;
+    animation: adminNavFade 0.25s ease;
   }
 }
 
@@ -517,34 +865,54 @@ html[dir="ltr"] .admin-nav-link:hover {
   to { opacity: 1; }
 }
 
-@media (max-width: 900px) {
-  .admin-dashboard-page .admin-header-content {
-    display: grid !important;
-    flex-direction: unset;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
+@media (max-width: 768px) {
+  .admin-dashboard-page .admin-header {
+    height: auto;
+    min-height: 60px;
+    max-height: none;
+    padding: 10px 16px;
   }
 
-  .admin-dashboard-page .admin-header-end {
-    width: auto;
+  .admin-dashboard-page .admin-header-content {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .admin-header-title {
+    font-size: 16px !important;
+  }
+
+  .admin-header-end {
+    width: 100%;
     justify-content: flex-end;
-    flex-direction: row;
+  }
+
+  .admin-health-label {
+    display: none;
+  }
+
+  .admin-dashboard-page .admin-content {
+    padding: 14px 14px 24px;
   }
 }
 
-@media (max-width: 768px) {
-  .admin-dashboard-page .admin-header-content {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      "menu title"
-      "actions actions";
+/* ==========================================================================
+   Reduced Motion Preferences
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .admin-sidebar::before,
+  .admin-sidebar::after,
+  .admin-nav-active-bar,
+  .admin-health-dot.online,
+  .admin-health-dot.checking {
+    animation: none !important;
   }
 
-  .admin-header-start { grid-area: menu; }
-  .admin-header-title { grid-area: title; }
-  .admin-dashboard-page .admin-header-end {
-    grid-area: actions;
-    width: 100%;
-    justify-content: center;
+  .admin-nav-link,
+  .admin-nav-icon-wrap,
+  .admin-sidebar-brand-badge,
+  .admin-sidebar-collapse-btn,
+  .admin-sidebar-close-btn {
+    transition-duration: 0.01ms !important;
   }
 }

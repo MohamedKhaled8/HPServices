@@ -577,7 +577,7 @@ const SERVICE_TEXT_ALIASES: { id: string; patterns: RegExp[] }[] = [
   { id: '9', patterns: [/مشروع/, /تخرج/] },
   { id: '10', patterns: [/استخراج.*تخرج/, /شهادة تخرج/] },
   { id: '11', patterns: [/استلام.*تحول/, /شحن.*تحول/] },
-  { id: '12', patterns: [/استخراج بيانات/, /ocr/, /مسح/] },
+  { id: '12', patterns: [/افادة/, /إفادة/, /اثبات قيد/, /إثبات قيد/, /قيد/] },
 ];
 
 export function matchServiceFromText(text: string): string | null {
@@ -829,7 +829,7 @@ function dispatchAssistantPayload(
   }
 
   if (payload === 'action:services_list') {
-    const platformServices = SERVICES.filter((s) => s.id !== '12');
+    const platformServices = SERVICES;
     const userServiceIds = new Set(distinctServiceIdsFromRequests(requests));
     return {
       reply: {

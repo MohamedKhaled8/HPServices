@@ -1,77 +1,7 @@
+/* Core Admin Dashboard layout is managed in AdminSidebarNav.css */
 .admin-dashboard-page {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   position: relative;
-  overflow-x: hidden;
-}
-
-.admin-header {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  padding: 24px 40px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  margin-bottom: 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.admin-header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.admin-header h1 {
-  font-size: 26px;
-  color: #1e293b;
-  margin: 0;
-  font-weight: 600;
-  letter-spacing: -0.5px;
-}
-
-.admin-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.back-button,
-.logout-button {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.back-button {
-  background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-}
-
-.back-button:hover {
-  background: #e2e8f0;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-}
-
-.logout-button {
-  background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
-  color: white;
-}
-
-.logout-button:hover {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
 }
 
 /* Modern Floating Tabs */

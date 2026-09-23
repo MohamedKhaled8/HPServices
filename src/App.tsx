@@ -8,6 +8,7 @@ import DashboardPage from './page/DashboardPage';
 import ServiceDetailsPage from './page/ServiceDetailsPage';
 import ProfilePage from './page/ProfilePage';
 import AllUsersPage from './page/AllUsersPage';
+
 import AdminDashboardPage from './page/AdminDashboardPage';
 import AssignmentsManagementPage from './page/AssignmentsManagementPage';
 import StudentAssignmentsPage from './page/StudentAssignmentsPage';
@@ -345,7 +346,7 @@ const App: React.FC = () => {
                     <Routes>
                         {/* Public Routes */}
                         <Route path="/login" element={<LoginWrapper />} />
-                        <Route path="/register" element={<RegisterWrapper />} />
+                        <Route path="/register" element={<Navigate to="/login" replace />} />
                         <Route path="/reset-password" element={<ResetPasswordPage />} />
                         <Route path="/admin-login" element={<Navigate to="/login" replace />} />
                         <Route path="/about" element={<AboutPage />} />

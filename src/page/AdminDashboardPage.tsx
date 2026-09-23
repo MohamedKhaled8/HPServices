@@ -22,6 +22,8 @@ import {
   updateFinalReviewConfig,
   getGraduationProjectConfig,
   updateGraduationProjectConfig,
+  getStatementEnrollmentConfig,
+  updateStatementEnrollmentConfig,
   checkIsAdmin,
   getStudentData,
   getStudentsByIds,
@@ -72,7 +74,7 @@ import {
   RESTORED_DOC_PREFIXES,
   type CloudinaryAsset
 } from '../services/cloudinaryRestoreService';
-import { ServiceRequest, ServiceRequestWorkflowStatus, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings } from '../types';
+import { ServiceRequest, ServiceRequestWorkflowStatus, StudentData, AssignedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, DigitalTransformationType, FinalReviewConfig, GraduationProjectConfig, GraduationProjectPrice, ServiceSettings, StatementEnrollmentConfig } from '../types';
 import {
   LogOut,
   Package,
@@ -150,6 +152,7 @@ import AdminBotTrainingTab from '../components/admin/AdminBotTrainingTab';
 import AdminAssistantTab from '../components/admin/AdminAssistantTab';
 import AdminBackgroundImagesTab from '../components/admin/AdminBackgroundImagesTab';
 import AdminSidebarNav from '../components/admin/AdminSidebarNav';
+import AssignmentsManagementPage from './AssignmentsManagementPage';
 import { resolveHeroBackgroundImages } from '../utils/backgroundImages';
 import type { AdminTabId } from '../constants/adminNavigation';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
@@ -1153,6 +1156,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   // Final Review states
   const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
 
+  // Statement & Enrollment states (Service 12)
+  const [statementEnrollmentConfig, setStatementEnrollmentConfig] = useState<StatementEnrollmentConfig | null>(null);
+
   // Graduation Project states
   const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
   const [newGradProjectPriceAmount, setNewGradProjectPriceAmount] = useState<string>('');
@@ -1802,6 +1808,37 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       }
     };
     loadGraduationProjectConfig();
+
+    // Load statement and enrollment config (Service 12)
+    const loadStatementEnrollmentConfig = async () => {
+      try {
+        const config = await getStatementEnrollmentConfig();
+        if (config) {
+          if (config.paymentMethods?.instaPay) {
+            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+          }
+          setStatementEnrollmentConfig(config);
+        } else {
+          const defaultConfig: StatementEnrollmentConfig = {
+            serviceName: 'التقديم علي افادة و اثبات قيد',
+            paymentAmount: 400,
+            paymentMethods: {
+              instaPay: 'raoufpk97@instapay',
+              cashWallet: '01050889591'
+            }
+          };
+          try {
+            await updateStatementEnrollmentConfig(defaultConfig);
+          } catch {
+            // ignore
+          }
+          setStatementEnrollmentConfig(defaultConfig);
+        }
+      } catch (error) {
+        logger.error('Error loading statement enrollment config:', error);
+      }
+    };
+    loadStatementEnrollmentConfig();
 
     // Load Latest News
     const loadLatestNews = async () => {
@@ -2612,6 +2649,19 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   };
 
+  const handleSaveStatementEnrollmentConfig = async () => {
+    if (!statementEnrollmentConfig || isSaving === 'statementEnrollment') return;
+    setIsSaving('statementEnrollment');
+    try {
+      await updateStatementEnrollmentConfig(statementEnrollmentConfig);
+      showAlert('نجاح', 'تم حفظ إعدادات إفادة وإثبات قيد بنجاح!', 'success');
+    } catch (error: any) {
+      showAlert('خطأ', error.message || 'حدث خطأ أثناء حفظ الإعدادات', 'error');
+    } finally {
+      setIsSaving(null);
+    }
+  };
+
   const handleAddGraduationProjectPrice = () => {
     if (!graduationProjectConfig) return;
     if (!newGradProjectPriceAmount) {
@@ -2884,7 +2934,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       '8': 'المراجعة النهائية',
       '9': 'مشروع التخرج',
       '10': 'استخراج مستندات',
-      '11': 'استلام و شحن التحول الرقمي'
+      '11': 'استلام و شحن التحول الرقمي',
+      '12': 'التقديم علي افادة و اثبات قيد'
     };
     return serviceNames[serviceId] || `خدمة ${serviceId}`;
   };
@@ -3015,20 +3066,21 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         '8': 'المراجعة النهائية',
         '9': 'مشروع التخرج',
         '10': 'استخراج مستندات',
-        '11': 'شحن شهادة التحول الرقمي'
+        '11': 'شحن شهادة التحول الرقمي',
+        '12': 'التقديم علي افادة و اثبات قيد'
       };
       return names[id] || `خدمة ${id}`;
     };
 
     const targetMessage = isAll 
-      ? 'جاري فحص بيانات وحسابات جميع الطلاب المسجلين واستعادة طلبات كافة الخدمات (1-11) بالدقة 100%...' 
+      ? 'جاري فحص بيانات وحسابات جميع الطلاب المسجلين واستعادة طلبات كافة الخدمات بالدقة 100%...' 
       : `جاري فحص وتدقيق حسابات الطلاب واستعادة طلبات (${getServiceNameText(targetServiceIdStr)}) بالدقة 100%...`;
 
     setToastState({ message: targetMessage, type: 'loading' });
 
     try {
       const studentsSnap = await getDocs(collection(db, 'students'));
-      const servicesToProcess = isAll ? ['1','2','3','4','5','6','7','8','9','10','11'] : [targetServiceIdStr];
+      const servicesToProcess = isAll ? ['1','2','3','4','5','6','7','8','9','10','11','12'] : [targetServiceIdStr];
       let totalRestoredCount = 0;
 
       for (const serviceId of servicesToProcess) {
@@ -3331,7 +3383,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const handleRemoveDuplicateRequests = async (targetServiceId?: string) => {
     setIsRemovingDuplicates(true);
-    const services = targetServiceId ? [targetServiceId] : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    const services = targetServiceId ? [targetServiceId] : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
     setToastState({ message: 'جاري دمج وحذف الطلبات المكررة...', type: 'loading' });
     try {
       let merged = 0;
@@ -3376,11 +3428,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const handleEnrichRestoredOrdersFromStudents = async (targetServiceId?: string) => {
     setIsEnrichingOrders(true);
-    const services = targetServiceId ? [targetServiceId] : ['2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    const services = targetServiceId ? [targetServiceId] : ['2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
     const serviceNames: Record<string, string> = {
       '2': 'العميل المميز', '3': 'شحن الكتب', '4': 'المصروفات', '5': 'التكليفات',
       '6': 'شهادات أونلاين', '7': 'التحول الرقمي', '8': 'المراجعة النهائية',
-      '9': 'مشروع التخرج', '10': 'استخراج مستندات', '11': 'شحن التحول الرقمي'
+      '9': 'مشروع التخرج', '10': 'استخراج مستندات', '11': 'شحن التحول الرقمي',
+      '12': 'التقديم علي افادة و اثبات قيد'
     };
     const label = targetServiceId ? serviceNames[targetServiceId] || `خدمة ${targetServiceId}` : 'جميع الخدمات';
     setToastState({ message: `جاري إثراء بيانات (${label}) من ملفات الطلاب...`, type: 'loading' });
@@ -3785,9 +3838,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   };
 
   const moveServiceManual = async (serviceId: string, direction: 'up' | 'down') => {
-    const currentOrder = (adminPrefs.serviceOrder && adminPrefs.serviceOrder.length > 0)
-      ? [...adminPrefs.serviceOrder]
-      : SERVICES.map(s => s.id);
+    const baseOrder = (adminPrefs.serviceOrder && adminPrefs.serviceOrder.length > 0) ? adminPrefs.serviceOrder : [];
+    const missingIds = SERVICES.map(s => s.id).filter(id => !baseOrder.includes(id));
+    const currentOrder = [...baseOrder, ...missingIds];
 
     const index = currentOrder.indexOf(serviceId);
     if (index === -1) return;
@@ -3841,82 +3894,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   return (
     <div className="admin-dashboard-page">
-      <div className="admin-header">
-        <div className="admin-header-content">
-          <div className="admin-header-start">
-            <button
-              type="button"
-              className="admin-nav-menu-btn"
-              onClick={() => setMobileNavOpen(true)}
-              aria-label="فتح قائمة الأقسام"
-            >
-              <Menu size={18} />
-            </button>
-          </div>
-          <h1 className="admin-header-title">لوحة تحكم الإدارة</h1>
-          <div className="admin-actions admin-header-end">
-            {/* Server Automation Health Badge */}
-            <div
-              title={serverHealth.status === 'online' ? 'الخدمة متصلة وتعمل كالمعتاد' : serverHealth.status === 'offline' ? 'تعذر الاتصال بخدمة الأتمتة' : 'جاري التحقق من حالة الاتصال'}
-              onClick={checkServerHealth}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 14px',
-                borderRadius: '20px',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                border: serverHealth.status === 'online'
-                  ? '1px solid rgba(16, 185, 129, 0.35)'
-                  : serverHealth.status === 'offline'
-                  ? '1px solid rgba(239, 68, 68, 0.35)'
-                  : '1px solid rgba(245, 158, 11, 0.35)',
-                background: serverHealth.status === 'online'
-                  ? 'rgba(16, 185, 129, 0.08)'
-                  : serverHealth.status === 'offline'
-                  ? 'rgba(239, 68, 68, 0.08)'
-                  : 'rgba(245, 158, 11, 0.08)',
-                color: serverHealth.status === 'online'
-                  ? '#059669'
-                  : serverHealth.status === 'offline'
-                  ? '#dc2626'
-                  : '#d97706',
-                transition: 'all 0.25s ease',
-                userSelect: 'none'
-              }}
-            >
-              <span
-                style={{
-                  width: '9px',
-                  height: '9px',
-                  borderRadius: '50%',
-                  background: serverHealth.status === 'online' ? '#10b981' : serverHealth.status === 'offline' ? '#ef4444' : '#f59e0b',
-                  boxShadow: serverHealth.status === 'online' ? '0 0 8px #10b981' : 'none',
-                  animation: serverHealth.status === 'checking' ? 'pulse 1s infinite' : 'none'
-                }}
-              />
-              <span>
-                {serverHealth.status === 'online'
-                  ? 'حالة الخدمة: نشط 🟢'
-                  : serverHealth.status === 'offline'
-                  ? 'حالة الخدمة: متوقف 🔴'
-                  : 'جاري التحقق...'}
-              </span>
-            </div>
-
-            <button onClick={onBack} className="back-button">
-              رجوع
-            </button>
-            <button onClick={onLogout} className="logout-button">
-              <LogOut size={18} />
-              تسجيل الخروج
-            </button>
-          </div>
-        </div>
-      </div>
-
       {toastState && (
         <CustomToast
           message={toastState.message}
@@ -3936,7 +3913,62 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           mobileOpen={mobileNavOpen}
           onMobileOpenChange={setMobileNavOpen}
         />
-        <div className="admin-main">
+
+        <div className="admin-main-wrapper">
+          <header className="admin-header">
+            <div className="admin-header-content">
+              <div className="admin-header-start">
+                <button
+                  type="button"
+                  className="admin-nav-menu-btn"
+                  onClick={() => setMobileNavOpen(true)}
+                  aria-label="فتح قائمة الأقسام"
+                >
+                  <Menu size={19} />
+                </button>
+                <div className="admin-header-title-box">
+                  <h1 className="admin-header-title">لوحة تحكم الإدارة</h1>
+                  <span className="admin-header-subtitle">مركز إدارة الخدمات والطلبات</span>
+                </div>
+              </div>
+
+              <div className="admin-actions admin-header-end">
+                {/* Server Automation Health Badge */}
+                <div
+                  className="admin-health-badge"
+                  title={serverHealth.status === 'online' ? 'الخدمة متصلة وتعمل كالمعتاد' : serverHealth.status === 'offline' ? 'تعذر الاتصال بخدمة الأتمتة' : 'جاري التحقق من حالة الاتصال'}
+                  onClick={checkServerHealth}
+                >
+                  <span
+                    className={`admin-health-dot ${serverHealth.status}`}
+                  />
+                  <span className="admin-health-label">
+                    {serverHealth.status === 'online'
+                      ? 'حالة الخدمة: نشط 🟢'
+                      : serverHealth.status === 'offline'
+                      ? 'حالة الخدمة: متوقف 🔴'
+                      : 'جاري التحقق...'}
+                  </span>
+                </div>
+
+                {onBack && (
+                  <button onClick={onBack} className="back-button" title="رجوع">
+                    رجوع
+                  </button>
+                )}
+                <button onClick={onLogout} className="logout-button" title="تسجيل الخروج">
+                  <LogOut size={16} />
+                  <span>تسجيل الخروج</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div className="admin-main">
+
+      {activeTab === 'assignments' && (
+        <AssignmentsManagementPage onBack={() => setActiveTab('requests')} />
+      )}
 
       {activeTab === 'adminAssistant' && (
         <AdminAssistantTab
@@ -3992,6 +4024,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               requestStatsByServiceId={requestStatsByServiceId}
               bookConfig={bookConfig}
               assignmentsConfig={assignmentsConfig}
+              statementEnrollmentConfig={statementEnrollmentConfig}
               statsUnlocked={statsUnlocked}
               onToggleStatsLockClick={handleStatsLockIndicatorClick}
               onToggleStatsLockKeyDown={handleStatsLockIndicatorKeyDown}
@@ -4179,6 +4212,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     const colTracksList = { id: 'tracks_list', label: 'tracks', getValue: (r: any) => Array.isArray(r.data.tracks_array) ? r.data.tracks_array.join(', ') : '-' };
                     const colReceipt = { id: 'receipt', label: 'الإيصال', getValue: (r: any) => r.data.receiptUrl ? 'رابط الإيصال' : '-' };
                     const colSpecialization = { id: 'specialization', label: 'التخصص', getValue: (r: any) => r.data.educational_specialization || '-' };
+                    const colDestination = { id: 'destination', label: 'المكان الموجه له', getValue: (r: any) => r.data.destination || '-' };
+                    const colRequestType = { id: 'request_type', label: 'نوع الطلب', getValue: (r: any) => r.data.request_type || '-' };
                     const colTotalPrice = { id: 'total_price', label: 'السعر الإجمالي', getValue: (r: any) => String(r.data.totalPrice || '-') };
                     const colNameEn = { id: 'name_en', label: 'الاسم بالإنجليزية', getValue: (r: any) => r.data.full_name_english || '-' };
                     const colServiceType = { id: 'service_type', label: 'نوع الخدمة', getValue: (r: any) => typeof r.data?.selectedCertificate === 'object' ? r.data?.selectedCertificate?.name : (r.data?.selectedCertificate || '-') };
@@ -4247,8 +4282,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       case '11': // استلام و شحن التحول الرقمي
                         columns = [colName, colWhatsapp, colNationalId, colAddress, colTotalPrice];
                         break;
-                      case '12': // استخراج البيانات
-                        columns = [colName, colWhatsapp, colNationalId];
+                      case '12': // التقديم علي افادة و اثبات قيد
+                        columns = [colName, colRequestType, colDestination, colTotalPrice];
                         break;
                       default:
                         // Default order for other services
@@ -4847,7 +4882,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                   case '9': rowValues = [colStudentNamesVal, colLeaderWhatsappVal, colTrackVal, colProjectTitleVal, colGroupLinkVal]; break;
                                   case '10': rowValues = [colNameVal, colWhatsappVal, colDiplomaYearVal, colTrackVal, colDiplomaTypeVal, colTotalPriceVal]; break;
                                   case '11': rowValues = [colNameVal, colWhatsappVal, colNationalIdVal, colAddressVal, colTotalPriceVal]; break;
-                                  case '12': rowValues = [colNameVal, colWhatsappVal, colNationalIdVal]; break;
+                                  case '12': rowValues = [colNameVal, request.data.request_type || '-', request.data.destination || '-', colTotalPriceVal]; break;
                                   default:
                                     rowValues = [colNameVal, colNationalIdVal, colWhatsappVal, colEmailVal];
                                     if (hasAddress) rowValues.push(colAddressVal);
@@ -6459,6 +6494,100 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         />
       )}
 
+      {activeTab === 'statementEnrollment' && (
+        <div className="admin-content">
+          <div className="books-section">
+            <div className="section-header">
+              <h2>إعدادات التقديم علي إفادة وإثبات قيد</h2>
+              <button
+                type="button"
+                onClick={handleSaveStatementEnrollmentConfig}
+                className="save-button"
+                disabled={isSaving === 'statementEnrollment'}
+              >
+                <Save size={18} />
+                {isSaving === 'statementEnrollment' ? 'جاري الحفظ...' : 'حفظ'}
+              </button>
+            </div>
+
+            {statementEnrollmentConfig && (
+              <div className="book-config-form">
+                <div className="form-group">
+                  <label>اسم الخدمة</label>
+                  <input
+                    type="text"
+                    value={statementEnrollmentConfig.serviceName}
+                    onChange={(e) => setStatementEnrollmentConfig({ ...statementEnrollmentConfig, serviceName: e.target.value })}
+                    className="config-input"
+                    placeholder="التقديم علي افادة و اثبات قيد"
+                  />
+                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    اسم الخدمة كما يظهر للطلاب في الموقع
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label>مبلغ الدفع (جنيه)</label>
+                  <input
+                    type="number"
+                    value={statementEnrollmentConfig.paymentAmount}
+                    onChange={(e) => setStatementEnrollmentConfig({
+                      ...statementEnrollmentConfig,
+                      paymentAmount: parseFloat(e.target.value) || 0
+                    })}
+                    className="config-input"
+                    min="0"
+                    step="1"
+                    placeholder="400"
+                  />
+                  <small style={{ color: '#64748b', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    المبلغ المطلوب دفعه لطلب الإفادة أو إثبات القيد
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label>أرقام الدفع والتحويل</label>
+                  <div className="payment-numbers">
+                    <div className="payment-item">
+                      <label>instaPay</label>
+                      <input
+                        type="text"
+                        value={statementEnrollmentConfig.paymentMethods?.instaPay || ''}
+                        onChange={(e) => setStatementEnrollmentConfig({
+                          ...statementEnrollmentConfig,
+                          paymentMethods: {
+                            ...statementEnrollmentConfig.paymentMethods,
+                            instaPay: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                        placeholder="raoufpk97@instapay"
+                      />
+                    </div>
+                    <div className="payment-item">
+                      <label>محفظة الكاش (فودافون كاش)</label>
+                      <input
+                        type="text"
+                        value={statementEnrollmentConfig.paymentMethods?.cashWallet || ''}
+                        onChange={(e) => setStatementEnrollmentConfig({
+                          ...statementEnrollmentConfig,
+                          paymentMethods: {
+                            ...statementEnrollmentConfig.paymentMethods,
+                            cashWallet: e.target.value
+                          }
+                        })}
+                        className="config-input"
+                        placeholder="01050889591"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {
         activeTab === 'services' && (
           <div className="admin-content">
@@ -6809,7 +6938,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       e.preventDefault();
                       if (!draggedServiceId || draggedServiceId === service.id) return;
 
-                      const currentOrder = adminPrefs.serviceOrder?.length > 0 ? [...adminPrefs.serviceOrder] : SERVICES.map(s => s.id);
+                      const baseOrder = adminPrefs.serviceOrder?.length > 0 ? adminPrefs.serviceOrder : [];
+                      const missingIds = SERVICES.map(s => s.id).filter(id => !baseOrder.includes(id));
+                      const currentOrder = [...baseOrder, ...missingIds];
                       const draggedIdx = currentOrder.indexOf(draggedServiceId);
                       const targetIdx = currentOrder.indexOf(service.id);
 
@@ -6949,7 +7080,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 طرق الدفع والأسعار
                               </label>
                             )}
-                            {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && (
+                            {(service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11' || service.id === '12') && (
                               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                                 <input
                                   type="checkbox"
@@ -8896,6 +9027,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         />
       )}
 
+      </div>
       </div>
       </div>
 

@@ -13,7 +13,7 @@ import {
   Key
 } from 'lucide-react';
 import { SERVICES } from '../../constants/services';
-import type { AssignmentsServiceConfig, BookServiceConfig } from '../../types';
+import type { AssignmentsServiceConfig, BookServiceConfig, StatementEnrollmentConfig } from '../../types';
 
 export type ServiceRequestStats = { pending: number; total: number };
 
@@ -23,6 +23,7 @@ export interface AdminServicesFilesGridProps {
   requestStatsByServiceId: Record<string, ServiceRequestStats | undefined>;
   bookConfig: BookServiceConfig | null;
   assignmentsConfig: AssignmentsServiceConfig | null;
+  statementEnrollmentConfig?: StatementEnrollmentConfig | null;
   statsUnlocked: boolean;
   onToggleStatsLockClick: (e: React.MouseEvent) => void;
   onToggleStatsLockKeyDown: (e: React.KeyboardEvent) => void;
@@ -58,6 +59,7 @@ const AdminServicesFilesGrid = memo(function AdminServicesFilesGrid({
   requestStatsByServiceId,
   bookConfig,
   assignmentsConfig,
+  statementEnrollmentConfig,
   statsUnlocked,
   onToggleStatsLockClick,
   onToggleStatsLockKeyDown
@@ -79,6 +81,8 @@ const AdminServicesFilesGrid = memo(function AdminServicesFilesGrid({
           serviceName = bookConfig.serviceName;
         } else if (service.id === '5' && assignmentsConfig) {
           serviceName = assignmentsConfig.serviceName;
+        } else if (service.id === '12' && statementEnrollmentConfig) {
+          serviceName = statementEnrollmentConfig.serviceName;
         }
 
         return (

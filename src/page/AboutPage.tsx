@@ -1,10 +1,12 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Target, Eye, Heart, Users, Award, Mail, Phone } from 'lucide-react';
+import { usePageTitle } from '../hooks/usePageTitle';
 import '../styles/StaticPages.css';
 
 const AboutPage: React.FC = () => {
     const navigate = useNavigate();
+    usePageTitle('من نحن - منصة اتش بي سيرفيس للخدمات التعليمية');
 
     return (
         <div className="static-page" dir="rtl">

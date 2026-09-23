@@ -6,7 +6,8 @@ import {
   subscribeToServiceRequests,
   addServiceRequest as addServiceRequestToFirebase,
   checkIsAdmin,
-  subscribeToStudentData
+  subscribeToStudentData,
+  ensureStudentDocExists
 } from '../services/firebaseService';
 
 interface StudentContextType {
@@ -72,8 +73,18 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
             let firstSnap = true;
             unsubscribeStudentDoc = subscribeToStudentData(
               user.uid,
-              (studentData) => {
-                setStudent(studentData);
+              async (studentData) => {
+                if (!studentData) {
+                  try {
+                    const ensured = await ensureStudentDocExists(user, user.email || '');
+                    setStudent(ensured);
+                  } catch (e) {
+                    console.error('Error ensuring student doc:', e);
+                    setStudent(null);
+                  }
+                } else {
+                  setStudent(studentData);
+                }
                 if (firstSnap) {
                   firstSnap = false;
                   setIsLoading(false);

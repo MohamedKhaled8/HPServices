@@ -21,7 +21,11 @@ interface AdminSidebarNavProps {
 
 function readCollapsed(): boolean {
   try {
-    return localStorage.getItem(ADMIN_SIDEBAR_COLLAPSED_KEY) === '1';
+    const saved = localStorage.getItem(ADMIN_SIDEBAR_COLLAPSED_KEY);
+    if (saved === '1') {
+      localStorage.removeItem(ADMIN_SIDEBAR_COLLAPSED_KEY);
+    }
+    return false;
   } catch {
     return false;
   }
@@ -113,7 +117,7 @@ const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
     const Icon = item.icon;
     const active = isItemActive(item);
     return (
-      <li key={item.id}>
+      <li key={item.id} className="admin-nav-item">
         <button
           type="button"
           className={`admin-nav-link${active ? ' is-active' : ''}`}
@@ -121,9 +125,9 @@ const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
           aria-current={active ? 'page' : undefined}
           title={item.label}
         >
-          <span className="admin-nav-link-indicator" aria-hidden="true" />
+          {active && <span className="admin-nav-active-bar" aria-hidden="true" />}
           <span className="admin-nav-icon-wrap" aria-hidden="true">
-            <Icon size={18} strokeWidth={1.85} className="admin-nav-icon" />
+            <Icon size={17} strokeWidth={active ? 2.2 : 1.9} className="admin-nav-icon" />
           </span>
           <span className="admin-nav-label">{item.label}</span>
         </button>
@@ -134,9 +138,17 @@ const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
   const navBody = (
     <div className="admin-sidebar-inner">
       <div className="admin-sidebar-brand">
-        <div className="admin-sidebar-brand-copy">
-          <span className="admin-sidebar-kicker">HP Services</span>
-          <span className="admin-sidebar-brand-text">الأقسام</span>
+        <div
+          className="admin-sidebar-brand-left"
+          onClick={() => collapsed && setCollapsed(false)}
+          style={{ cursor: collapsed ? 'pointer' : 'default' }}
+          title={collapsed ? 'توسيع القائمة' : undefined}
+        >
+          <div className="admin-sidebar-brand-badge">HP</div>
+          <div className="admin-sidebar-brand-copy">
+            <span className="admin-sidebar-kicker">HP Services</span>
+            <span className="admin-sidebar-brand-text">لوحة التحكم</span>
+          </div>
         </div>
         <button
           type="button"
@@ -145,7 +157,7 @@ const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
           aria-label={collapsed ? 'توسيع القائمة' : 'طي القائمة'}
           title={collapsed ? 'توسيع القائمة' : 'طي القائمة'}
         >
-          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
         </button>
         <button
           type="button"
@@ -177,7 +189,7 @@ const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
                 >
                   <span className="admin-nav-group-label">{group.label}</span>
                   <ChevronDown
-                    size={15}
+                    size={14}
                     className={`admin-nav-chevron${expanded ? ' is-open' : ''}`}
                     aria-hidden="true"
                   />

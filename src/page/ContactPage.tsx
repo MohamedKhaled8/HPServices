@@ -1,11 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, MessageCircle, Clock, Phone, MapPin, Info, ChevronLeft } from 'lucide-react';
+import { usePageTitle } from '../hooks/usePageTitle';
 import '../styles/StaticPages.css';
 import '../styles/ContactPage.css';
 
 const ContactPage: React.FC = () => {
     const navigate = useNavigate();
+    usePageTitle('تواصل معنا - HP Services اتش بي سيرفيس');
 
     return (
         <div className="static-page" dir="rtl">

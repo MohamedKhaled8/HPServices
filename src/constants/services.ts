@@ -289,8 +289,25 @@ export const SERVICES: Service[] = [
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true }
     ],
     paymentMethods: ['Vodafone', 'instaPay']
+  },
+  {
+    id: '12',
+    nameEn: 'Apply for Statement and Proof of Enrollment',
+    nameAr: 'التقديم علي افادة و اثبات قيد',
+    descriptionEn: 'Apply for proof of enrollment or official statement',
+    descriptionAr: 'التقديم على إفادة أو إثبات قيد للجهات والمؤسسات المختلفة',
+    icon: 'file-check',
+    color: '#0284C7',
+    fields: [
+      { name: 'full_name_arabic', label: 'الاسم رباعي', type: 'editable', required: true },
+      { name: 'destination', label: 'المكان الموجه له إثبات القيد أو الإفادة', type: 'text', required: true },
+      { name: 'request_type', label: 'اختيار نوع الطلب', type: 'select', required: true, options: ['اختر نوع الطلب', 'إثبات قيد', 'إفادة'] }
+    ],
+    paymentMethods: ['Vodafone', 'instaPay']
   }
 ];
+
+export const STATEMENT_ENROLLMENT_PRICE = 400;
 
 export const GOVERNORATES = [
   'القاهرة',

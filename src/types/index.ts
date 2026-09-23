@@ -211,6 +211,15 @@ export interface GraduationProjectConfig {
   };
 }
 
+export interface StatementEnrollmentConfig {
+  serviceName: string;
+  paymentAmount: number;
+  paymentMethods: {
+    instaPay: string;
+    cashWallet: string;
+  };
+}
+
 export interface ServiceSettings {
   [serviceId: string]: boolean | {
     active: boolean;

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
-import { SERVICES } from '../constants/services';
-import { ServiceRequest, UploadedFile, ServiceSettings } from '../types';
-import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, updateStudentData, subscribeToServiceSettings, subscribeToAdminPreferences } from '../services/firebaseService';
-import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig } from '../types';
+import { SERVICES, STATEMENT_ENROLLMENT_PRICE } from '../constants/services';
+import { ServiceRequest, UploadedFile, ServiceSettings, StudentData } from '../types';
+import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, getStatementEnrollmentConfig, updateStudentData, subscribeToServiceSettings, subscribeToAdminPreferences } from '../services/firebaseService';
+import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, StatementEnrollmentConfig } from '../types';
 import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils/trackUtils';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
@@ -37,6 +37,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [editableFields, setEditableFields] = useState<Record<string, boolean>>({});
     const [receiptFiles, setReceiptFiles] = useState<UploadedFile[]>([]);
+    const [idCardFiles, setIdCardFiles] = useState<UploadedFile[]>([]);
     const [uploadProgress, setUploadProgress] = useState<{ uploading: boolean; progress: number }>({ uploading: false, progress: 0 });
     const [bookConfig, setBookConfig] = useState<BookServiceConfig | null>(null);
     const [feesConfig, setFeesConfig] = useState<FeesServiceConfig | null>(null);
@@ -47,6 +48,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     const [digitalTransformationConfig, setDigitalTransformationConfig] = useState<DigitalTransformationConfig | null>(null);
     const [finalReviewConfig, setFinalReviewConfig] = useState<FinalReviewConfig | null>(null);
     const [graduationProjectConfig, setGraduationProjectConfig] = useState<GraduationProjectConfig | null>(null);
+    const [statementEnrollmentConfig, setStatementEnrollmentConfig] = useState<StatementEnrollmentConfig | null>(null);
     const [showCopyToast, setShowCopyToast] = useState(false);
     const [serviceSettings, setServiceSettings] = useState<ServiceSettings>({});
     const [requireRouteReg, setRequireRouteReg] = useState(false);
@@ -304,13 +306,30 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             };
             loadGraduationProjectConfig();
         }
+
+        if (service.id === '12') {
+            const loadStatementEnrollmentConfig = async () => {
+                try {
+                    const config = await getStatementEnrollmentConfig();
+                    if (config) {
+                        if (config.paymentMethods?.instaPay) {
+                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
+                        }
+                        setStatementEnrollmentConfig(config);
+                    }
+                } catch (error) {
+                    logger.error('Error loading statement enrollment config in ServiceDetailsPage:', error);
+                }
+            };
+            loadStatementEnrollmentConfig();
+        }
     }, [service?.id]);
 
     // ملء البيانات الشخصية تلقائياً من بيانات المستخدم للخدمة الأول و VIP و دفع المصروفات
     useEffect(() => {
         if (!service || !student) return;
 
-        if (service.id === '1' || service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') {
+        if (service.id === '1' || service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11' || service.id === '12') {
             const initialData: Record<string, any> = {};
             const addressString = student.address && typeof student.address === 'object'
                 ? `${student.address.governorate || ''}, ${student.address.city || ''}, ${student.address.street || ''}, ${student.address.building || ''}, ${student.address.siteNumber || ''}${student.address.landmark ? `, ${student.address.landmark}` : ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',')
@@ -419,18 +438,20 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
 
             setServiceData(initialData);
 
-            // تعيين جميع الحقول القابلة للتعديل كغير قابلة للتعديل في البداية
+            // تعيين حالة الحقول: الحقول التي تحتوي على بيانات مسبقة تكون مغلقة وتحتاج الضغط على القلم، والحقول الفارغة تكون مفتوحة للكتابة مباشرة
             const editableState: Record<string, boolean> = {};
             service.fields.forEach(field => {
                 if (field.type === 'editable') {
-                    editableState[field.name] = false;
+                    const existingVal = initialData[field.name];
+                    const hasVal = existingVal !== undefined && existingVal !== null && String(existingVal).trim() !== '';
+                    editableState[field.name] = !hasVal;
                 }
-                // Also set track fields as non-editable initially
+                // Also set track fields as non-editable initially if student already has a track
                 if ((field.name === 'track' || field.name === 'track_category') && service.id !== '1') {
-                    editableState[field.name] = false;
+                    editableState[field.name] = !student.track;
                 }
             });
-            // For Service 1, also set student_track as non-editable
+            // For Service 1, also set student_track as non-editable if student has track
             if (service.id === '1' && student.track) {
                 editableState['student_track'] = false;
             }
@@ -504,6 +525,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             newMissingNames.push('receipt_upload');
         }
 
+        if (service.id === '12' && !disabledFields.includes('receipt_upload')) {
+            if (receiptFiles.length === 0) newMissingNames.push('receipt_upload');
+            if (idCardFiles.length === 0) newMissingNames.push('id_card_upload');
+        }
+
         if (service.id === '5' && selectedAssignments.length === 0) {
             newMissingNames.push('assignments');
         }
@@ -574,6 +600,17 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             });
             setIsSubmitting(false);
             return;
+        }
+
+        if (service.id === '12') {
+            if (receiptFiles.length === 0 || idCardFiles.length === 0) {
+                setSubmitMessage({
+                    type: 'error',
+                    text: 'يرجى رفع المستندات المطلوبة (Screenshot التحويل وصورة البطاقة) أولاً'
+                });
+                setIsSubmitting(false);
+                return;
+            }
         }
 
         // للخدمة 5، يجب اختيار تكليف واحد على الأقل
@@ -686,12 +723,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             if (service.id === '11') {
                 requestData.totalPrice = 300;
             }
+            if (service.id === '12') {
+                requestData.totalPrice = statementEnrollmentConfig?.paymentAmount || STATEMENT_ENROLLMENT_PRICE;
+            }
 
             const request: ServiceRequest = {
                 studentId: student.id || '',
                 serviceId: service.id,
                 data: requestData,
-                documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') ? receiptFiles : [],
+                documents: (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11' || service.id === '12') ? receiptFiles : [],
                 paymentMethod: selectedPaymentMethod,
                 status: 'pending',
                 createdAt: new Date().toISOString()
@@ -707,19 +747,99 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             setUploadProgress({ uploading: true, progress: 100 });
             await new Promise(resolve => setTimeout(resolve, 75));
 
-            // Special handling for Service 1 (Register Data)
-            if (service.id === '1') {
-                const college = serviceData['college'];
-                const department = serviceData['department'];
-                const grade = serviceData['grade'];
+            // Save & update personal data into existing student document across all services
+            if (student?.id) {
+                const personalUpdates: Partial<StudentData> = {};
 
-                const calculatedTrack = calculateTrack(college, department, grade);
+                const fullName = serviceData['full_name'] || serviceData['full_name_arabic'];
+                if (fullName && typeof fullName === 'string' && fullName.trim()) {
+                    personalUpdates.fullNameArabic = fullName.trim();
+                }
 
-                if (calculatedTrack && student.id) {
-                    const finalTrack = serviceData['track'] || calculatedTrack;
-                    const updatedStudentData = { college, department, grade, track: finalTrack };
-                    await updateStudentData(student.id, updatedStudentData);
-                    setStudent({ ...student, ...updatedStudentData });
+                const engName = serviceData['full_name_english'];
+                if (engName && typeof engName === 'string' && engName.trim()) {
+                    personalUpdates.vehicleNameEnglish = engName.trim();
+                }
+
+                const natId = serviceData['national_id'];
+                if (natId && typeof natId === 'string' && natId.trim()) {
+                    personalUpdates.nationalID = natId.trim();
+                }
+
+                const waNum = serviceData['whatsapp_number'] || serviceData['phone_whatsapp'] || serviceData['leader_whatsapp'];
+                if (waNum && typeof waNum === 'string' && waNum.trim()) {
+                    personalUpdates.whatsappNumber = waNum.trim();
+                }
+
+                const emailVal = serviceData['email'];
+                if (emailVal && typeof emailVal === 'string' && emailVal.trim()) {
+                    personalUpdates.email = emailVal.trim();
+                }
+
+                const addrVal = serviceData['address'] || serviceData['address_details'];
+                if (addrVal && typeof addrVal === 'string' && addrVal.trim()) {
+                    if (typeof student.address === 'object' && student.address !== null) {
+                        personalUpdates.address = {
+                            ...student.address,
+                            street: addrVal.trim()
+                        };
+                    } else {
+                        personalUpdates.address = addrVal.trim();
+                    }
+                }
+
+                const dipType = serviceData['diploma_type'];
+                if (dipType && typeof dipType === 'string' && dipType.trim() && !dipType.includes('اختر')) {
+                    personalUpdates.diplomaType = dipType.trim();
+                }
+
+                const dipYear = serviceData['diploma_year'];
+                if (dipYear && typeof dipYear === 'string' && dipYear.trim() && !dipYear.includes('اختر')) {
+                    personalUpdates.diplomaYear = dipYear.trim();
+                }
+
+                const spec = serviceData['educational_specialization'] || serviceData['course'];
+                if (spec && typeof spec === 'string' && spec.trim() && !spec.includes('اختر')) {
+                    personalUpdates.course = spec.trim();
+                }
+
+                const trk = serviceData['track'] || serviceData['track_category'];
+                if (trk && typeof trk === 'string' && trk.trim() && !trk.includes('اختر')) {
+                    personalUpdates.track = trk.trim();
+                }
+
+                const clg = serviceData['college'];
+                if (clg && typeof clg === 'string' && clg.trim() && !clg.includes('اختر')) {
+                    personalUpdates.college = clg.trim();
+                }
+
+                const dpt = serviceData['department'];
+                if (dpt && typeof dpt === 'string' && dpt.trim() && !dpt.includes('اختر')) {
+                    personalUpdates.department = dpt.trim();
+                }
+
+                const grd = serviceData['grade'];
+                if (grd && typeof grd === 'string' && grd.trim() && !grd.includes('اختر')) {
+                    personalUpdates.grade = grd.trim();
+                }
+
+                // If service 1, calculate track
+                if (service.id === '1') {
+                    const finalCollege = personalUpdates.college || student.college;
+                    const finalDept = personalUpdates.department || student.department;
+                    const finalGrade = personalUpdates.grade || student.grade;
+                    const calculatedTrack = calculateTrack(finalCollege, finalDept, finalGrade);
+                    if (calculatedTrack && !personalUpdates.track) {
+                        personalUpdates.track = calculatedTrack;
+                    }
+                }
+
+                // Ensure routeRegistrationCompleted is true so user is never blocked
+                personalUpdates.routeRegistrationCompleted = true;
+
+                if (Object.keys(personalUpdates).length > 0) {
+                    await updateStudentData(student.id, personalUpdates);
+                    setStudent({ ...student, ...personalUpdates });
                 }
             }
 
@@ -935,47 +1055,54 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                             {field.required && <span className="required">*</span>}
                                         </label>
 
-                                        {field.type === 'editable' && (
-                                            <div className="editable-field-container">
-                                                {!editableFields[field.name] ? (
-                                                    <div className="editable-field-display">
+                                        {field.type === 'editable' && (() => {
+                                            const val = serviceData[field.name];
+                                            const isFieldOpen = editableFields[field.name];
+                                            const hasExistingValue = val !== undefined && val !== null && String(val).trim() !== '';
+                                            const showReadOnlyWithPencil = !isFieldOpen && hasExistingValue;
+
+                                            return (
+                                                <div className="editable-field-container">
+                                                    {showReadOnlyWithPencil ? (
+                                                        <div className="editable-field-display">
+                                                            <input
+                                                                id={field.name}
+                                                                type="text"
+                                                                value={val || ''}
+                                                                readOnly
+                                                                className="readonly-input"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleFieldEdit(field.name)}
+                                                                className="edit-field-button"
+                                                                title="تعديل البيانات الحالية"
+                                                            >
+                                                                <Pencil size={16} />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
                                                         <input
                                                             id={field.name}
-                                                            type="text"
-                                                            value={serviceData[field.name] || ''}
-                                                            readOnly
-                                                            className="readonly-input"
+                                                            type={field.name === 'email' ? 'email' : (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id') ? 'tel' : 'text')}
+                                                            inputMode={(field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) ? 'numeric' : 'text'}
+                                                            maxLength={(field.name.includes('phone') || field.name.includes('whatsapp')) ? 11 : (field.name.includes('national_id') ? 14 : undefined)}
+                                                            value={val || ''}
+                                                            onChange={(e) => {
+                                                                let v = e.target.value;
+                                                                if (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) {
+                                                                    v = v.replace(/\D/g, '');
+                                                                }
+                                                                handleServiceDataChange(field.name, v);
+                                                            }}
+                                                            placeholder={field.name === 'email' ? 'example@gmail.com' : field.label}
+                                                            required={field.required}
+                                                            className={`editable-input ${(formAttempted && missingFieldNames.includes(field.name)) ? 'error-border' : ''}`}
                                                         />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleFieldEdit(field.name)}
-                                                            className="edit-field-button"
-                                                            title="تعديل"
-                                                        >
-                                                            <Pencil size={16} />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <input
-                                                        id={field.name}
-                                                        type={field.name === 'email' ? 'email' : (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id') ? 'tel' : 'text')}
-                                                        inputMode={(field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) ? 'numeric' : 'text'}
-                                                        maxLength={(field.name.includes('phone') || field.name.includes('whatsapp')) ? 11 : (field.name.includes('national_id') ? 14 : undefined)}
-                                                        value={serviceData[field.name] || ''}
-                                                        onChange={(e) => {
-                                                            let val = e.target.value;
-                                                            if (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) {
-                                                                val = val.replace(/\D/g, '');
-                                                            }
-                                                            handleServiceDataChange(field.name, val);
-                                                        }}
-                                                        placeholder={field.name === 'email' ? 'example@gmail.com' : field.label}
-                                                        required={field.required}
-                                                        className={`editable-input ${(formAttempted && missingFieldNames.includes(field.name)) ? 'error-border' : ''}`}
-                                                    />
-                                                )}
-                                            </div>
-                                        )}
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
 
                                         {field.type === 'text' && (
                                             <input
@@ -1792,6 +1919,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     </div>
                                 </div>
                             )}
+                            {service.id === '12' && (
+                                <div className="payment-amount">
+                                    <div className="selected-price">
+                                        <strong>
+                                            المبلغ المستحق للدفع: {statementEnrollmentConfig?.paymentAmount || STATEMENT_ENROLLMENT_PRICE} جنيه
+                                        </strong>
+                                    </div>
+                                </div>
+                            )}
                             {service.id === '6' && selectedCertificate && (
                                 <div className="payment-amount">
                                     <div className="selected-price">
@@ -1844,6 +1980,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             )}
                             <div className={`payment-methods ${(formAttempted && missingFieldNames.includes('paymentMethod')) ? 'error-border' : ''}`}>
                                 {service.paymentMethods && service.paymentMethods.length > 0 && service.paymentMethods.map(method => {
+                                    const fallbackPaymentNumber = method === 'Vodafone' ? '01050889591' : method === 'instaPay' ? 'raoufpk97@instapay' : '';
                                     const phoneNumber = getServicePaymentNumber(service.id, method, {
                                         '3': bookConfig?.paymentMethods,
                                         '4': feesConfig?.paymentMethods,
@@ -1851,8 +1988,12 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                         '6': certificatesConfig?.paymentMethods,
                                         '7': digitalTransformationConfig?.paymentMethods,
                                         '8': finalReviewConfig?.paymentMethods,
-                                        '9': graduationProjectConfig?.paymentMethods
-                                    });
+                                        '9': graduationProjectConfig?.paymentMethods,
+                                        '12': statementEnrollmentConfig?.paymentMethods || {
+                                            cashWallet: '01050889591',
+                                            instaPay: 'raoufpk97@instapay'
+                                        }
+                                    }) || fallbackPaymentNumber;
 
                                     const mainTitle = method === 'Vodafone' ? 'فودافون كاش' : method === 'instaPay' ? 'انستا باي' : method;
                                     const displayIdentifier = phoneNumber;
@@ -1946,6 +2087,21 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         </section>
                     )}
 
+                    {!disabledFields.includes('receipt_upload') && service.id === '12' && (
+                        <section className={`form-section section-receipt ${(formAttempted && (missingFieldNames.includes('receipt_upload') || missingFieldNames.includes('id_card_upload'))) ? 'error-border' : ''}`}>
+                            <h2>رفع الأوراق والمستندات المطلوبة</h2>
+                            <FileUpload
+                                onFilesSelected={(files) => {
+                                    setReceiptFiles(files);
+                                    setIdCardFiles(files);
+                                }}
+                                maxFileSize={5 * 1024 * 1024}
+                                acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF']}
+                                buttonLabel="رفع Screenshot التحويل + صورة البطاقة"
+                            />
+                        </section>
+                    )}
+
 
                     {submitMessage && (
                         <div className={`message ${submitMessage.type}`}>
@@ -1966,7 +2122,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         <button
                             type="submit"
                             className="submit-button"
-                            disabled={isSubmitting || ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') && receiptFiles.length === 0)}
+                            disabled={isSubmitting || ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') && receiptFiles.length === 0) || (service.id === '12' && (receiptFiles.length === 0 || idCardFiles.length === 0))}
                         >
                             {isSubmitting ? 'جاري التقديم...' : 'تقديم الطلب'}
                         </button>
