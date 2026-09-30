@@ -6,7 +6,7 @@ import { ServiceRequest, UploadedFile, ServiceSettings, StudentData } from '../t
 import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, getStatementEnrollmentConfig, updateStudentData, subscribeToServiceSettings, subscribeToAdminPreferences } from '../services/firebaseService';
 import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, StatementEnrollmentConfig } from '../types';
 import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils/trackUtils';
-import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus } from 'lucide-react';
+import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus, UploadCloud } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import { logger } from '../utils/logger';
 import { normalizeInstaPay } from '../utils/validation';
@@ -381,7 +381,18 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                 break;
                             case 'educational_specialization':
                                 if (student.course && student.course.trim() !== '') {
-                                    initialData[field.name] = student.course;
+                                    const cleanCourse = student.course.trim();
+                                    const mappedCourse = cleanCourse === 'عربي' ? 'لغة عربية'
+                                        : cleanCourse === 'إنجليزي' ? 'لغة إنجليزية'
+                                        : cleanCourse === 'دراسات' ? 'دراسات اجتماعية'
+                                        : cleanCourse;
+                                    const existsInOptions = field.options?.includes(mappedCourse);
+                                    if (existsInOptions) {
+                                        initialData[field.name] = mappedCourse;
+                                    } else {
+                                        initialData[field.name] = 'أخرى';
+                                        initialData[field.name + '_other'] = cleanCourse;
+                                    }
                                 } else {
                                     initialData[field.name] = 'اختر التخصص';
                                 }
@@ -517,8 +528,15 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         const missingFields = missingFieldsObjects.map(field => field.label);
         const newMissingNames = missingFieldsObjects.map(field => field.name);
 
+        const isElectronicPayment = selectedPaymentMethod && selectedPaymentMethod !== 'Cash';
+        const requiresReceipt = (service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11' || service.id === '12');
+
         if (service.paymentMethods.length > 0 && !selectedPaymentMethod) {
             newMissingNames.push('paymentMethod');
+        }
+
+        if ((isElectronicPayment || (requiresReceipt && !disabledFields.includes('receipt_upload'))) && !transferPhoneNumber?.trim()) {
+            newMissingNames.push('transferPhoneNumber');
         }
 
         if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && !disabledFields.includes('receipt_upload') && receiptFiles.length === 0) {
@@ -530,12 +548,16 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             if (idCardFiles.length === 0) newMissingNames.push('id_card_upload');
         }
 
-        if (service.id === '5' && selectedAssignments.length === 0) {
-            newMissingNames.push('assignments');
-        }
-
         if (service.id === '6' && !selectedCertificate) {
             newMissingNames.push('certificate');
+        }
+
+        // التحقق من خيار أخرى للتخصص التربوي
+        if (serviceData['educational_specialization'] === 'أخرى' || serviceData['educational_specialization'] === 'Other') {
+            const otherSpec = (serviceData['educational_specialization_other'] || '').trim();
+            if (!otherSpec) {
+                newMissingNames.push('educational_specialization_other');
+            }
         }
 
         setMissingFieldNames(newMissingNames);
@@ -583,6 +605,18 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             return;
         }
 
+        if (serviceData['educational_specialization'] === 'أخرى' || serviceData['educational_specialization'] === 'Other') {
+            const otherSpec = (serviceData['educational_specialization_other'] || '').trim();
+            if (!otherSpec) {
+                setSubmitMessage({
+                    type: 'error',
+                    text: 'يرجى كتابة تخصصك التربوي في خانة "اذكر التخصص"'
+                });
+                setIsSubmitting(false);
+                return;
+            }
+        }
+
         if (service.paymentMethods.length > 0 && !selectedPaymentMethod) {
             setSubmitMessage({
                 type: 'error',
@@ -592,8 +626,18 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             return;
         }
 
+        // التحقق الإجباري من الرقم المحول منه
+        if ((isElectronicPayment || (requiresReceipt && !disabledFields.includes('receipt_upload'))) && !transferPhoneNumber?.trim()) {
+            setSubmitMessage({
+                type: 'error',
+                text: 'يرجى إدخال الرقم الذي قمت بالتحويل منه (إجباري لمطابقة الحوالة مع الإدارة)'
+            });
+            setIsSubmitting(false);
+            return;
+        }
+
         // للخدمة VIP وخدمة الكتب وخدمة التكليفات والشهادات ومشروع التخرج واستخراج المستندات، يجب رفع اسكرين تحويل المبلغ
-        if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && receiptFiles.length === 0) {
+        if ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9' || service.id === '10' || service.id === '11') && !disabledFields.includes('receipt_upload') && receiptFiles.length === 0) {
             setSubmitMessage({
                 type: 'error',
                 text: 'يرجى تحميل اسكرين تحويل المبلغ أولاً'
@@ -611,16 +655,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                 setIsSubmitting(false);
                 return;
             }
-        }
-
-        // للخدمة 5، يجب اختيار تكليف واحد على الأقل
-        if (service.id === '5' && selectedAssignments.length === 0) {
-            setSubmitMessage({
-                type: 'error',
-                text: 'يرجى اختيار تكليف واحد على الأقل'
-            });
-            setIsSubmitting(false);
-            return;
         }
 
         // للخدمة 6، يجب اختيار شهادة
@@ -658,8 +692,16 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             // Fix TypeScript inferred type by typing requestData as Record<string, any>
             const requestData: Record<string, any> = {
                 ...serviceData,
-                ...(transferPhoneNumber ? { transfer_phone_number: transferPhoneNumber } : {})
+                ...(transferPhoneNumber ? { transfer_phone_number: transferPhoneNumber.trim() } : {})
             };
+
+            // معالجة اختيار أخرى للتخصص التربوي ليكون التخصص المرسل هو الاسم الحقيقي
+            if (serviceData['educational_specialization'] === 'أخرى' || serviceData['educational_specialization'] === 'Other') {
+                const customSpec = (serviceData['educational_specialization_other'] || '').trim();
+                if (customSpec) {
+                    requestData['educational_specialization'] = customSpec;
+                }
+            }
 
             // Dynamic lists (مثل أسماء الطلاب في مشروع التخرج): أضف أي قيمة مكتوبة في خانة الإضافة حتى لو لم يتم الضغط على زر +
             service.fields
@@ -798,9 +840,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                     personalUpdates.diplomaYear = dipYear.trim();
                 }
 
-                const spec = serviceData['educational_specialization'] || serviceData['course'];
-                if (spec && typeof spec === 'string' && spec.trim() && !spec.includes('اختر')) {
-                    personalUpdates.course = spec.trim();
+                const spec = (serviceData['educational_specialization'] === 'أخرى' || serviceData['educational_specialization'] === 'Other')
+                    ? (serviceData['educational_specialization_other'] || '').trim()
+                    : (serviceData['educational_specialization'] || serviceData['course'] || '').trim();
+                if (spec && !spec.includes('اختر')) {
+                    personalUpdates.course = spec;
                 }
 
                 const trk = serviceData['track'] || serviceData['track_category'];
@@ -2034,19 +2078,50 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             </div>
 
                             {selectedPaymentMethod && selectedPaymentMethod !== 'Cash' && (
-                                <div style={{ marginTop: '20px', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#1e293b', fontSize: '15px' }}>
+                                <div style={{
+                                    marginTop: '20px',
+                                    padding: '16px',
+                                    background: (formAttempted && missingFieldNames.includes('transferPhoneNumber')) ? '#fff1f2' : '#f8fafc',
+                                    borderRadius: '12px',
+                                    border: (formAttempted && missingFieldNames.includes('transferPhoneNumber')) ? '2px solid #ef4444' : '1px solid #e2e8f0',
+                                    transition: 'all 0.2s ease'
+                                }}>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: 'bold', color: (formAttempted && missingFieldNames.includes('transferPhoneNumber')) ? '#991b1b' : '#1e293b', fontSize: '15px' }}>
                                         الرقم الذي قمت بالتحويل منه (سيظهر للإدارة للمطابقة)
+                                        <span style={{ color: '#ef4444', marginRight: '6px', fontWeight: 'bold' }}>* (مطلوب إجباري)</span>
                                     </label>
+                                    <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '10px' }}>
+                                        يرجى كتابة رقم الهاتف أو المحفظة التي قمت بالتحويل منها حتى تتمكن الإدارة من تأكيد طلبك ومطابقته فوراً.
+                                    </p>
                                     <input
                                         type="text"
-                                        placeholder={`اكتب رقمك المحول منه عبر ${selectedPaymentMethod} هنا...`}
+                                        placeholder={`اكتب رقمك المحول منه عبر ${selectedPaymentMethod === 'Vodafone' ? 'فودافون كاش' : selectedPaymentMethod === 'instaPay' ? 'انستا باي' : selectedPaymentMethod} هنا...`}
                                         value={transferPhoneNumber}
-                                        onChange={(e) => setTransferPhoneNumber(e.target.value)}
-                                        style={{ width: '100%', padding: '12px 16px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '15px', outline: 'none', transition: 'border-color 0.2s' }}
-                                        onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
-                                        onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
+                                        onChange={(e) => {
+                                            setTransferPhoneNumber(e.target.value);
+                                            if (missingFieldNames.includes('transferPhoneNumber')) {
+                                                setMissingFieldNames(prev => prev.filter(n => n !== 'transferPhoneNumber'));
+                                            }
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 16px',
+                                            border: (formAttempted && missingFieldNames.includes('transferPhoneNumber')) ? '2px solid #ef4444' : '1px solid #cbd5e1',
+                                            borderRadius: '8px',
+                                            fontSize: '15px',
+                                            outline: 'none',
+                                            background: '#ffffff',
+                                            transition: 'border-color 0.2s'
+                                        }}
+                                        onFocus={(e) => e.target.style.borderColor = (formAttempted && missingFieldNames.includes('transferPhoneNumber')) ? '#ef4444' : '#3b82f6'}
+                                        onBlur={(e) => e.target.style.borderColor = (formAttempted && missingFieldNames.includes('transferPhoneNumber')) ? '#ef4444' : '#cbd5e1'}
+                                        required
                                     />
+                                    {(formAttempted && missingFieldNames.includes('transferPhoneNumber')) && (
+                                        <span style={{ color: '#ef4444', fontSize: '13px', fontWeight: 'bold', display: 'block', marginTop: '6px' }}>
+                                            ⚠️ يرجى كتابة الرقم الذي قمت بالتحويل منه أولاً للمطابقة مع الإيصال
+                                        </span>
+                                    )}
                                 </div>
                             )}
                         </section>
@@ -2056,33 +2131,17 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         <section className={`form-section section-receipt ${(formAttempted && missingFieldNames.includes('receipt_upload')) ? 'error-border' : ''}`}>
                             <h2>{service.id === '10' ? 'رفع الأوراق والمستندات المطلوبة' : 'حمل اسكرين تحويل المبلغ'}</h2>
 
-                            {service.id === '10' && (
-                                <div style={{ marginBottom: '20px', padding: '18px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius: '12px', border: '1px solid #f59e0b' }}>
-                                    <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <AlertCircle size={18} />
-                                        لا بد من رفع المستندات التالية:
-                                    </h4>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
-                                        {['شهادة ميلاد', 'صورة شخصية', 'شهادة التخرج', 'شهادة التحول الرقمي', 'صورة تحويل المبلغ'].map((docName, idx) => (
-                                            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'white', borderRadius: '8px', border: '1px solid #fbbf24', fontSize: '13px', fontWeight: '600', color: '#78350f' }}>
-                                                <FileText size={16} style={{ color: '#d97706', flexShrink: 0 }} />
-                                                {docName}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
                             <p className="receipt-note">
                                 {service.id === '10'
                                     ? 'يرجى رفع صور المستندات المطلوبة واسكرين تحويل المبلغ (يمكنك اختيار أكثر من ملف)'
                                     : 'يرجى تحميل اسكرين تحويل المبلغ قبل تقديم الطلب'}
                             </p>
                             <FileUpload
+                                key={serviceId}
                                 onFilesSelected={setReceiptFiles}
                                 maxFileSize={5 * 1024 * 1024}
                                 acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF']}
-                                buttonLabel={service.id === '10' ? 'رفع الأوراق والمستندات (الميلاد - المؤهل - التحول - اسكرين التحويل)' : 'حمل اسكرين تحويل المبلغ'}
+                                buttonLabel={service.id === '10' ? 'رفع الأوراق والمستندات (شهادة ميلاد - صورة شخصية - شهادة التخرج - شهادة التحول الرقمي - صورة تحويل المبلغ)' : 'حمل اسكرين تحويل المبلغ'}
                             />
                         </section>
                     )}
@@ -2091,6 +2150,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         <section className={`form-section section-receipt ${(formAttempted && (missingFieldNames.includes('receipt_upload') || missingFieldNames.includes('id_card_upload'))) ? 'error-border' : ''}`}>
                             <h2>رفع الأوراق والمستندات المطلوبة</h2>
                             <FileUpload
+                                key={serviceId}
                                 onFilesSelected={(files) => {
                                     setReceiptFiles(files);
                                     setIdCardFiles(files);
@@ -2122,7 +2182,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                         <button
                             type="submit"
                             className="submit-button"
-                            disabled={isSubmitting || ((service.id === '2' || service.id === '3' || service.id === '4' || service.id === '5' || service.id === '6' || service.id === '7' || service.id === '8' || service.id === '9') && receiptFiles.length === 0) || (service.id === '12' && (receiptFiles.length === 0 || idCardFiles.length === 0))}
+                            disabled={isSubmitting}
                         >
                             {isSubmitting ? 'جاري التقديم...' : 'تقديم الطلب'}
                         </button>
@@ -2131,7 +2191,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             </form >
 
             {((isSubmitting || uploadProgress.uploading) || (submitMessage?.type === 'success')) && createPortal(
-                <div className="loading-overlay-root">
+                <div className="loading-overlay-root" dir="rtl">
                     <div className="loading-backdrop"></div>
                     <div className="floating-orbs-container">
                         <div className="floating-orb orb-1"></div>
@@ -2141,69 +2201,67 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                     <div className="loading-modal-wrapper">
                         <div className={`loading-modal ${submitMessage?.type === 'success' ? 'success-state' : ''}`}>
                             {submitMessage?.type === 'success' ? (
-                                <div key="success-view" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                    <div className="success-animation-container">
-                                        <CheckCircle className="success-icon-animated" size={80} />
+                                <div key="success-view" className="modal-state-container success-view">
+                                    <div className="success-icon-badge">
+                                        <div className="success-glow-ring"></div>
+                                        <CheckCircle className="success-icon-animated" size={46} />
                                     </div>
-                                    <h3 className="loading-title">
-                                        <span>تم تقديم طلبك بنجاح!</span>
+                                    <h3 className="loading-title success-title">
+                                        تم تقديم طلبك بنجاح!
                                     </h3>
                                     <p className="loading-subtitle">
-                                        <span>تم رفع البيانات وحفظ طلبك بنجاح وجاري مراجعته الآن.</span>
+                                        تم رفع المستندات وحفظ طلبك في النظام بنجاح، وجاري مراجعته وتأكيده من الإدارة فوراً.
                                     </p>
+
                                     <button
                                         onClick={onSubmitSuccess}
-                                        style={{
-                                            marginTop: '24px',
-                                            padding: '12px 40px',
-                                            background: '#10b981',
-                                            color: '#ffffff',
-                                            border: 'none',
-                                            borderRadius: '10px',
-                                            fontSize: '15px',
-                                            fontWeight: 'bold',
-                                            cursor: 'pointer',
-                                            boxShadow: '0 4px 12px rgba(16,185,129,0.35)',
-                                            transition: 'background 0.2s, transform 0.1s',
-                                            width: '100%',
-                                            maxWidth: '220px'
-                                        }}
-                                        onMouseEnter={e => { e.currentTarget.style.background = '#059669'; e.currentTarget.style.transform = 'scale(1.03)'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.background = '#10b981'; e.currentTarget.style.transform = 'scale(1)'; }}
+                                        className="success-confirm-btn"
                                     >
-                                        موافق
+                                        <span>متابعة إلى لوحة التحكم</span>
+                                        <ArrowRight size={18} />
                                     </button>
                                 </div>
                             ) : (
-                                <div key="loading-view" style={{ width: '100%' }}>
-                                    <div className="loading-spinner-container">
-                                        <Loader2 className="spinning-loader-large" size={60} />
-                                    </div>
-                                    <h3 className="loading-title">
-                                        <span>
-                                            {uploadProgress.progress > 0
-                                                ? (receiptFiles.length > 0 ? 'جاري رفع اسكرين تحويل المبلغ' : 'جاري معالجة الطلب')
-                                                : 'جاري التحضير'}
-                                        </span>
-                                    </h3>
-                                    <p className="loading-subtitle">
-                                        <span>نحن نقوم بتأمين طلبك ومعالجة البيانات، يرجى عدم إغلاق الصفحة.</span>
-                                    </p>
-                                    <div className="progress-bar-wrapper">
-                                        <div className="progress-bar-track">
-                                            <div
-                                                className="progress-bar-fill"
-                                                style={{ width: `${uploadProgress.progress || 5}%` }}
-                                            ></div>
+                                <div key="loading-view" className="modal-state-container loading-view">
+                                    <div className="premium-loader-wrapper">
+                                        <div className="loader-glow-aura"></div>
+                                        <div className="dual-ring-spinner">
+                                            <div className="spinner-ring-outer"></div>
+                                            <div className="spinner-ring-inner"></div>
+                                            <div className="spinner-center-icon">
+                                                <UploadCloud size={26} className="upload-pulse-icon" />
+                                            </div>
                                         </div>
-                                        <div className="progress-stats">
-                                            <span className="progress-percentage-text">
-                                                <span>
-                                                    {uploadProgress.progress > 0 ? `${uploadProgress.progress}%` : 'جاري الاتصال...'}
-                                                </span>
+                                    </div>
+
+                                    <h3 className="loading-title">
+                                        {uploadProgress.progress > 0
+                                            ? (receiptFiles.length > 0 ? 'جاري رفع المستندات وتأكيد التحويل' : 'جاري معالجة وتأمين الطلب')
+                                            : 'جاري تهيئة الاتصال الآمن'}
+                                    </h3>
+
+
+                                    <div className="modern-progress-box">
+                                        <div className="progress-info-row">
+                                            <span className="progress-status-label">
+                                                <span className="live-dot"></span>
+                                                {uploadProgress.progress >= 95 ? 'جاري اللمسات الأخيرة...' : uploadProgress.progress > 0 ? 'جاري الرفع السحابي...' : 'بدء الاتصال...'}
+                                            </span>
+                                            <span className="progress-number-badge">
+                                                {uploadProgress.progress > 0 ? `${uploadProgress.progress}%` : '5%'}
                                             </span>
                                         </div>
+                                        <div className="progress-track-sleek">
+                                            <div
+                                                className="progress-fill-sleek"
+                                                style={{ width: `${Math.max(uploadProgress.progress || 5, 8)}%` }}
+                                            >
+                                                <div className="progress-shimmer"></div>
+                                            </div>
+                                        </div>
                                     </div>
+
+
                                 </div>
                             )}
                         </div>

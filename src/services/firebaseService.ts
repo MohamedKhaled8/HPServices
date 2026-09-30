@@ -348,6 +348,30 @@ export const loginOrRegisterUser = async (
 
     // If account not found or invalid-credential (which Firebase throws if user doesn't exist or wrong pw with enumeration protection):
     if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+      // --- FIX: Check Firestore first to distinguish "wrong password" from "new user" ---
+      // Firebase Email Enumeration Protection means auth/invalid-credential is thrown for BOTH
+      // "user doesn't exist" and "wrong password" cases. We check Firestore first.
+      try {
+        const studentsRef = collection(db, 'students');
+        const emailLower = email.toLowerCase();
+        let q = query(studentsRef, where('email', '==', emailLower));
+        let snap = await getDocs(q);
+        if (snap.empty && emailLower !== email) {
+          q = query(studentsRef, where('email', '==', email));
+          snap = await getDocs(q);
+        }
+        if (!snap.empty) {
+          // Email already registered in Firestore → wrong password was entered
+          throw new Error('كلمة المرور غير صحيحة');
+        }
+      } catch (firestoreCheckError: any) {
+        if (firestoreCheckError.message === 'كلمة المرور غير صحيحة') {
+          throw firestoreCheckError;
+        }
+        // Firestore check failed for other reason — fall through to attempt creation
+        logger.error('Firestore email pre-check failed:', firestoreCheckError);
+      }
+
       try {
         // Attempt automatic account creation with the same Email + Password
         const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);

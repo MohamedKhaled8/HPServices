@@ -170,7 +170,7 @@ export const SERVICES: Service[] = [
     color: '#EC4899',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
-      { name: 'educational_specialization', label: 'تخصصك التربوي', type: 'select', required: true, options: ['اختر التخصص', 'عربي', 'رياضيات', 'دراسات', 'علوم', 'إنجليزي', 'أخرى'], hasOther: true },
+      { name: 'educational_specialization', label: 'تخصصك التربوي', type: 'select', required: true, options: ['اختر التخصص', 'لغة عربية', 'لغة إنجليزية', 'رياضيات', 'علوم', 'دراسات اجتماعية', 'حاسب آلي وتكنولوجيا تعليم', 'علم نفس واجتماع', 'فلسفة ومنطق', 'تاريخ وجغرافيا', 'لغة فرنسية', 'تربية فنية', 'تربية موسيقية', 'تربية رياضية', 'مواد تجارية', 'زراعي / صناعي', 'تعليم ابتدائي / طفولة', 'أخرى'], hasOther: true },
       { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] },
       { name: 'whatsapp_number', label: 'رقم واتساب باللغة الإنجليزية', type: 'editable', required: true }
     ],
