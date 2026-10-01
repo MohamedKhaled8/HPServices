@@ -1,0 +1,274 @@
+/* Overlay / Backdrop */
+.phone-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  direction: rtl;
+  animation: promptFadeIn 0.25s ease-out forwards;
+}
+
+@keyframes promptFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Modal Card - Compact, Elegant & Modern */
+.phone-prompt-card {
+  position: relative;
+  background: #ffffff;
+  width: 100%;
+  max-width: 380px;
+  border-radius: 20px;
+  padding: 24px 22px 20px;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  text-align: center;
+  overflow: hidden;
+  animation: promptSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes promptSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Top accent gradient line */
+.phone-prompt-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #10b981, #06b6d4, #10b981);
+}
+
+/* Compact Icon Badge */
+.phone-prompt-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 8px 16px -4px rgba(16, 185, 129, 0.35);
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+/* Typography */
+.phone-prompt-title {
+  font-size: 1.18rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 6px;
+  letter-spacing: -0.3px;
+}
+
+.phone-prompt-desc {
+  font-size: 0.88rem;
+  color: #64748b;
+  margin: 0 0 18px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+/* Form */
+.phone-prompt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.phone-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 2px 8px;
+  transition: all 0.2s ease;
+}
+
+.phone-input-wrapper:focus-within {
+  border-color: #10b981;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.phone-input-wrapper.error-state {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.phone-country-code {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #475569;
+  user-select: none;
+  border-left: 1px solid #e2e8f0;
+  direction: ltr;
+}
+
+.phone-flag {
+  font-size: 1rem;
+}
+
+.phone-input-field {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  padding: 10px 12px;
+  letter-spacing: 1.5px;
+  direction: ltr;
+  text-align: left;
+}
+
+.phone-input-field::placeholder {
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+/* Error message */
+.phone-prompt-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: right;
+  line-height: 1.35;
+  animation: promptFadeIn 0.2s ease;
+}
+
+/* Success state */
+.phone-prompt-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  border-radius: 14px;
+  padding: 16px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  animation: promptFadeIn 0.25s ease;
+}
+
+/* Action Buttons */
+.phone-prompt-actions {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+.phone-prompt-btn-save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 14px;
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 16px -4px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.phone-prompt-btn-save:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px -4px rgba(16, 185, 129, 0.4);
+}
+
+.phone-prompt-btn-save:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.phone-prompt-btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Spinner */
+.phone-prompt-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spinnerRotate 0.7s linear infinite;
+}
+
+@keyframes spinnerRotate {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 420px) {
+  .phone-prompt-card {
+    padding: 20px 16px 16px;
+    border-radius: 18px;
+  }
+
+  .phone-prompt-badge {
+    width: 46px;
+    height: 46px;
+    margin-bottom: 10px;
+  }
+
+  .phone-prompt-title {
+    font-size: 1.08rem;
+  }
+
+  .phone-prompt-desc {
+    font-size: 0.82rem;
+    margin-bottom: 14px;
+  }
+
+  .phone-input-field {
+    font-size: 1rem;
+    padding: 8px 10px;
+  }
+
+  .phone-prompt-btn-save {
+    padding: 11px 16px;
+    font-size: 0.92rem;
+  }
+}

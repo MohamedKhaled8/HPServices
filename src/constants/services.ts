@@ -136,7 +136,7 @@ export const SERVICES: Service[] = [
     fields: [
       { name: 'student_names', label: 'أسماء اصحاب النسخ المطبوعة', type: 'dynamic_list', required: true },
       { name: 'number_of_copies', label: 'عدد النسخ المطلوبة (من 1 إلى 10)', type: 'number', required: true },
-      { name: 'phone_whatsapp', label: 'رقم هاتف للتواصل والشحن (واتساب وفون)', type: 'text', required: true },
+      { name: 'phone_whatsapp', label: 'رقم هاتف للتواصل والشحن (واتساب وفون)', type: 'editable', required: true },
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: DIPLOMA_TYPES },
       { name: 'address_details', label: 'العنوان بالتفصيل (المحافظة / المدينة / اسم الشارع / علامة مميزة / رقم العقار)', type: 'textarea', required: true }
     ],
@@ -153,6 +153,7 @@ export const SERVICES: Service[] = [
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true },
+      { name: 'whatsapp_number', label: 'رقم واتساب للتواصل', type: 'editable', required: true },
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: ['اختر نوع الدبلومة', ...DIPLOMA_TYPES] },
       { name: 'track_category', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث', 'أخرى'] },
       { name: 'track_other', label: 'اذكر المسار', type: 'text', required: false },
@@ -243,7 +244,7 @@ export const SERVICES: Service[] = [
     ],
     fields: [
       { name: 'student_names', label: 'اسماء الطلاب المشتركين في المشروع', type: 'dynamic_list', required: true },
-      { name: 'leader_whatsapp', label: 'رقم واتس اب ليدر المجموعة المسؤول عن المشروع', type: 'text', required: true },
+      { name: 'leader_whatsapp', label: 'رقم واتس اب ليدر المجموعة المسؤول عن المشروع', type: 'editable', required: true },
       { name: 'track', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث'] },
       { name: 'project_title', label: 'عنوان المشروع كامل كما تم كتابته في الاستمارة', type: 'textarea', required: true },
       { name: 'group_link', label: 'لينك الجروب الخاص بالمجموعة', type: 'text', required: true }
@@ -300,6 +301,7 @@ export const SERVICES: Service[] = [
     color: '#0284C7',
     fields: [
       { name: 'full_name_arabic', label: 'الاسم رباعي', type: 'editable', required: true },
+      { name: 'whatsapp_number', label: 'رقم هاتف للتواصل (واتساب)', type: 'editable', required: true },
       { name: 'destination', label: 'المكان الموجه له إثبات القيد أو الإفادة', type: 'text', required: true },
       { name: 'request_type', label: 'اختيار نوع الطلب', type: 'select', required: true, options: ['اختر نوع الطلب', 'إثبات قيد', 'إفادة'] }
     ],

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
 import { SERVICES, STATEMENT_ENROLLMENT_PRICE } from '../constants/services';
 import { ServiceRequest, UploadedFile, ServiceSettings, StudentData } from '../types';
-import { getBookServiceConfig, getFeesServiceConfig, getAssignmentsServiceConfig, getCertificatesServiceConfig, getDigitalTransformationConfig, getFinalReviewConfig, getGraduationProjectConfig, getStatementEnrollmentConfig, updateStudentData, subscribeToServiceSettings, subscribeToAdminPreferences } from '../services/firebaseService';
+import { updateStudentData, subscribeToServiceSettings, subscribeToAdminPreferences, subscribeToBookServiceConfig, subscribeToFeesServiceConfig, subscribeToAssignmentsServiceConfig, subscribeToCertificatesServiceConfig, subscribeToDigitalTransformationConfig, subscribeToFinalReviewConfig, subscribeToGraduationProjectConfig, subscribeToStatementEnrollmentConfig } from '../services/firebaseService';
 import { BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, CertificateItem, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, StatementEnrollmentConfig } from '../types';
 import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils/trackUtils';
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus, UploadCloud } from 'lucide-react';
@@ -121,207 +121,125 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         };
     }, [uploadProgress.uploading]);
 
-    // Load book config for service 3
+    // Load service configs with realtime Firestore subscriptions
     useEffect(() => {
         if (!service?.id) return;
+
         if (service.id === '3') {
-            const loadBookConfig = async () => {
-                try {
-                    const config = await getBookServiceConfig();
-                    if (config) {
-                        if (config.paymentMethods?.instaPay) {
-                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-                        }
-                        setBookConfig(config);
-                    } else {
-                        // Default config
-                        setBookConfig({
-                            serviceName: 'شحن الكتب الدراسية',
-                            prices: {
-                                '1': 1750,
-                                '2': 3440,
-                                '3': 5160,
-                                '4': 6820,
-                                '5': 8450,
-                                '6': 10200,
-                                '7': 11885,
-                                '8': 13580,
-                                '9': 15210,
-                                '10': 16900
-                            },
-                            paymentMethods: {
-                                instaPay: 'raoufpk97@instapay',
-                                cashWallet: '01050889591'
-                            }
-                        });
+            const unsub = subscribeToBookServiceConfig((config) => {
+                if (config) {
+                    if (config.paymentMethods?.instaPay) {
+                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
                     }
-                } catch (error) {
-                    logger.error('Error loading book config:', error);
+                    setBookConfig(config);
+                } else {
+                    setBookConfig({
+                        serviceName: 'شحن الكتب الدراسية',
+                        prices: { '1': 1750, '2': 3440, '3': 5160, '4': 6820, '5': 8450, '6': 10200, '7': 11885, '8': 13580, '9': 15210, '10': 16900 },
+                        paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+                    });
                 }
-            };
-            loadBookConfig();
+            });
+            return unsub;
         }
 
-        // Load fees config for service 4
         if (service.id === '4') {
-            const loadFeesConfig = async () => {
-                try {
-                    const config = await getFeesServiceConfig();
-                    if (config) {
-                        if (!config.paymentMethods) {
-                            config.paymentMethods = {
-                                instaPay: 'raoufpk97@instapay',
-                                cashWallet: '01050889591'
-                            };
-                        } else if (config.paymentMethods.instaPay) {
-                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-                        }
-                        setFeesConfig(config);
-                    } else {
-                        // Default config
-                        setFeesConfig({
-                            prices: {},
-                            paymentMethods: {
-                                instaPay: 'raoufpk97@instapay',
-                                cashWallet: '01050889591'
-                            }
-                        });
+            const unsub = subscribeToFeesServiceConfig((config) => {
+                if (config) {
+                    if (!config.paymentMethods) {
+                        config = { ...config, paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' } };
+                    } else if (config.paymentMethods.instaPay) {
+                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
                     }
-                } catch (error) {
-                    logger.error('Error loading fees config:', error);
+                    setFeesConfig(config);
+                } else {
+                    setFeesConfig({ prices: {}, paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' } });
                 }
-            };
-            loadFeesConfig();
+            });
+            return unsub;
         }
+
         if (service.id === '5') {
-            const loadAssignmentsConfig = async () => {
-                try {
-                    const config = await getAssignmentsServiceConfig();
-                    if (config) {
-                        if (config.paymentMethods?.instaPay) {
-                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-                        }
-                        setAssignmentsConfig(config);
+            const unsub = subscribeToAssignmentsServiceConfig((config) => {
+                if (config) {
+                    if (config.paymentMethods?.instaPay) {
+                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
                     }
-                } catch (error) {
-                    logger.error('Error loading assignments config:', error);
+                    setAssignmentsConfig(config);
                 }
-            };
-            loadAssignmentsConfig();
+            });
+            return unsub;
         }
+
         if (service.id === '6') {
-            const loadCertificatesConfig = async () => {
-                try {
-                    logger.log('Loading certificates config in ServiceDetailsPage...');
-                    const config = await getCertificatesServiceConfig();
-                    if (config) {
-                        if (config.paymentMethods?.instaPay) {
-                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-                        }
-                        logger.log('Setting certificates config in ServiceDetailsPage:', config.certificates?.length || 0, 'certificates');
-                        logger.log('Certificates details:', config.certificates?.map(c => ({
-                            id: c.id,
-                            name: c.name,
-                            hasImage: !!c.imageUrl,
-                            imageUrlLength: c.imageUrl?.length || 0
-                        })));
-                        setCertificatesConfig(config);
-                    } else {
-                        logger.log('No certificates config found in ServiceDetailsPage');
-                        setCertificatesConfig(null);
+            const unsub = subscribeToCertificatesServiceConfig((config) => {
+                if (config) {
+                    if (config.paymentMethods?.instaPay) {
+                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
                     }
-                } catch (error) {
-                    logger.error('Error loading certificates config in ServiceDetailsPage:', error);
+                    logger.log('Setting certificates config in ServiceDetailsPage:', config.certificates?.length || 0, 'certificates');
+                    setCertificatesConfig(config);
+                } else {
+                    logger.log('No certificates config found in ServiceDetailsPage');
                     setCertificatesConfig(null);
                 }
-            };
-            loadCertificatesConfig();
+            });
+            return unsub;
         }
 
         if (service.id === '7') {
-            const loadDigitalTransformationConfig = async () => {
-                try {
-                    logger.log('Loading digital transformation config in ServiceDetailsPage...');
-                    const config = await getDigitalTransformationConfig();
-                    if (config) {
-                        if (config.paymentMethods?.instaPay) {
-                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-                        }
-                        logger.log('Setting digital transformation config in ServiceDetailsPage:', config.transformationTypes?.length || 0, 'types');
-                        setDigitalTransformationConfig(config);
-                    } else {
-                        logger.log('No digital transformation config found in ServiceDetailsPage');
-                        setDigitalTransformationConfig(null);
+            const unsub = subscribeToDigitalTransformationConfig((config) => {
+                if (config) {
+                    if (config.paymentMethods?.instaPay) {
+                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
                     }
-                } catch (error) {
-                    logger.error('Error loading digital transformation config in ServiceDetailsPage:', error);
+                    logger.log('Setting digital transformation config in ServiceDetailsPage:', config.transformationTypes?.length || 0, 'types');
+                    setDigitalTransformationConfig(config);
+                } else {
                     setDigitalTransformationConfig(null);
                 }
-            };
-            loadDigitalTransformationConfig();
+            });
+            return unsub;
         }
 
         if (service.id === '8') {
-            const loadFinalReviewConfig = async () => {
-                try {
-                    logger.log('Loading final review config in ServiceDetailsPage...');
-                    const config = await getFinalReviewConfig();
-                    if (config) {
-                        if (config.paymentMethods?.instaPay) {
-                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-                        }
-                        logger.log('Setting final review config in ServiceDetailsPage:', config);
-                        setFinalReviewConfig(config);
-                    } else {
-                        logger.log('No final review config found in ServiceDetailsPage');
-                        setFinalReviewConfig(null);
+            const unsub = subscribeToFinalReviewConfig((config) => {
+                if (config) {
+                    if (config.paymentMethods?.instaPay) {
+                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
                     }
-                } catch (error) {
-                    logger.error('Error loading final review config in ServiceDetailsPage:', error);
+                    setFinalReviewConfig(config);
+                } else {
                     setFinalReviewConfig(null);
                 }
-            };
-            loadFinalReviewConfig();
+            });
+            return unsub;
         }
 
         if (service.id === '9') {
-            const loadGraduationProjectConfig = async () => {
-                try {
-                    logger.log('Loading graduation project config in ServiceDetailsPage...');
-                    const config = await getGraduationProjectConfig();
-                    if (config) {
-                        if (config.paymentMethods?.instaPay) {
-                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-                        }
-                        logger.log('Setting graduation project config in ServiceDetailsPage:', config);
-                        setGraduationProjectConfig(config);
-                    } else {
-                        logger.log('No graduation project config found in ServiceDetailsPage');
-                        setGraduationProjectConfig(null);
+            const unsub = subscribeToGraduationProjectConfig((config) => {
+                if (config) {
+                    if (config.paymentMethods?.instaPay) {
+                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
                     }
-                } catch (error) {
-                    logger.error('Error loading graduation project config in ServiceDetailsPage:', error);
+                    setGraduationProjectConfig(config);
+                } else {
                     setGraduationProjectConfig(null);
                 }
-            };
-            loadGraduationProjectConfig();
+            });
+            return unsub;
         }
 
         if (service.id === '12') {
-            const loadStatementEnrollmentConfig = async () => {
-                try {
-                    const config = await getStatementEnrollmentConfig();
-                    if (config) {
-                        if (config.paymentMethods?.instaPay) {
-                            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-                        }
-                        setStatementEnrollmentConfig(config);
+            const unsub = subscribeToStatementEnrollmentConfig((config) => {
+                if (config) {
+                    if (config.paymentMethods?.instaPay) {
+                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
                     }
-                } catch (error) {
-                    logger.error('Error loading statement enrollment config in ServiceDetailsPage:', error);
+                    setStatementEnrollmentConfig(config);
                 }
-            };
-            loadStatementEnrollmentConfig();
+            });
+            return unsub;
         }
     }, [service?.id]);
 
@@ -356,6 +274,8 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             initialData[field.name] = student.email || '';
                             break;
                         case 'whatsapp_number':
+                        case 'phone_whatsapp':
+                        case 'leader_whatsapp':
                             initialData[field.name] = student.whatsappNumber || '';
                             break;
                     }

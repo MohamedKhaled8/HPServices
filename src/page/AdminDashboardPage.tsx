@@ -8,21 +8,21 @@ import {
   updateServiceRequestStatus,
   updateServiceRequestData,
   deleteServiceRequest,
-  getBookServiceConfig,
+  subscribeToBookServiceConfig,
   updateBookServiceConfig,
-  getFeesServiceConfig,
+  subscribeToFeesServiceConfig,
   updateFeesServiceConfig,
-  getAssignmentsServiceConfig,
+  subscribeToAssignmentsServiceConfig,
   // updateAssignmentsServiceConfig, // Commented out to fix build errors
-  getCertificatesServiceConfig,
+  subscribeToCertificatesServiceConfig,
   updateCertificatesServiceConfig,
-  getDigitalTransformationConfig,
+  subscribeToDigitalTransformationConfig,
   updateDigitalTransformationConfig,
-  getFinalReviewConfig,
+  subscribeToFinalReviewConfig,
   updateFinalReviewConfig,
-  getGraduationProjectConfig,
+  subscribeToGraduationProjectConfig,
   updateGraduationProjectConfig,
-  getStatementEnrollmentConfig,
+  subscribeToStatementEnrollmentConfig,
   updateStatementEnrollmentConfig,
   checkIsAdmin,
   getStudentData,
@@ -1505,340 +1505,156 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   useEffect(() => {
     if (!dataReady || isLoading) return;
 
-    let unsubscribeDtCodes: (() => void) | undefined;
-    let unsubscribeEpCodes: (() => void) | undefined;
+    // ======= Realtime subscriptions for all service configs =======
+    const unsubscribeBook = subscribeToBookServiceConfig((config) => {
+      if (config) {
+        if (config.paymentMethods?.instaPay) {
+          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
+        }
+        setBookConfig(config);
+      } else {
+        setBookConfig({
+          serviceName: 'شحن الكتب الدراسية',
+          prices: { '1': 1750, '2': 3440, '3': 5160, '4': 6820, '5': 8450, '6': 10200, '7': 11885, '8': 13580, '9': 15210, '10': 16900, '11': 18500 },
+          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+        });
+      }
+    });
 
-    const loadBookConfig = async () => {
-      try {
-        const config = await getBookServiceConfig();
-        if (config) {
-          if (config.paymentMethods?.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
-          setBookConfig(config);
-        } else {
-          // Default config
-          setBookConfig({
-            serviceName: 'شحن الكتب الدراسية',
-            prices: {
-              '1': 1750,
-              '2': 3440,
-              '3': 5160,
-              '4': 6820,
-              '5': 8450,
-              '6': 10200,
-              '7': 11885,
-              '8': 13580,
-              '9': 15210,
-              '10': 16900,
-              '11': 18500
+    const unsubscribeFees = subscribeToFeesServiceConfig((config) => {
+      if (config) {
+        if (!config.paymentMethods) {
+          config = { ...config, paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' } };
+        } else if (config.paymentMethods.instaPay) {
+          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
+        }
+        setFeesConfig(config);
+      } else {
+        setFeesConfig({ prices: {}, paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' } });
+      }
+    });
+
+    const unsubscribeAssignments = subscribeToAssignmentsServiceConfig((config) => {
+      if (config) {
+        if (config.paymentMethods?.instaPay) {
+          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
+        }
+        setAssignmentsConfig(config);
+      } else {
+        setAssignmentsConfig({
+          serviceName: 'حل وتسليم تكاليف الترم الاول',
+          assignments: [],
+          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+        });
+      }
+    });
+
+    const unsubscribeCertificates = subscribeToCertificatesServiceConfig((config) => {
+      if (config) {
+        if (config.paymentMethods?.instaPay) {
+          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
+        }
+        setCertificatesConfig(config);
+      } else {
+        // Default certificates config
+        const defaultConfig: CertificatesServiceConfig = {
+          certificates: [
+            { id: '1', name: 'شهادة تحول رقمي', price: 4000, imageUrl: '/certificat.jpeg', description: '' },
+            {
+              id: '2', name: 'شهادة الخدمة العامة', price: 5000, imageUrl: '/service.jpg',
+              description: 'شهادة الخدمة العامة\n\nتمكنا من التعاقد مع احدي المؤسسات للحصول علي شهادة اداء الخدمة العامة بكل سهوله و يسر دون عناء حيث انه يتطلب بعض الاجراءات الروتينية و من ثم الحصول علي الشهادة',
+              fields: [
+                { name: 'qualification_name', label: 'اسم المؤهل', type: 'text', required: true, placeholder: 'مثال: بكالوريوس تجارة / ليسانس اداب' },
+                { name: 'qualification_date', label: 'تاريخ الحصول علي البكالوريوس او الليسانس', type: 'date', required: true, placeholder: 'مثال: مارس 2022 / سبتمبر 2024' }
+              ]
             },
-            paymentMethods: {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
+            { id: '3', name: 'شهادة محو الأمية', price: 5000, imageUrl: '/omaya.jpeg', description: 'شهادة محو اميه\n\nتمكنا من اجراء اختبارات محو اميه بشكل سليم و سهل في احد المراكز التي تسهل الحصول علي الشهادة و تيسير عمليه الامتحان علي الطالب للحصول علي الشهادة' },
+            {
+              id: '4', name: 'شهادة خبرة (معلم)', price: 5000, imageUrl: '/exprince.jpg',
+              description: 'شهادة خبرة ( معلم)\n\nتقدم احدي المدارس شهادة خبرة بناء علي التخصص و الوظيفه للحضول عليها خلال اشهر فقط من الاعتماد بالمدرسة',
+              fields: [
+                { name: 'work_start_date', label: 'سنة بداية العمل بالمدرسة', type: 'date' as const, required: true, placeholder: 'mm/dd/yyyy' },
+                { name: 'work_end_date', label: 'سنة نهاية العمل بالمدرسة', type: 'date' as const, required: true, placeholder: 'mm/dd/yyyy' },
+                { name: 'subject_specialization', label: 'تخصص مادة', type: 'text' as const, required: true, placeholder: 'مثال: عربي - علوم - رياضيات . الخ...' }
+              ]
             }
-          });
-        }
-      } catch (error) {
-        logger.error('Error loading book config:', error);
+          ],
+          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+        };
+        setCertificatesConfig(defaultConfig);
+        updateCertificatesServiceConfig(defaultConfig).catch(e => logger.error('Error saving default certificates config:', e));
       }
-    };
-    loadBookConfig();
+    });
 
-    // Load fees config
-    const loadFeesConfig = async () => {
-      try {
-        const config = await getFeesServiceConfig();
-        if (config) {
-          if (!config.paymentMethods) {
-            config.paymentMethods = {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
-            };
-          } else if (config.paymentMethods.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
-          setFeesConfig(config);
-        } else {
-          // Default config
-          setFeesConfig({
-            prices: {},
-            paymentMethods: {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
-            }
-          });
+    const unsubscribeDigital = subscribeToDigitalTransformationConfig((config) => {
+      if (config) {
+        if (config.paymentMethods?.instaPay) {
+          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
         }
-      } catch (error) {
-        logger.error('Error loading fees config:', error);
+        setDigitalTransformationConfig(config);
+      } else {
+        const defaultConfig: DigitalTransformationConfig = {
+          transformationTypes: [],
+          examLanguage: ['اللغة العربية'],
+          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+        };
+        setDigitalTransformationConfig(defaultConfig);
+        updateDigitalTransformationConfig(defaultConfig).catch(e => logger.error('Error saving default digital transformation config:', e));
       }
-    };
-    loadFeesConfig();
+    });
 
-    // Load assignments config
-    const loadAssignmentsConfig = async () => {
-      try {
-        const config = await getAssignmentsServiceConfig();
-        if (config) {
-          if (config.paymentMethods?.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
-          setAssignmentsConfig(config);
-        } else {
-          // Default config
-          setAssignmentsConfig({
-            serviceName: 'حل وتسليم تكاليف الترم الاول',
-            assignments: [],
-            paymentMethods: {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
-            }
-          });
+    const unsubscribeFinalReview = subscribeToFinalReviewConfig((config) => {
+      if (config) {
+        if (config.paymentMethods?.instaPay) {
+          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
         }
-      } catch (error) {
-        logger.error('Error loading assignments config:', error);
+        setFinalReviewConfig(config);
+      } else {
+        const defaultConfig: FinalReviewConfig = {
+          serviceName: 'المراجعة النهائية',
+          paymentAmount: 500,
+          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+        };
+        setFinalReviewConfig(defaultConfig);
+        updateFinalReviewConfig(defaultConfig).catch(e => logger.error('Error saving default final review config:', e));
       }
-    };
-    loadAssignmentsConfig();
+    });
 
-    // Load certificates config
-    const loadCertificatesConfig = async () => {
-      try {
-        logger.log('Loading certificates config in AdminDashboard...');
-        const config = await getCertificatesServiceConfig();
-        if (config) {
-          if (config.paymentMethods?.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
-          logger.log('Setting certificates config in AdminDashboard:', config.certificates?.length || 0, 'certificates');
-          setCertificatesConfig(config);
-        } else {
-          logger.log('No config found, using default certificates config');
-          // Default config with 4 certificates
-          const defaultConfig: CertificatesServiceConfig = {
-            certificates: [
-              {
-                id: '1',
-                name: 'شهادة تحول رقمي',
-                price: 4000,
-                imageUrl: '/certificat.jpeg',
-                description: ''
-              },
-              {
-                id: '2',
-                name: 'شهادة الخدمة العامة',
-                price: 5000,
-                imageUrl: '/service.jpg',
-                description: 'شهادة الخدمة العامة\n\nتمكنا من التعاقد مع احدي المؤسسات للحصول علي شهادة اداء الخدمة العامة بكل سهوله و يسر دون عناء حيث انه يتطلب بعض الاجراءات الروتينية و من ثم الحصول علي الشهادة',
-                fields: [
-                  { name: 'qualification_name', label: 'اسم المؤهل', type: 'text', required: true, placeholder: 'مثال: بكالوريوس تجارة / ليسانس اداب' },
-                  { name: 'qualification_date', label: 'تاريخ الحصول علي البكالوريوس او الليسانس', type: 'date', required: true, placeholder: 'مثال: مارس 2022 / سبتمبر 2024' }
-                ]
-              },
-              {
-                id: '3',
-                name: 'شهادة محو الأمية',
-                price: 5000,
-                imageUrl: '/omaya.jpeg',
-                description: 'شهادة محو اميه\n\nتمكنا من اجراء اختبارات محو اميه بشكل سليم و سهل في احد المراكز التي تسهل الحصول علي الشهادة و تيسير عمليه الامتحان علي الطالب للحصول علي الشهادة'
-              },
-              {
-                id: '4',
-                name: 'شهادة خبرة (معلم)',
-                price: 5000,
-                imageUrl: '/exprince.jpg',
-                description: 'شهادة خبرة ( معلم)\n\nتقدم احدي المدارس شهادة خبرة بناء علي التخصص و الوظيفه للحضول عليها خلال اشهر فقط من الاعتماد بالمدرسة',
-                fields: [
-                  { name: 'work_start_date', label: 'سنة بداية العمل بالمدرسة', type: 'date' as const, required: true, placeholder: 'mm/dd/yyyy' },
-                  { name: 'work_end_date', label: 'سنة نهاية العمل بالمدرسة', type: 'date' as const, required: true, placeholder: 'mm/dd/yyyy' },
-                  { name: 'subject_specialization', label: 'تخصص مادة', type: 'text' as const, required: true, placeholder: 'مثال: عربي - علوم - رياضيات . الخ...' }
-                ]
-              }
-            ],
-            paymentMethods: {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
-            }
-          };
-
-          // Save default config to Firebase
-          try {
-            // Ensure all values are defined
-            const cleanDefaultConfig = {
-              certificates: defaultConfig.certificates.map(c => ({
-                id: c.id,
-                name: c.name,
-                price: c.price,
-                imageUrl: c.imageUrl || '',
-                description: c.description || '',
-                fields: c.fields || []
-              })),
-              paymentMethods: defaultConfig.paymentMethods
-            };
-
-            await updateCertificatesServiceConfig(cleanDefaultConfig);
-            logger.log('Default certificates config saved to Firebase');
-          } catch (saveError) {
-            logger.error('Error saving default config:', saveError);
-          }
-
-          setCertificatesConfig(defaultConfig);
+    const unsubscribeGraduation = subscribeToGraduationProjectConfig((config) => {
+      if (config) {
+        if (config.paymentMethods?.instaPay) {
+          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
         }
-      } catch (error) {
-        logger.error('Error loading certificates config:', error);
+        setGraduationProjectConfig(config);
+      } else {
+        const defaultConfig: GraduationProjectConfig = {
+          serviceName: 'مشروع التخرج',
+          features: ['اعداد مشروع التخرج كامل', 'شرح جميع جوانب المشروع و تفاصيله', 'اعداد الاجزاء الاحصائية علي ارض الواقع', 'تقسيم الادوار و التدريب علي الالقاء الشفوي', 'احدث قائمة مراجع للمشروع', 'اعداد العرض التقديمي PowerPoint'],
+          prices: [],
+          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+        };
+        setGraduationProjectConfig(defaultConfig);
+        updateGraduationProjectConfig(defaultConfig).catch(e => logger.error('Error saving default graduation project config:', e));
       }
-    };
-    loadCertificatesConfig();
+    });
 
-    // Load digital transformation config
-    const loadDigitalTransformationConfig = async () => {
-      try {
-        logger.log('Loading digital transformation config in AdminDashboard...');
-        const config = await getDigitalTransformationConfig();
-        if (config) {
-          if (config.paymentMethods?.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
-          logger.log('Setting digital transformation config in AdminDashboard:', config.transformationTypes?.length || 0, 'types');
-          setDigitalTransformationConfig(config);
-        } else {
-          logger.log('No config found, using default digital transformation config');
-          const defaultConfig: DigitalTransformationConfig = {
-            transformationTypes: [],
-            examLanguage: ['اللغة العربية'],
-            paymentMethods: {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
-            }
-          };
-
-          try {
-            await updateDigitalTransformationConfig(defaultConfig);
-            logger.log('Default digital transformation config saved to Firebase');
-          } catch (saveError) {
-            logger.error('Error saving default config:', saveError);
-          }
-
-          setDigitalTransformationConfig(defaultConfig);
+    const unsubscribeStatement = subscribeToStatementEnrollmentConfig((config) => {
+      if (config) {
+        if (config.paymentMethods?.instaPay) {
+          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
         }
-      } catch (error) {
-        logger.error('Error loading digital transformation config:', error);
+        setStatementEnrollmentConfig(config);
+      } else {
+        const defaultConfig: StatementEnrollmentConfig = {
+          serviceName: 'التقديم علي افادة و اثبات قيد',
+          paymentAmount: 400,
+          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+        };
+        setStatementEnrollmentConfig(defaultConfig);
+        updateStatementEnrollmentConfig(defaultConfig).catch(() => {/* ignore */});
       }
-    };
-    loadDigitalTransformationConfig();
-
-    // Load final review config
-    const loadFinalReviewConfig = async () => {
-      try {
-        logger.log('Loading final review config in AdminDashboard...');
-        const config = await getFinalReviewConfig();
-        if (config) {
-          if (config.paymentMethods?.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
-          logger.log('Setting final review config in AdminDashboard:', config);
-          setFinalReviewConfig(config);
-        } else {
-          logger.log('No config found, using default final review config');
-          const defaultConfig: FinalReviewConfig = {
-            serviceName: 'المراجعة النهائية',
-            paymentAmount: 500,
-            paymentMethods: {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
-            }
-          };
-
-          try {
-            await updateFinalReviewConfig(defaultConfig);
-            logger.log('Default final review config saved to Firebase');
-          } catch (saveError) {
-            logger.error('Error saving default config:', saveError);
-          }
-
-          setFinalReviewConfig(defaultConfig);
-        }
-      } catch (error) {
-        logger.error('Error loading final review config:', error);
-      }
-    };
-    loadFinalReviewConfig();
-
-    // Load graduation project config
-    const loadGraduationProjectConfig = async () => {
-      try {
-        logger.log('Loading graduation project config in AdminDashboard...');
-        const config = await getGraduationProjectConfig();
-        if (config) {
-          if (config.paymentMethods?.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
-          logger.log('Setting graduation project config in AdminDashboard:', config);
-          setGraduationProjectConfig(config);
-        } else {
-          logger.log('No config found, using default graduation project config');
-          const defaultConfig: GraduationProjectConfig = {
-            serviceName: 'مشروع التخرج',
-            features: [
-              'اعداد مشروع التخرج كامل',
-              'شرح جميع جوانب المشروع و تفاصيله',
-              'اعداد الاجزاء الاحصائية علي ارض الواقع',
-              'تقسيم الادوار و التدريب علي الالقاء الشفوي',
-              'احدث قائمة مراجع للمشروع',
-              'اعداد العرض التقديمي PowerPoint'
-            ],
-            prices: [],
-            paymentMethods: {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
-            }
-          };
-
-          try {
-            await updateGraduationProjectConfig(defaultConfig);
-            logger.log('Default graduation project config saved to Firebase');
-            setGraduationProjectConfig(defaultConfig);
-          } catch (saveError) {
-            logger.error('Error saving default graduation project config:', saveError);
-            setGraduationProjectConfig(defaultConfig);
-          }
-        }
-      } catch (error) {
-        logger.error('Error loading graduation project config:', error);
-      }
-    };
-    loadGraduationProjectConfig();
-
-    // Load statement and enrollment config (Service 12)
-    const loadStatementEnrollmentConfig = async () => {
-      try {
-        const config = await getStatementEnrollmentConfig();
-        if (config) {
-          if (config.paymentMethods?.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
-          setStatementEnrollmentConfig(config);
-        } else {
-          const defaultConfig: StatementEnrollmentConfig = {
-            serviceName: 'التقديم علي افادة و اثبات قيد',
-            paymentAmount: 400,
-            paymentMethods: {
-              instaPay: 'raoufpk97@instapay',
-              cashWallet: '01050889591'
-            }
-          };
-          try {
-            await updateStatementEnrollmentConfig(defaultConfig);
-          } catch {
-            // ignore
-          }
-          setStatementEnrollmentConfig(defaultConfig);
-        }
-      } catch (error) {
-        logger.error('Error loading statement enrollment config:', error);
-      }
-    };
-    loadStatementEnrollmentConfig();
+    });
+    // ======= End Realtime subscriptions =======
 
     // Load Latest News
     const loadLatestNews = async () => {
@@ -1853,18 +1669,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadLatestNews();
 
-    unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
+    const unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
       logger.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
       setDtCodes(codes);
     });
-    unsubscribeEpCodes = subscribeToElectronicPaymentCodes((codes) => {
+    const unsubscribeEpCodes = subscribeToElectronicPaymentCodes((codes) => {
       logger.log('Real-time update: Electronic Payment Codes loaded:', codes.length);
       setEpCodes(codes);
     });
 
     return () => {
-      if (unsubscribeDtCodes) unsubscribeDtCodes();
-      if (unsubscribeEpCodes) unsubscribeEpCodes();
+      unsubscribeBook();
+      unsubscribeFees();
+      unsubscribeAssignments();
+      unsubscribeCertificates();
+      unsubscribeDigital();
+      unsubscribeFinalReview();
+      unsubscribeGraduation();
+      unsubscribeStatement();
+      unsubscribeDtCodes();
+      unsubscribeEpCodes();
     };
   }, [dataReady, isLoading]);
 
@@ -4283,7 +4107,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         columns = [colName, colWhatsapp, colNationalId, colAddress, colTotalPrice];
                         break;
                       case '12': // التقديم علي افادة و اثبات قيد
-                        columns = [colName, colRequestType, colDestination, colTotalPrice];
+                        columns = [colName, colWhatsapp, colRequestType, colDestination, colTotalPrice];
                         break;
                       default:
                         // Default order for other services

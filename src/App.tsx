@@ -19,6 +19,7 @@ import ContactPage from './page/ContactPage';
 import PrivacyPage from './page/PrivacyPage';
 import './styles/App.css';
 import StudentSupportAssistant from './components/SupportAssistant/StudentSupportAssistant';
+import StudentPhonePromptModal from './components/StudentPhonePromptModal';
 
 // --- Security Script to prevent Inspect Element & Content Theft ---
 // TEMPORARILY DISABLED FOR DEBUGGING
@@ -342,6 +343,7 @@ const App: React.FC = () => {
             <StudentProvider>
                 <BrowserRouter>
                     <StudentSupportAssistant />
+                    <StudentPhonePromptModal />
                     <Routes>
                         {/* Public Routes */}
                         <Route path="/login" element={<LoginWrapper />} />

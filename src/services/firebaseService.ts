@@ -707,6 +707,59 @@ export const updateStudentData = async (userId: string, data: Partial<StudentDat
   }
 };
 
+/**
+ * تحديث رقم هاتف/واتساب الطالب في ملفه الشخصي وفي جميع طلبات الخدمات السابقة
+ */
+export const updateStudentPhoneInAllRequestsAndProfile = async (
+  userId: string,
+  phoneNumber: string
+): Promise<void> => {
+  try {
+    const cleanPhone = phoneNumber.trim().replace(/\D/g, '');
+    if (!cleanPhone) return;
+
+    // 1) تحديث الملف الشخصي للطالب
+    await updateStudentData(userId, {
+      whatsappNumber: cleanPhone
+    });
+
+    // 2) تحديث جميع طلبات الخدمات الخاصة به في مجموعات serviceRequests_1..12
+    const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+    for (const serviceId of serviceIds) {
+      try {
+        const colRef = collection(db, `serviceRequests_${serviceId}`);
+        const q = query(colRef, where('studentId', '==', userId));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const batch = writeBatch(db);
+          snap.forEach((docSnap) => {
+            const currentData = docSnap.data().data || {};
+            batch.set(
+              docSnap.ref,
+              {
+                data: {
+                  ...currentData,
+                  whatsapp_number: cleanPhone,
+                  phone_whatsapp: cleanPhone,
+                  leader_whatsapp: cleanPhone
+                },
+                updatedAt: serverTimestamp()
+              },
+              { merge: true }
+            );
+          });
+          await batch.commit();
+        }
+      } catch (err) {
+        logger.error(`Error updating phone in serviceRequests_${serviceId}:`, err);
+      }
+    }
+  } catch (error: any) {
+    logger.error('Error updating student phone across profile and requests:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء تحديث رقم الهاتف');
+  }
+};
+
 export const deleteStudentData = async (userId: string): Promise<void> => {
   try {
     const batch = writeBatch(db);
@@ -2340,6 +2393,25 @@ export const updateBookServiceConfig = async (config: BookServiceConfig): Promis
   }
 };
 
+export const subscribeToBookServiceConfig = (
+  onUpdate: (config: BookServiceConfig | null) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'bookService');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as BookServiceConfig);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      logger.error('Error in book service config subscription:', error);
+    }
+  );
+};
+
 // Fees Service Configuration
 export const getFeesServiceConfig = async (): Promise<FeesServiceConfig | null> => {
   try {
@@ -2370,6 +2442,25 @@ export const updateFeesServiceConfig = async (config: FeesServiceConfig): Promis
   }
 };
 
+export const subscribeToFeesServiceConfig = (
+  onUpdate: (config: FeesServiceConfig | null) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'feesService');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as FeesServiceConfig);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      logger.error('Error in fees service config subscription:', error);
+    }
+  );
+};
+
 // Assignments Service Configuration
 export const getAssignmentsServiceConfig = async (): Promise<AssignmentsServiceConfig | null> => {
   try {
@@ -2398,6 +2489,25 @@ export const updateAssignmentsServiceConfig = async (config: AssignmentsServiceC
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات التكليفات');
   }
+};
+
+export const subscribeToAssignmentsServiceConfig = (
+  onUpdate: (config: AssignmentsServiceConfig | null) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'assignmentsService');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as AssignmentsServiceConfig);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      logger.error('Error in assignments service config subscription:', error);
+    }
+  );
 };
 
 // Certificates Service Configuration
@@ -2472,6 +2582,25 @@ export const updateCertificatesServiceConfig = async (config: CertificatesServic
   }
 };
 
+export const subscribeToCertificatesServiceConfig = (
+  onUpdate: (config: CertificatesServiceConfig | null) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'certificatesService');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as CertificatesServiceConfig);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      logger.error('Error in certificates service config subscription:', error);
+    }
+  );
+};
+
 // Digital Transformation Service Configuration
 export const getDigitalTransformationConfig = async (): Promise<DigitalTransformationConfig | null> => {
   try {
@@ -2539,6 +2668,32 @@ export const updateDigitalTransformationConfig = async (config: DigitalTransform
   }
 };
 
+export const subscribeToDigitalTransformationConfig = (
+  onUpdate: (config: DigitalTransformationConfig | null) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'digitalTransformationService');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as any;
+        const config: DigitalTransformationConfig = {
+          ...data,
+          examLanguage: Array.isArray(data.examLanguage)
+            ? data.examLanguage
+            : (data.examLanguage ? [data.examLanguage] : [])
+        };
+        onUpdate(config);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      logger.error('Error in digital transformation config subscription:', error);
+    }
+  );
+};
+
 // Final Review Service Configuration
 export const getFinalReviewConfig = async (): Promise<FinalReviewConfig | null> => {
   try {
@@ -2589,6 +2744,25 @@ export const updateFinalReviewConfig = async (config: FinalReviewConfig): Promis
   }
 };
 
+export const subscribeToFinalReviewConfig = (
+  onUpdate: (config: FinalReviewConfig | null) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'finalReviewService');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as FinalReviewConfig);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      logger.error('Error in final review config subscription:', error);
+    }
+  );
+};
+
 // Statement and Enrollment Service Configuration (Service 12)
 export const getStatementEnrollmentConfig = async (): Promise<StatementEnrollmentConfig | null> => {
   try {
@@ -2632,6 +2806,25 @@ export const updateStatementEnrollmentConfig = async (config: StatementEnrollmen
     logger.error('Error saving statement & enrollment config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات إفادة وإثبات قيد');
   }
+};
+
+export const subscribeToStatementEnrollmentConfig = (
+  onUpdate: (config: StatementEnrollmentConfig | null) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'statementEnrollmentService');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as StatementEnrollmentConfig);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      logger.error('Error in statement enrollment config subscription:', error);
+    }
+  );
 };
 
 // Graduation Project Service Configuration
@@ -2683,6 +2876,25 @@ export const updateGraduationProjectConfig = async (config: GraduationProjectCon
     logger.error('Error saving graduation project config:', error);
     throw new Error(error.message || 'حدث خطأ أثناء تحديث إعدادات مشروع التخرج');
   }
+};
+
+export const subscribeToGraduationProjectConfig = (
+  onUpdate: (config: GraduationProjectConfig | null) => void
+): (() => void) => {
+  const docRef = doc(db, 'config', 'graduationProjectService');
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as GraduationProjectConfig);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      logger.error('Error in graduation project config subscription:', error);
+    }
+  );
 };
 
 // Save Digital Transformation Code
