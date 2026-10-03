@@ -7501,12 +7501,39 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               <div style={{ marginTop: '12px' }}>
                                 <span style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>المرفقات ({req.documents.length}):</span>
                                 <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
-                                  {req.documents.map((doc, dIdx) => (
-                                    <a key={dIdx} href={doc.url} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 12px', background: '#eff6ff', color: '#2563eb', borderRadius: '6px', fontSize: '12px', textDecoration: 'none', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                      <FileText size={14} />
-                                      {doc.name || `مرفق ${dIdx + 1}`}
-                                    </a>
-                                  ))}
+                                  {req.documents.map((doc, dIdx) => {
+                                    const docUrl = doc.url || '';
+                                    const isPdfDoc =
+                                      docUrl.toLowerCase().includes('.pdf') ||
+                                      (doc.type && doc.type.toUpperCase() === 'PDF');
+                                    // PDFs open via Google Docs Viewer for universal device support
+                                    const openUrl = isPdfDoc
+                                      ? `https://docs.google.com/viewer?url=${encodeURIComponent(docUrl)}&embedded=false`
+                                      : docUrl;
+                                    return (
+                                      <a
+                                        key={dIdx}
+                                        href={openUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          padding: '6px 12px',
+                                          background: isPdfDoc ? '#fef2f2' : '#eff6ff',
+                                          color: isPdfDoc ? '#dc2626' : '#2563eb',
+                                          borderRadius: '6px',
+                                          fontSize: '12px',
+                                          textDecoration: 'none',
+                                          border: `1px solid ${isPdfDoc ? '#fecaca' : '#bfdbfe'}`,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px'
+                                        }}
+                                      >
+                                        <FileText size={14} />
+                                        {isPdfDoc ? '📄 ' : ''}{doc.name || `مرفق ${dIdx + 1}`}
+                                      </a>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -8973,13 +9000,29 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               style={{ display: 'grid', gap: '16px' }}
             >
               {documentViewer.urls.map((url, i) => {
-                const isImage = /\.(png|jpe?g|webp|gif|bmp)$/i.test(url);
+                const lowerUrl = (url || '').toLowerCase();
+                const isPdf =
+                  lowerUrl.includes('.pdf') ||
+                  lowerUrl.includes('/raw/upload') ||
+                  lowerUrl.includes('application/pdf') ||
+                  // Cloudinary: detect PDF by resource_type in URL path
+                  (lowerUrl.includes('cloudinary.com') && lowerUrl.endsWith('.pdf'));
+                const isImage = !isPdf && /\.(png|jpe?g|webp|gif|bmp)(\?|$)/i.test(url);
+                // If no extension match but is Cloudinary URL, assume image
+                const isImageFallback = !isPdf && !isImage && url.includes('cloudinary.com');
+                const showAsImage = isImage || isImageFallback;
                 const label = `مرفق ${i + 1}`;
                 const loaded = documentViewerLoadedImages.has(i);
+
+                // For PDFs: open via Google Docs viewer for universal mobile/browser compatibility
+                const viewUrl = isPdf
+                  ? `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=false`
+                  : url;
+
                 return (
                   <a
                     key={url + i}
-                    href={url}
+                    href={viewUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
@@ -8993,7 +9036,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       minWidth: 160
                     }}
                   >
-                    {isImage ? (
+                    {showAsImage ? (
                       <div
                         style={{
                           position: 'relative',
@@ -9047,6 +9090,24 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           }}
                         />
                       </div>
+                    ) : isPdf ? (
+                      <div
+                        style={{
+                          width: '100%',
+                          aspectRatio: '1',
+                          minHeight: 160,
+                          background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        <FileText size={40} color="#dc2626" />
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#dc2626', letterSpacing: '1px' }}>PDF</span>
+                        <span style={{ fontSize: '10px', color: '#ef4444', opacity: 0.8 }}>اضغط لفتح</span>
+                      </div>
                     ) : (
                       <div
                         style={{
@@ -9063,7 +9124,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       </div>
                     )}
                     <span style={{ display: 'block', padding: '8px', fontSize: '12px', fontWeight: 600 }}>
-                      {label}
+                      {isPdf ? `📄 ${label}` : label}
                     </span>
                   </a>
                 );
