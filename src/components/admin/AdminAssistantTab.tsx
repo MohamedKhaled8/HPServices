@@ -132,13 +132,13 @@ export const AdminAssistantTab: React.FC<AdminAssistantTabProps> = ({
       d.instaPayReceipt
     ];
     for (const c of candidates) {
-      if (typeof c === 'string' && c.trim().startsWith('http')) {
+      if (typeof c === 'string' && (c.trim().startsWith('http') || c.trim().startsWith('data:'))) {
         return c.trim();
       }
     }
     if (req.documents && req.documents.length > 0) {
       for (const doc of req.documents) {
-        if (doc.url && typeof doc.url === 'string' && doc.url.trim().startsWith('http')) {
+        if (doc.url && typeof doc.url === 'string' && (doc.url.trim().startsWith('http') || doc.url.trim().startsWith('data:'))) {
           return doc.url.trim();
         }
       }

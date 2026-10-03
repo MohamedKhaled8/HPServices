@@ -2237,8 +2237,18 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
       for (const img of imagesToDownload) {
         try {
-          const response = await fetch(img.url);
-          const blob = await response.blob();
+          let blob: Blob;
+          if (img.url.startsWith('data:')) {
+            const parts = img.url.split(',');
+            const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+            const binStr = atob(parts[1]);
+            const u8 = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) u8[i] = binStr.charCodeAt(i);
+            blob = new Blob([u8], { type: mime });
+          } else {
+            const response = await fetch(img.url);
+            blob = await response.blob();
+          }
           folder.file(img.name, blob);
         } catch (error) {
           console.error('Download error (skipped in zip):', error);

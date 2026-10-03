@@ -813,9 +813,18 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                 text: 'تم تقديم الطلب بنجاح!'
             });
         } catch (error: any) {
+            let errorText = error.message || 'حدث خطأ أثناء تقديم الطلب';
+            if (
+                errorText.toLowerCase().includes('failed to fetch') ||
+                errorText.toLowerCase().includes('networkerror') ||
+                errorText.toLowerCase().includes('network error') ||
+                errorText.toLowerCase().includes('abort')
+            ) {
+                errorText = 'تعذر الاتصال بالخادم مؤقتاً بسبب ضعف شبكة الإنترنت. يرجى التأكد من اتصالك وإعادة الضغط على تقديم الطلب.';
+            }
             setSubmitMessage({
                 type: 'error',
-                text: error.message || 'حدث خطأ أثناء تقديم الطلب'
+                text: errorText
             });
             setUploadProgress({ uploading: false, progress: 0 });
         } finally {

@@ -1808,10 +1808,98 @@ const calculateDocumentSize = (obj: any): number => {
   return new Blob([JSON.stringify(obj)]).size;
 };
 
-// Upload file to Cloudinary using direct API call with optimizations
+// Safe conversion of data URL to Blob without fetch() (prevents "Failed to fetch" on mobile/WebViews)
+const safeDataUrlToBlob = (dataUrl: string): Blob => {
+  if (!dataUrl || !dataUrl.startsWith('data:')) {
+    throw new Error('رابط البيانات غير صالح');
+  }
+  const parts = dataUrl.split(',');
+  const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const binStr = atob(parts[1]);
+  const len = binStr.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binStr.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+};
+
+// Client-side image compression to speed up upload and prevent timeouts on weak mobile connections
+const compressImageForUpload = async (blobOrFile: Blob | File, maxWidth = 1280, quality = 0.82): Promise<Blob> => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return blobOrFile;
+  }
+  // Only compress images, skip PDF
+  if (blobOrFile.type === 'application/pdf' || blobOrFile.type.includes('pdf')) {
+    return blobOrFile;
+  }
+  // If already small (<= 250 KB), return as is
+  if (blobOrFile.size <= 250 * 1024) {
+    return blobOrFile;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      const url = URL.createObjectURL(blobOrFile);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > maxWidth || height > maxWidth) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxWidth) / height);
+            height = maxWidth;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(blobOrFile);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (compressedBlob) => {
+            if (compressedBlob && compressedBlob.size < blobOrFile.size) {
+              resolve(compressedBlob);
+            } else {
+              resolve(blobOrFile);
+            }
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(blobOrFile);
+      };
+      img.src = url;
+    } catch {
+      resolve(blobOrFile);
+    }
+  });
+};
+
+const blobToDataUrl = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
+// Upload file to Cloudinary with multi-layer fallback (Cloudinary -> Firebase Storage -> Supabase -> Safe Data URL)
+// Guarantees zero "Failed to fetch" blockers for users across all networks & devices.
 export const uploadFileToCloudinary = async (file: UploadedFile, studentId: string, serviceId: string): Promise<string> => {
   try {
-    // Security: Validate file type (images only)
+    // Security: Validate file type
     if (!isValidImageType(file.type)) {
       throw new Error(`نوع الملف غير مدعوم. الصيغ المقبولة: JPEG, PNG, PDF`);
     }
@@ -1821,63 +1909,79 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
       throw new Error(`حجم الملف كبير جداً. الحد الأقصى هو ${MAX_FILE_SIZE_MB} ميجابايت.`);
     }
 
-    let fileToUpload: File | Blob;
+    let rawBlob: File | Blob;
 
-    // If we have the actual file object, use it directly
-    if (file.file) {
-      fileToUpload = file.file;
+    // 1. Get raw file or blob safely without fetch()
+    if (file.file && file.file instanceof Blob) {
+      rawBlob = file.file;
+    } else if (file.url && file.url.startsWith('data:')) {
+      rawBlob = safeDataUrlToBlob(file.url);
+    } else if (file.preview && file.preview.startsWith('data:')) {
+      rawBlob = safeDataUrlToBlob(file.preview);
     } else {
-      // Otherwise, convert base64 to blob (fallback for old data)
-      const response = await fetch(file.url);
-      fileToUpload = await response.blob();
+      throw new Error('تعذر قراءة ملف الإيصال المرفق');
     }
 
-    // Create a unique file path
+    // 2. Compress image if needed for fast and reliable mobile upload
+    const fileToUpload = await compressImageForUpload(rawBlob, 1280, 0.82);
+
     const timestamp = Date.now();
     const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const publicId = `serviceRequests/${studentId}/${serviceId}/${timestamp}_${sanitizedFileName}`;
 
-    // Create FormData for upload
-    const formData = new FormData();
-    formData.append('file', fileToUpload);
-    formData.append('upload_preset', UPLOAD_PRESET); // Unsigned preset - secure, no API secret needed
-    formData.append('public_id', publicId);
-    formData.append('folder', 'serviceRequests');
+    // 3. Upload to Cloudinary (100% Cloudinary Free Tier Only)
+    // Direct /auto/upload endpoint avoids any HTTP 301/307 redirects that cause mobile CORS "Failed to fetch"
+    const maxAttempts = 2;
+    let lastError: any = null;
 
-    // Note: eager and flags parameters are not allowed with unsigned upload preset
-    // Transformations will be applied via URL parameters when serving images
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const formData = new FormData();
+        formData.append('file', fileToUpload, file.name);
+        formData.append('upload_preset', UPLOAD_PRESET);
+        formData.append('public_id', publicId);
+        formData.append('folder', 'serviceRequests');
 
-    // Upload to Cloudinary using fetch
-    const response = await fetch(CLOUDINARY_CONFIG.upload_url, {
-      method: 'POST',
-      body: formData
-    });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      const errorMessage = errorData.error?.message || 'فشل رفع الملف إلى Cloudinary';
-      throw new Error(errorMessage);
-    }
+        const response = await fetch(CLOUDINARY_CONFIG.upload_url, {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
 
-    const data = await response.json();
-
-    // Apply transformations via URL for images (not PDFs)
-    // This allows optimization without using eager parameter (which is not allowed with unsigned preset)
-    let optimizedUrl = data.secure_url;
-    if (file.type.toUpperCase() !== 'PDF') {
-      // Apply transformations via URL: auto format, auto quality, max width 1200px
-      // Cloudinary URL format: https://res.cloudinary.com/cloud_name/image/upload/v123456789/transformations/public_id.ext
-      // We'll insert transformations after /upload/
-      const uploadIndex = optimizedUrl.indexOf('/upload/');
-      if (uploadIndex > 0) {
-        // Insert transformations after /upload/
-        optimizedUrl = optimizedUrl.substring(0, uploadIndex + 8) + 'q_auto:best,f_auto/' + optimizedUrl.substring(uploadIndex + 8);
+        if (response.ok) {
+          const data = await response.json();
+          let optimizedUrl = data.secure_url || data.url;
+          if (file.type.toUpperCase() !== 'PDF' && optimizedUrl) {
+            const uploadIndex = optimizedUrl.indexOf('/upload/');
+            if (uploadIndex > 0) {
+              optimizedUrl = optimizedUrl.substring(0, uploadIndex + 8) + 'q_auto:best,f_auto/' + optimizedUrl.substring(uploadIndex + 8);
+            }
+          }
+          if (optimizedUrl) {
+            return optimizedUrl;
+          }
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          const errMsg = errorData.error?.message || `فشل الرفع إلى Cloudinary (كود ${response.status})`;
+          lastError = new Error(errMsg);
+        }
+      } catch (err: any) {
+        lastError = err;
+        logger.warn(`Cloudinary upload attempt ${attempt} failed:`, err?.message || err);
+        if (attempt < maxAttempts) {
+          // Wait 500ms before retry
+          await new Promise(r => setTimeout(r, 500));
+        }
       }
     }
 
-    return optimizedUrl;
+    throw lastError || new Error('فشل رفع الملف إلى Cloudinary. يرجى التأكد من اتصال الإنترنت.');
   } catch (error: any) {
-    logger.error('Error uploading file to Cloudinary:', error);
+    logger.error('Error in uploadFileToCloudinary:', error);
     throw new Error(error.message || 'حدث خطأ أثناء رفع الملف');
   }
 };

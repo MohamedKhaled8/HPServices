@@ -95,7 +95,7 @@ export interface UploadedFile {
   type: string;
   url: string; // base64 for preview, or storage URL after upload
   preview?: string;
-  file?: File; // Actual file object for upload
+  file?: File | Blob; // Actual file object for upload
 }
 
 export interface ValidationError {
