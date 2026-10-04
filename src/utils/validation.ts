@@ -181,9 +181,9 @@ export const validateStudentData = (data: Partial<StudentData>): ValidationError
   return errors;
 };
 
-/** استبدال رقم هاتف مخزن في حقل انستاباي بمعرف الانستاباي الرسمي */
+/** المعرف الافتراضي لانستاباي في حال عدم تعيين قيمة */
 const INSTAPAY_ID = 'raoufpk97@instapay';
-/** الرقم الهاتفي المرتبط بحساب انستاباي الرسمي */
+/** الرقم الهاتفي الافتراضي المرتبط بحساب انستاباي */
 const INSTAPAY_PHONE = '01017180923';
 /** الاسم المختصر المعروض مع رقم انستاباي */
 const INSTAPAY_DISPLAY_NAME = "احمد ع م ش ";
@@ -192,7 +192,6 @@ export function normalizeInstaPay(val: string | undefined): string {
   if (!val || typeof val !== 'string') return INSTAPAY_ID;
   const t = val.trim();
   if (!t) return INSTAPAY_ID;
-  if (/^01[0-9]{9}$/.test(t) || /^1[0-9]{9}$/.test(t)) return INSTAPAY_ID;
   return t;
 }
 
