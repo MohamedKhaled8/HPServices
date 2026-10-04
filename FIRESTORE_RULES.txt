@@ -37,9 +37,13 @@ service cloud.firestore {
       allow write: if false; // No one can create admins via client-side code
     }
 
-    // Config collections (e.g., bookConfig, feesConfig)
-    match /{configType}Config/{document=**} {
-      allow read: if request.auth != null;
+    // Config collections (e.g., bookService, feesService)
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /configs/{configId} {
+      allow read: if true;
       allow write: if isAdmin();
     }
     

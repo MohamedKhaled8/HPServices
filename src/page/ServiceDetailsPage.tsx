@@ -143,7 +143,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             return unsub;
         }
 
-        if (service.id === '4') {
+        if (service.id === '4' || service.id === '2' || service.id === '10' || service.id === '11') {
             const unsub = subscribeToFeesServiceConfig((config) => {
                 if (config) {
                     if (!config.paymentMethods) {
@@ -1955,6 +1955,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                 {service.paymentMethods && service.paymentMethods.length > 0 && service.paymentMethods.map(method => {
                                     const fallbackPaymentNumber = method === 'Vodafone' ? '01050889591' : method === 'instaPay' ? 'raoufpk97@instapay' : '';
                                     const phoneNumber = getServicePaymentNumber(service.id, method, {
+                                        '2': feesConfig?.paymentMethods || bookConfig?.paymentMethods,
                                         '3': bookConfig?.paymentMethods,
                                         '4': feesConfig?.paymentMethods,
                                         '5': assignmentsConfig?.paymentMethods,
@@ -1962,10 +1963,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                         '7': digitalTransformationConfig?.paymentMethods,
                                         '8': finalReviewConfig?.paymentMethods,
                                         '9': graduationProjectConfig?.paymentMethods,
-                                        '12': statementEnrollmentConfig?.paymentMethods || {
-                                            cashWallet: '01050889591',
-                                            instaPay: 'raoufpk97@instapay'
-                                        }
+                                        '10': feesConfig?.paymentMethods || bookConfig?.paymentMethods,
+                                        '11': digitalTransformationConfig?.paymentMethods || feesConfig?.paymentMethods,
+                                        '12': statementEnrollmentConfig?.paymentMethods
                                     }) || fallbackPaymentNumber;
 
                                     const mainTitle = method === 'Vodafone' ? 'فودافون كاش' : method === 'instaPay' ? 'انستا باي' : method;
