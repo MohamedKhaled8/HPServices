@@ -22,11 +22,11 @@ export function getServicePaymentNumber(
   }
 
   const raw = method === 'instaPay' ? methods.instaPay : methods.cashWallet;
-  if (!raw || typeof raw !== 'string') {
+  if (raw === null || raw === undefined) {
     return '';
   }
 
-  return raw.trim();
+  return String(raw).trim();
 }
 
 export function isLegacyStaticPaymentNumber(value: string): boolean {

@@ -188,9 +188,9 @@ const INSTAPAY_PHONE = '01017180923';
 /** الاسم المختصر المعروض مع رقم انستاباي */
 const INSTAPAY_DISPLAY_NAME = "احمد ع م ش ";
 
-export function normalizeInstaPay(val: string | undefined): string {
-  if (!val || typeof val !== 'string') return INSTAPAY_ID;
-  const t = val.trim();
+export function normalizeInstaPay(val: any): string {
+  if (val === null || val === undefined) return INSTAPAY_ID;
+  const t = typeof val === 'string' ? val.trim() : String(val).trim();
   if (!t) return INSTAPAY_ID;
   return t;
 }
