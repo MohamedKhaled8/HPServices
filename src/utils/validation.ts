@@ -189,10 +189,8 @@ const INSTAPAY_PHONE = '01017180923';
 const INSTAPAY_DISPLAY_NAME = "احمد ع م ش ";
 
 export function normalizeInstaPay(val: any): string {
-  if (val === null || val === undefined) return INSTAPAY_ID;
-  const t = typeof val === 'string' ? val.trim() : String(val).trim();
-  if (!t) return INSTAPAY_ID;
-  return t;
+  if (val === null || val === undefined) return '';
+  return String(val).trim();
 }
 
 /**

@@ -9,7 +9,6 @@ import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus, UploadCloud } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import { logger } from '../utils/logger';
-import { normalizeInstaPay } from '../utils/validation';
 import { getServicePaymentNumber } from '../utils/servicePaymentNumber';
 import '../styles/ServiceDetailsPage.css';
 
@@ -128,9 +127,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (service.id === '3') {
             const unsub = subscribeToBookServiceConfig((config) => {
                 if (config) {
-                    if (config.paymentMethods?.instaPay) {
-                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-                    }
                     setBookConfig(config);
                 } else {
                     setBookConfig({
@@ -146,11 +142,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (service.id === '4' || service.id === '2' || service.id === '10' || service.id === '11') {
             const unsub = subscribeToFeesServiceConfig((config) => {
                 if (config) {
-                    if (!config.paymentMethods) {
-                        config = { ...config, paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' } };
-                    } else if (config.paymentMethods.instaPay) {
-                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-                    }
                     setFeesConfig(config);
                 } else {
                     setFeesConfig({ prices: {}, paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' } });
@@ -162,9 +153,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (service.id === '5') {
             const unsub = subscribeToAssignmentsServiceConfig((config) => {
                 if (config) {
-                    if (config.paymentMethods?.instaPay) {
-                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-                    }
                     setAssignmentsConfig(config);
                 }
             });
@@ -174,9 +162,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (service.id === '6') {
             const unsub = subscribeToCertificatesServiceConfig((config) => {
                 if (config) {
-                    if (config.paymentMethods?.instaPay) {
-                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-                    }
                     logger.log('Setting certificates config in ServiceDetailsPage:', config.certificates?.length || 0, 'certificates');
                     setCertificatesConfig(config);
                 } else {
@@ -190,9 +175,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (service.id === '7') {
             const unsub = subscribeToDigitalTransformationConfig((config) => {
                 if (config) {
-                    if (config.paymentMethods?.instaPay) {
-                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-                    }
                     logger.log('Setting digital transformation config in ServiceDetailsPage:', config.transformationTypes?.length || 0, 'types');
                     setDigitalTransformationConfig(config);
                 } else {
@@ -205,9 +187,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (service.id === '8') {
             const unsub = subscribeToFinalReviewConfig((config) => {
                 if (config) {
-                    if (config.paymentMethods?.instaPay) {
-                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-                    }
                     setFinalReviewConfig(config);
                 } else {
                     setFinalReviewConfig(null);
@@ -219,9 +198,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (service.id === '9') {
             const unsub = subscribeToGraduationProjectConfig((config) => {
                 if (config) {
-                    if (config.paymentMethods?.instaPay) {
-                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-                    }
                     setGraduationProjectConfig(config);
                 } else {
                     setGraduationProjectConfig(null);
@@ -233,9 +209,6 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         if (service.id === '12') {
             const unsub = subscribeToStatementEnrollmentConfig((config) => {
                 if (config) {
-                    if (config.paymentMethods?.instaPay) {
-                        config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-                    }
                     setStatementEnrollmentConfig(config);
                 }
             });
@@ -1953,7 +1926,9 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                             )}
                             <div className={`payment-methods ${(formAttempted && missingFieldNames.includes('paymentMethod')) ? 'error-border' : ''}`}>
                                 {service.paymentMethods && service.paymentMethods.length > 0 && service.paymentMethods.map(method => {
-                                    const fallbackPaymentNumber = method === 'Vodafone' ? '01050889591' : method === 'instaPay' ? 'raoufpk97@instapay' : '';
+                                    const dynamicFallbackInsta = feesConfig?.paymentMethods?.instaPay || bookConfig?.paymentMethods?.instaPay || '';
+                                    const dynamicFallbackCash = feesConfig?.paymentMethods?.cashWallet || bookConfig?.paymentMethods?.cashWallet || '01050889591';
+                                    const fallbackPaymentNumber = method === 'Vodafone' ? dynamicFallbackCash : dynamicFallbackInsta;
                                     const phoneNumber = getServicePaymentNumber(service.id, method, {
                                         '2': feesConfig?.paymentMethods || bookConfig?.paymentMethods,
                                         '3': bookConfig?.paymentMethods,

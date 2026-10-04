@@ -130,7 +130,6 @@ import {
 } from 'lucide-react';
 import { SERVICES } from '../constants/services';
 import { logger } from '../utils/logger';
-import { normalizeInstaPay } from '../utils/validation';
 import CustomToast from '../components/CustomToast';
 import { useSpreadsheetGrid } from '../hooks/useSpreadsheetGrid';
 import SpreadsheetContextMenu, { type SpreadsheetMenuAction } from '../components/SpreadsheetContextMenu';
@@ -1508,52 +1507,38 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     // ======= Realtime subscriptions for all service configs =======
     const unsubscribeBook = subscribeToBookServiceConfig((config) => {
       if (config) {
-        if (config.paymentMethods?.instaPay) {
-          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-        }
         setBookConfig(config);
       } else {
         setBookConfig({
           serviceName: 'شحن الكتب الدراسية',
           prices: { '1': 1750, '2': 3440, '3': 5160, '4': 6820, '5': 8450, '6': 10200, '7': 11885, '8': 13580, '9': 15210, '10': 16900, '11': 18500 },
-          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+          paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         });
       }
     });
 
     const unsubscribeFees = subscribeToFeesServiceConfig((config) => {
       if (config) {
-        if (!config.paymentMethods) {
-          config = { ...config, paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' } };
-        } else if (config.paymentMethods.instaPay) {
-          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-        }
         setFeesConfig(config);
       } else {
-        setFeesConfig({ prices: {}, paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' } });
+        setFeesConfig({ prices: {}, paymentMethods: { instaPay: '', cashWallet: '01050889591' } });
       }
     });
 
     const unsubscribeAssignments = subscribeToAssignmentsServiceConfig((config) => {
       if (config) {
-        if (config.paymentMethods?.instaPay) {
-          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-        }
         setAssignmentsConfig(config);
       } else {
         setAssignmentsConfig({
           serviceName: 'حل وتسليم تكاليف الترم الاول',
           assignments: [],
-          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+          paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         });
       }
     });
 
     const unsubscribeCertificates = subscribeToCertificatesServiceConfig((config) => {
       if (config) {
-        if (config.paymentMethods?.instaPay) {
-          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-        }
         setCertificatesConfig(config);
       } else {
         // Default certificates config
@@ -1579,7 +1564,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               ]
             }
           ],
-          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+          paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         };
         setCertificatesConfig(defaultConfig);
         updateCertificatesServiceConfig(defaultConfig).catch(e => logger.error('Error saving default certificates config:', e));
@@ -1588,15 +1573,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     const unsubscribeDigital = subscribeToDigitalTransformationConfig((config) => {
       if (config) {
-        if (config.paymentMethods?.instaPay) {
-          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-        }
         setDigitalTransformationConfig(config);
       } else {
         const defaultConfig: DigitalTransformationConfig = {
           transformationTypes: [],
           examLanguage: ['اللغة العربية'],
-          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+          paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         };
         setDigitalTransformationConfig(defaultConfig);
         updateDigitalTransformationConfig(defaultConfig).catch(e => logger.error('Error saving default digital transformation config:', e));
@@ -1605,15 +1587,12 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     const unsubscribeFinalReview = subscribeToFinalReviewConfig((config) => {
       if (config) {
-        if (config.paymentMethods?.instaPay) {
-          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-        }
         setFinalReviewConfig(config);
       } else {
         const defaultConfig: FinalReviewConfig = {
           serviceName: 'المراجعة النهائية',
           paymentAmount: 500,
-          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+          paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         };
         setFinalReviewConfig(defaultConfig);
         updateFinalReviewConfig(defaultConfig).catch(e => logger.error('Error saving default final review config:', e));
@@ -1622,16 +1601,13 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     const unsubscribeGraduation = subscribeToGraduationProjectConfig((config) => {
       if (config) {
-        if (config.paymentMethods?.instaPay) {
-          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-        }
         setGraduationProjectConfig(config);
       } else {
         const defaultConfig: GraduationProjectConfig = {
           serviceName: 'مشروع التخرج',
           features: ['اعداد مشروع التخرج كامل', 'شرح جميع جوانب المشروع و تفاصيله', 'اعداد الاجزاء الاحصائية علي ارض الواقع', 'تقسيم الادوار و التدريب علي الالقاء الشفوي', 'احدث قائمة مراجع للمشروع', 'اعداد العرض التقديمي PowerPoint'],
           prices: [],
-          paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
+          paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         };
         setGraduationProjectConfig(defaultConfig);
         updateGraduationProjectConfig(defaultConfig).catch(e => logger.error('Error saving default graduation project config:', e));
@@ -1640,9 +1616,6 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
     const unsubscribeStatement = subscribeToStatementEnrollmentConfig((config) => {
       if (config) {
-        if (config.paymentMethods?.instaPay) {
-          config = { ...config, paymentMethods: { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) } };
-        }
         setStatementEnrollmentConfig(config);
       } else {
         const defaultConfig: StatementEnrollmentConfig = {

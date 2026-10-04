@@ -24,7 +24,6 @@ import {
   AssignmentFolderMeta
 } from '../services/firebaseService';
 import { AssignmentsServiceConfig, AssignmentItem } from '../types';
-import { normalizeInstaPay } from '../utils/validation';
 import {
   ArrowRight,
   Folder,
@@ -206,9 +205,6 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       try {
         const config = await getAssignmentsServiceConfig();
         if (config) {
-          if (config.paymentMethods?.instaPay) {
-            config.paymentMethods = { ...config.paymentMethods, instaPay: normalizeInstaPay(config.paymentMethods.instaPay) };
-          }
           setAssignmentsConfig(config);
         }
       } catch (error) {
