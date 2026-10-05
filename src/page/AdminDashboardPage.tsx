@@ -365,10 +365,26 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const [dtCodes, setDtCodes] = useState<any[]>([]);
   const [epCodes, setEpCodes] = useState<any[]>([]);
 
+  // Service Requests Bulk Actions (الإجراءات الجماعية للطلبات)
+  const [selectedRequestKeys, setSelectedRequestKeys] = useState<Set<string>>(new Set());
+  const [lastSelectedRequestRowIndex, setLastSelectedRequestRowIndex] = useState<number | null>(null);
+  const [isBulkProcessingRequests, setIsBulkProcessingRequests] = useState<boolean>(false);
+  const [bulkActionProgress, setBulkActionProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [quickSelectCount, setQuickSelectCount] = useState<string>('6');
+  const isDraggingRowSelectionRef = useRef<boolean>(false);
+  const dragRowStartRef = useRef<number | null>(null);
+  const initialSelectedKeysAtDragRef = useRef<Set<string>>(new Set());
+  const displayRequestsRef = useRef<ServiceRequest[]>([]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   /** يتبع اختيار الكارد بلا تأخيرة — الجدول الثقيل يقرأ القيمة المؤجلة لتفادي التجميد والوميض */
   const deferredRequestsServiceId = useDeferredValue(selectedServiceId);
+
+  useEffect(() => {
+    setSelectedRequestKeys(new Set());
+    setLastSelectedRequestRowIndex(null);
+  }, [selectedServiceId]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const requestsSectionRef = React.useRef<HTMLDivElement>(null);
@@ -870,6 +886,25 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   /* Mouse drag to select range + auto-scroll while dragging */
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
+      // Row drag selection for service requests
+      if (isDraggingRowSelectionRef.current && dragRowStartRef.current !== null) {
+        const tr = (e.target as HTMLElement).closest('tr[data-row-index]');
+        if (tr) {
+          const idx = parseInt(tr.getAttribute('data-row-index') || '', 10);
+          if (!Number.isNaN(idx)) {
+            const start = Math.min(dragRowStartRef.current, idx);
+            const end = Math.max(dragRowStartRef.current, idx);
+            const reqs = displayRequestsRef.current;
+            const next = new Set(initialSelectedKeysAtDragRef.current);
+            for (let i = start; i <= end; i++) {
+              const r = reqs[i];
+              if (r && r.id) next.add(`${r.serviceId}_${r.id}`);
+            }
+            setSelectedRequestKeys(next);
+          }
+        }
+      }
+
       if (!dragStartRef.current) return;
       const t = (e.target as HTMLElement).closest('[data-row][data-col]');
       if (t) {
@@ -903,7 +938,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         }
       }
     };
-    const onUp = () => { dragStartRef.current = null; };
+    const onUp = () => {
+      dragStartRef.current = null;
+      if (isDraggingRowSelectionRef.current) {
+        isDraggingRowSelectionRef.current = false;
+        dragRowStartRef.current = null;
+        document.body.style.userSelect = '';
+      }
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
@@ -2156,6 +2198,213 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       setToastState({ message: 'تم حذف الطلب بنجاح', type: 'success' });
     } catch (error: any) {
       setToastState({ message: error.message || 'حدث خطأ أثناء حذف الطلب', type: 'error' });
+    }
+  };
+
+  const handleBulkStatusChange = async (targetStatus: ServiceRequestWorkflowStatus, reqsToProcess: ServiceRequest[]) => {
+    if (!reqsToProcess.length) return;
+
+    const statusLabels: Record<ServiceRequestWorkflowStatus, string> = {
+      pending: 'قيد الانتظار',
+      submitted: 'تم التقديم',
+      receipt_sent: 'تم إرسال الإيصال',
+      completed: 'مكتمل (قبول)',
+      rejected: 'مرفوض (إلغاء)'
+    };
+    const targetLabel = statusLabels[targetStatus] || targetStatus;
+
+    if (!window.confirm(`هل أنت متأكد من تغيير حالة ${reqsToProcess.length} طلب إلى "${targetLabel}"؟`)) {
+      return;
+    }
+
+    setIsBulkProcessingRequests(true);
+    setBulkActionProgress({ current: 0, total: reqsToProcess.length, label: `جاري تحويل الطلبات إلى "${targetLabel}"...` });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < reqsToProcess.length; i++) {
+      const req = reqsToProcess[i];
+      setBulkActionProgress({
+        current: i + 1,
+        total: reqsToProcess.length,
+        label: `جاري تحديث طلب ${i + 1} من ${reqsToProcess.length}...`
+      });
+
+      try {
+        if (req.id && req.serviceId) {
+          await handleStatusChange(req.id, targetStatus, req.serviceId);
+          successCount++;
+        }
+      } catch (err) {
+        logger.error('Bulk status update error for request:', req.id, err);
+        failCount++;
+      }
+      await new Promise(r => setTimeout(r, 60));
+    }
+
+    setIsBulkProcessingRequests(false);
+    setBulkActionProgress(null);
+    setSelectedRequestKeys(new Set());
+    setLastSelectedRequestRowIndex(null);
+
+    if (failCount === 0) {
+      setToastState({
+        message: `تم بنجاح تحديث ${successCount} طلب إلى "${targetLabel}" 🎉`,
+        type: 'success',
+        duration: 4000
+      });
+    } else {
+      setToastState({
+        message: `تم تحديث ${successCount} طلب، وتعذر تحديث ${failCount} طلب.`,
+        type: 'warning',
+        duration: 5000
+      });
+    }
+  };
+
+  const handleBulkDelete = async (reqsToProcess: ServiceRequest[]) => {
+    if (!reqsToProcess.length) return;
+
+    if (!window.confirm(`⚠️ تحذير: هل أنت متأكد من حذف ${reqsToProcess.length} طلب نهائياً من قاعدة البيانات؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+      return;
+    }
+
+    setIsBulkProcessingRequests(true);
+    setBulkActionProgress({ current: 0, total: reqsToProcess.length, label: 'جاري حذف الطلبات المحددة...' });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < reqsToProcess.length; i++) {
+      const req = reqsToProcess[i];
+      setBulkActionProgress({
+        current: i + 1,
+        total: reqsToProcess.length,
+        label: `جاري حذف طلب ${i + 1} من ${reqsToProcess.length}...`
+      });
+
+      try {
+        if (req.id && req.serviceId) {
+          await deleteServiceRequest(req.id, req.serviceId);
+          successCount++;
+        }
+      } catch (err) {
+        logger.error('Bulk delete error for request:', req.id, err);
+        failCount++;
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+
+    setIsBulkProcessingRequests(false);
+    setBulkActionProgress(null);
+    setSelectedRequestKeys(new Set());
+    setLastSelectedRequestRowIndex(null);
+
+    if (failCount === 0) {
+      setToastState({
+        message: `تم حذف ${successCount} طلب بنجاح نهائياً`,
+        type: 'success',
+        duration: 4000
+      });
+    } else {
+      setToastState({
+        message: `تم حذف ${successCount} طلب، وتعذر حذف ${failCount} طلب.`,
+        type: 'warning',
+        duration: 5000
+      });
+    }
+  };
+
+  const handleBulkDownloadZip = async (reqsToProcess: ServiceRequest[]) => {
+    if (!reqsToProcess.length) return;
+
+    setIsBulkProcessingRequests(true);
+    setBulkActionProgress({ current: 0, total: reqsToProcess.length, label: 'جاري جمع الصور والملفات للطلبات المحددة...' });
+
+    try {
+      const zip = new JSZip();
+      let totalFilesFound = 0;
+
+      for (let i = 0; i < reqsToProcess.length; i++) {
+        const req = reqsToProcess[i];
+        setBulkActionProgress({
+          current: i + 1,
+          total: reqsToProcess.length,
+          label: `جاري تجهيز مرفقات طلب ${i + 1} من ${reqsToProcess.length}...`
+        });
+
+        const rawName: string = String(
+          req.data?.full_name_arabic ||
+          req.data?.full_name ||
+          req.data?.student_names ||
+          ''
+        ).trim();
+        const rawPhone: string = String(
+          req.data?.whatsapp_number ||
+          req.data?.phone_whatsapp ||
+          req.data?.phone ||
+          ''
+        ).replace(/\D/g, '').trim();
+
+        const safeName = rawName.replace(/[\\/:*?"<>|]/g, '_') || `request_${req.id || i + 1}`;
+        const folderName = `${i + 1}_${rawPhone ? `${safeName}_${rawPhone}` : safeName}`;
+        const folder = zip.folder(folderName) || zip;
+
+        const imagesToDownload: { url: string; name: string }[] = [];
+        if (req.data?.receiptUrl) {
+          imagesToDownload.push({ url: req.data.receiptUrl, name: `receipt_${req.id}.jpg` });
+        }
+        if (req.documents && req.documents.length > 0) {
+          req.documents.forEach((doc, idx) => {
+            if (doc.type !== 'PDF') {
+              imagesToDownload.push({
+                url: doc.url,
+                name: `${doc.name || 'attachment'}_${idx + 1}.jpg`
+              });
+            }
+          });
+        }
+
+        for (const img of imagesToDownload) {
+          try {
+            let blob: Blob;
+            if (img.url.startsWith('data:')) {
+              const parts = img.url.split(',');
+              const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+              const binStr = atob(parts[1]);
+              const u8 = new Uint8Array(binStr.length);
+              for (let j = 0; j < binStr.length; j++) u8[j] = binStr.charCodeAt(j);
+              blob = new Blob([u8], { type: mime });
+            } else {
+              const response = await fetch(img.url);
+              blob = await response.blob();
+            }
+            folder.file(img.name, blob);
+            totalFilesFound++;
+          } catch (e) {
+            logger.error('Error fetching image for bulk zip', img.url, e);
+          }
+        }
+      }
+
+      if (totalFilesFound === 0) {
+        setToastState({ message: 'لم يتم العثور على أي صور أو إيصالات في الطلبات المحددة', type: 'info' });
+        setIsBulkProcessingRequests(false);
+        setBulkActionProgress(null);
+        return;
+      }
+
+      setBulkActionProgress({ current: reqsToProcess.length, total: reqsToProcess.length, label: 'جاري إنشاء ملف ZIP وتنزيله...' });
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `ملفات_الطلبات_المحددة_${reqsToProcess.length}_طلب.zip`);
+      setToastState({ message: `تم تنزيل ${totalFilesFound} ملف بنجاح في ملف مضغوط`, type: 'success' });
+    } catch (err) {
+      logger.error('Error in bulk download zip', err);
+      setToastState({ message: 'حدث خطأ أثناء تنزيل الملفات المضغوطة', type: 'error' });
+    } finally {
+      setIsBulkProcessingRequests(false);
+      setBulkActionProgress(null);
     }
   };
 
@@ -4323,6 +4572,75 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       XLSX.writeFile(workbook, fileName);
                     };
 
+                    const allVisibleKeys = displayRequests.map(r => `${r.serviceId}_${r.id}`);
+                    const visibleSelectedCount = allVisibleKeys.filter(k => selectedRequestKeys.has(k)).length;
+                    const isAllVisibleSelected = allVisibleKeys.length > 0 && visibleSelectedCount === allVisibleKeys.length;
+                    const isSomeVisibleSelected = visibleSelectedCount > 0 && !isAllVisibleSelected;
+
+                    const handleMasterCheckboxChange = () => {
+                      if (isAllVisibleSelected) {
+                        const next = new Set(selectedRequestKeys);
+                        allVisibleKeys.forEach(k => next.delete(k));
+                        setSelectedRequestKeys(next);
+                      } else {
+                        const next = new Set(selectedRequestKeys);
+                        allVisibleKeys.forEach(k => next.add(k));
+                        setSelectedRequestKeys(next);
+                      }
+                    };
+
+                    const toggleSelectRequest = (reqKey: string, index: number, isShift: boolean) => {
+                      const next = new Set(selectedRequestKeys);
+                      if (isShift && lastSelectedRequestRowIndex !== null) {
+                        const start = Math.min(lastSelectedRequestRowIndex, index);
+                        const end = Math.max(lastSelectedRequestRowIndex, index);
+                        for (let i = start; i <= end; i++) {
+                          const r = displayRequests[i];
+                          if (r && r.id) {
+                            next.add(`${r.serviceId}_${r.id}`);
+                          }
+                        }
+                      } else {
+                        if (next.has(reqKey)) {
+                          next.delete(reqKey);
+                        } else {
+                          next.add(reqKey);
+                        }
+                        setLastSelectedRequestRowIndex(index);
+                      }
+                      setSelectedRequestKeys(next);
+                    };
+
+                    const handleSelectAllVisible = () => {
+                      const next = new Set(selectedRequestKeys);
+                      displayRequests.forEach(r => {
+                        if (r.id) next.add(`${r.serviceId}_${r.id}`);
+                      });
+                      setSelectedRequestKeys(next);
+                      setLastSelectedRequestRowIndex(displayRequests.length - 1);
+                    };
+
+                    const handleDeselectAll = () => {
+                      setSelectedRequestKeys(new Set());
+                      setLastSelectedRequestRowIndex(null);
+                    };
+
+                    const handleSelectFirstN = (count: number) => {
+                      const n = Math.max(1, Math.min(count, displayRequests.length));
+                      const next = new Set<string>();
+                      for (let i = 0; i < n; i++) {
+                        const r = displayRequests[i];
+                        if (r && r.id) {
+                          next.add(`${r.serviceId}_${r.id}`);
+                        }
+                      }
+                      setSelectedRequestKeys(next);
+                      setLastSelectedRequestRowIndex(n - 1);
+                    };
+
+                    displayRequestsRef.current = displayRequests;
+                    const selectedReqsList = serviceRequests.filter(r => selectedRequestKeys.has(`${r.serviceId}_${r.id}`));
+
                     return (
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '0 8px', gap: '12px', flexWrap: 'wrap' }}>
@@ -4419,6 +4737,149 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           </div>
                         </div>
 
+                        {/* شريط أدوات التحديد السريع للطلبات */}
+                        <div className="requests-bulk-quick-toolbar" style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                          flexWrap: 'wrap',
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '10px',
+                          padding: '8px 12px',
+                          marginBottom: '14px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <CheckSquare size={16} color="#2563eb" />
+                              تحديد جماعي سريع:
+                            </span>
+                            {[5, 6, 10, 20].map((n) => (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => handleSelectFirstN(n)}
+                                style={{
+                                  padding: '4px 10px',
+                                  background: selectedRequestKeys.size === n ? '#dbeafe' : '#ffffff',
+                                  color: selectedRequestKeys.size === n ? '#1d4ed8' : '#475569',
+                                  border: selectedRequestKeys.size === n ? '1px solid #93c5fd' : '1px solid #cbd5e1',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                title={`تحديد أول ${n} طلب`}
+                              >
+                                أول {n}
+                              </button>
+                            ))}
+
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginRight: '4px' }}>
+                              <input
+                                type="number"
+                                min={1}
+                                max={displayRequests.length || 100}
+                                value={quickSelectCount}
+                                onChange={(e) => setQuickSelectCount(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    const num = parseInt(quickSelectCount, 10);
+                                    if (!Number.isNaN(num) && num > 0) handleSelectFirstN(num);
+                                  }
+                                }}
+                                placeholder="عدد"
+                                style={{
+                                  width: '54px',
+                                  padding: '4px 6px',
+                                  fontSize: '12px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #cbd5e1',
+                                  textAlign: 'center',
+                                  fontWeight: 600
+                                }}
+                                title="أدخل أي عدد تريده واضغط تحديد"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const num = parseInt(quickSelectCount, 10);
+                                  if (!Number.isNaN(num) && num > 0) handleSelectFirstN(num);
+                                }}
+                                style={{
+                                  padding: '4px 9px',
+                                  background: '#ffffff',
+                                  color: '#2563eb',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                تحديد
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleSelectAllVisible}
+                              style={{
+                                padding: '4px 10px',
+                                background: '#ffffff',
+                                color: '#334155',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                              }}
+                              title="تحديد جميع الطلبات المعروضة في الصفحة"
+                            >
+                              تحديد كل المعروض ({displayRequests.length})
+                            </button>
+                          </div>
+
+                          {selectedRequestKeys.size > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                background: '#eff6ff',
+                                color: '#1d4ed8',
+                                padding: '3px 8px',
+                                borderRadius: '12px',
+                                border: '1px solid #bfdbfe'
+                              }}>
+                                تم تحديد {selectedRequestKeys.size} طلب
+                              </span>
+                              <button
+                                type="button"
+                                onClick={handleDeselectAll}
+                                style={{
+                                  padding: '4px 8px',
+                                  background: '#fef2f2',
+                                  color: '#dc2626',
+                                  border: '1px solid #fecaca',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="إلغاء تحديد كل الطلبات"
+                              >
+                                <X size={13} />
+                                إلغاء التحديد
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
                         <div
                           ref={requestsTableRef}
                           tabIndex={0}
@@ -4446,7 +4907,20 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           <table className="excel-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '15px', minWidth: '1200px' }}>
                             <thead onMouseDown={(e) => e.stopPropagation()}>
                               <tr style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc', color: '#1e293b', borderBottom: '2px solid #e2e8f0' }}>
-                                <th className="spreadsheet-header-no-menu" data-col={0} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', color: '#475569', background: '#f1f5f9' }}>#</th>
+                                <th className="spreadsheet-header-no-menu" data-col={0} style={{ padding: '15px 10px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', color: '#475569', background: '#f1f5f9' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isAllVisibleSelected}
+                                      ref={el => { if (el) el.indeterminate = isSomeVisibleSelected; }}
+                                      onChange={handleMasterCheckboxChange}
+                                      style={{ cursor: 'pointer', width: '17px', height: '17px', accentColor: '#2563eb' }}
+                                      title={isAllVisibleSelected ? "إلغاء تحديد كل الظاهر" : "تحديد كل الظاهر في الجدول"}
+                                      aria-label="تحديد كل الطلبات الظاهرة"
+                                    />
+                                    <span>#</span>
+                                  </div>
+                                </th>
                                 <th className="spreadsheet-header-no-menu" data-col={1} style={{ padding: '15px 12px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '800', fontSize: '13px', whiteSpace: 'nowrap', background: '#f1f5f9' }}>إجراءات</th>
                                 <th
                                   className="spreadsheet-header-no-menu"
@@ -4584,7 +5058,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                                 const userRequestsCount = duplicateCountByRow[index];
                                 const isDuplicate = userRequestsCount > 1;
-                                const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
+                                const reqKey = `${request.serviceId}_${request.id}`;
+                                const isSelected = selectedRequestKeys.has(reqKey);
+                                const rowBg = isSelected ? '#eff6ff' : (index % 2 === 0 ? '#ffffff' : '#f8fafc');
 
                                 // Define values list to match headers
                                 const colNameVal = request.data.full_name_arabic || request.data.full_name || studentData?.fullNameArabic || 'غير متاح';
@@ -4700,17 +5176,106 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 return (
                                   <tr
                                     key={request.id ? `${request.serviceId}-${request.id}` : `row-${index}-${request.studentId}-${request.createdAt || ''}`}
+                                    data-row-index={index}
+                                    className={isSelected ? 'requests-table-selected-row' : undefined}
+                                    onMouseEnter={() => {
+                                      if (isDraggingRowSelectionRef.current && dragRowStartRef.current !== null) {
+                                        const start = Math.min(dragRowStartRef.current, index);
+                                        const end = Math.max(dragRowStartRef.current, index);
+                                        const reqs = displayRequestsRef.current;
+                                        const next = new Set(initialSelectedKeysAtDragRef.current);
+                                        for (let i = start; i <= end; i++) {
+                                          const r = reqs[i];
+                                          if (r && r.id) next.add(`${r.serviceId}_${r.id}`);
+                                        }
+                                        setSelectedRequestKeys(next);
+                                      }
+                                    }}
+                                    onDoubleClick={(e) => {
+                                      if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return;
+                                      toggleSelectRequest(reqKey, index, false);
+                                    }}
                                     style={{ background: rowBg, transition: 'background-color 0.12s ease' }}
                                   >
                                     <td
                                       data-row={index}
                                       data-col={0}
-                                      className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 0) ? ' selected' : ''}`}
-                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 0 }; gridApi.selectCell('requests', index, 0); }}
-                                      style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '14px', verticalAlign: 'top' }}
+                                      className={`spreadsheet-cell${isSelected ? ' bulk-selected-cell' : ''}${gridApi.isCellSelected('requests', index, 0) ? ' selected' : ''}`}
+                                      onClick={(e) => {
+                                        if ((e.target as HTMLElement).tagName === 'INPUT') return;
+                                        toggleSelectRequest(reqKey, index, e.shiftKey);
+                                      }}
+                                      onMouseDown={(e) => {
+                                        if (e.button !== 0) return;
+                                        if ((e.target as HTMLElement).closest('button, a')) return;
+                                        e.preventDefault();
+                                        document.body.style.userSelect = 'none';
+                                        isDraggingRowSelectionRef.current = true;
+                                        dragRowStartRef.current = index;
+
+                                        const isCtrl = e.ctrlKey || e.metaKey;
+                                        const isShift = e.shiftKey;
+
+                                        if (isShift && lastSelectedRequestRowIndex !== null) {
+                                          const start = Math.min(lastSelectedRequestRowIndex, index);
+                                          const end = Math.max(lastSelectedRequestRowIndex, index);
+                                          const next = new Set(selectedRequestKeys);
+                                          for (let i = start; i <= end; i++) {
+                                            const r = displayRequests[i];
+                                            if (r && r.id) next.add(`${r.serviceId}_${r.id}`);
+                                          }
+                                          setSelectedRequestKeys(next);
+                                          initialSelectedKeysAtDragRef.current = next;
+                                        } else {
+                                          const base = isCtrl ? new Set(selectedRequestKeys) : new Set<string>();
+                                          initialSelectedKeysAtDragRef.current = base;
+                                          const next = new Set(base);
+                                          if (reqKey) {
+                                            if (isCtrl && selectedRequestKeys.has(reqKey)) {
+                                              next.delete(reqKey);
+                                            } else {
+                                              next.add(reqKey);
+                                            }
+                                          }
+                                          setSelectedRequestKeys(next);
+                                          setLastSelectedRequestRowIndex(index);
+                                        }
+
+                                        dragStartRef.current = { tableId: 'requests', row: index, col: 0 };
+                                        gridApi.selectCell('requests', index, 0);
+                                      }}
+                                      style={{
+                                        padding: '10px 8px',
+                                        border: '1px solid #cbd5e1',
+                                        textAlign: 'center',
+                                        fontWeight: '700',
+                                        color: isSelected ? '#1d4ed8' : '#475569',
+                                        fontSize: '14px',
+                                        verticalAlign: 'middle',
+                                        cursor: 'crosshair',
+                                        userSelect: 'none',
+                                        backgroundColor: isSelected ? '#dbeafe' : undefined
+                                      }}
+                                      title="انقر واسحب بالماوس لتحديد صفوف متتالية (مثل الإكسل)"
                                     >
-                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                        {index + 1}
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                        <GripVertical size={12} style={{ color: isSelected ? '#2563eb' : '#94a3b8', cursor: 'grab' }} />
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            toggleSelectRequest(reqKey, index, (e.nativeEvent as MouseEvent).shiftKey);
+                                          }}
+                                          onClick={(e) => e.stopPropagation()}
+                                          style={{
+                                            cursor: 'pointer',
+                                            width: '17px',
+                                            height: '17px',
+                                            accentColor: '#2563eb'
+                                          }}
+                                          aria-label={`تحديد الطلب رقم ${index + 1}`}
+                                        />
+                                        <span>{index + 1}</span>
                                       </div>
                                     </td>
                                     <td
@@ -4897,7 +5462,24 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                       data-row={index}
                                       data-col={2}
                                       className={`spreadsheet-cell${gridApi.isCellSelected('requests', index, 2) ? ' selected' : ''}`}
-                                      onMouseDown={(e) => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return; e.preventDefault(); dragStartRef.current = { tableId: 'requests', row: index, col: 2 }; gridApi.selectCell('requests', index, 2); }}
+                                      onMouseDown={(e) => {
+                                        if (e.button !== 0) return;
+                                        if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return;
+                                        if (e.shiftKey && lastSelectedRequestRowIndex !== null) {
+                                          e.preventDefault();
+                                          const start = Math.min(lastSelectedRequestRowIndex, index);
+                                          const end = Math.max(lastSelectedRequestRowIndex, index);
+                                          const next = new Set(selectedRequestKeys);
+                                          for (let i = start; i <= end; i++) {
+                                            const r = displayRequests[i];
+                                            if (r && r.id) next.add(`${r.serviceId}_${r.id}`);
+                                          }
+                                          setSelectedRequestKeys(next);
+                                          return;
+                                        }
+                                        dragStartRef.current = { tableId: 'requests', row: index, col: 2 };
+                                        gridApi.selectCell('requests', index, 2);
+                                      }}
                                       style={{ padding: '12px 10px', border: '1px solid #cbd5e1', textAlign: 'center', verticalAlign: 'top' }}
                                     >{getStatusBadge(request.status)}</td>
 
@@ -5049,6 +5631,279 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                           </table>
                         </div>
                         </div>
+
+                        {/* شريط الإجراءات الجماعية العائم */}
+                        {selectedReqsList.length > 0 && (
+                          <div className="bulk-actions-floating-bar" style={{
+                            position: 'fixed',
+                            bottom: '20px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            zIndex: 9999,
+                            width: 'calc(100% - 32px)',
+                            maxWidth: '1150px',
+                            background: 'rgba(255, 255, 255, 0.98)',
+                            backdropFilter: 'blur(16px)',
+                            border: '1.5px solid #3b82f6',
+                            borderRadius: '16px',
+                            boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.25), 0 0 25px rgba(59, 130, 246, 0.25)',
+                            padding: '12px 18px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '12px',
+                            flexWrap: 'wrap',
+                            direction: 'rtl'
+                          }}>
+                            {/* جانب العداد والإلغاء */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: '#eff6ff',
+                                color: '#1d4ed8',
+                                padding: '6px 12px',
+                                borderRadius: '10px',
+                                fontWeight: 800,
+                                fontSize: '14px',
+                                border: '1px solid #bfdbfe'
+                              }}>
+                                <CheckSquare size={16} />
+                                <span>تم تحديد {selectedReqsList.length} طلب</span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={handleDeselectAll}
+                                disabled={isBulkProcessingRequests}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#64748b',
+                                  fontSize: '13px',
+                                  fontWeight: 600,
+                                  cursor: isBulkProcessingRequests ? 'not-allowed' : 'pointer',
+                                  padding: '4px 8px',
+                                  borderRadius: '6px'
+                                }}
+                                title="إلغاء التحديد"
+                              >
+                                <X size={15} />
+                                <span>إلغاء التحديد</span>
+                              </button>
+                            </div>
+
+                            {/* مؤشر المعالجة أو أزرار الإجراءات */}
+                            {isBulkProcessingRequests ? (
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                padding: '6px 16px',
+                                background: '#f8fafc',
+                                borderRadius: '10px',
+                                border: '1px solid #cbd5e1'
+                              }}>
+                                <Loader2 size={18} className="spin-animation" style={{ color: '#2563eb' }} />
+                                <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+                                  {bulkActionProgress?.label || 'جاري معالجة الطلبات المحددة...'}
+                                </span>
+                                {bulkActionProgress && (
+                                  <span style={{
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    background: '#2563eb',
+                                    color: 'white',
+                                    padding: '2px 8px',
+                                    borderRadius: '20px'
+                                  }}>
+                                    {bulkActionProgress.current} / {bulkActionProgress.total}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="bulk-actions-buttons-container" style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                flexWrap: 'wrap'
+                              }}>
+                                {/* زر قبول (مكتمل) */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkStatusChange('completed', selectedReqsList)}
+                                  className="bulk-action-btn"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '7px 14px',
+                                    background: '#16a34a',
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(22, 163, 74, 0.3)'
+                                  }}
+                                  title="تغيير حالة الطلبات المحددة إلى مكتمل (قبول)"
+                                >
+                                  <CheckCircle size={15} />
+                                  <span>قبول (مكتمل)</span>
+                                </button>
+
+                                {/* زر قيد الانتظار */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkStatusChange('pending', selectedReqsList)}
+                                  className="bulk-action-btn"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '7px 14px',
+                                    background: '#fffbeb',
+                                    color: '#d97706',
+                                    border: '1px solid #fcd34d',
+                                    borderRadius: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="تغيير حالة الطلبات المحددة إلى قيد الانتظار"
+                                >
+                                  <Clock size={15} />
+                                  <span>قيد الانتظار</span>
+                                </button>
+
+                                {/* زر تم التقديم */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkStatusChange('submitted', selectedReqsList)}
+                                  className="bulk-action-btn"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '7px 14px',
+                                    background: '#eff6ff',
+                                    color: '#2563eb',
+                                    border: '1px solid #93c5fd',
+                                    borderRadius: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="تغيير حالة الطلبات المحددة إلى تم التقديم"
+                                >
+                                  <Send size={15} />
+                                  <span>تم التقديم</span>
+                                </button>
+
+                                {/* زر تم إرسال الإيصال */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkStatusChange('receipt_sent', selectedReqsList)}
+                                  className="bulk-action-btn"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '7px 14px',
+                                    background: '#ecfdf5',
+                                    color: '#047857',
+                                    border: '1px solid #6ee7b7',
+                                    borderRadius: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="تغيير حالة الطلبات المحددة إلى تم إرسال الإيصال"
+                                >
+                                  <FileText size={15} />
+                                  <span>تم إرسال الإيصال</span>
+                                </button>
+
+                                {/* زر إلغاء (مرفوض) */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkStatusChange('rejected', selectedReqsList)}
+                                  className="bulk-action-btn"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '7px 14px',
+                                    background: '#fef2f2',
+                                    color: '#dc2626',
+                                    border: '1px solid #fecaca',
+                                    borderRadius: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="تغيير حالة الطلبات المحددة إلى مرفوض (إلغاء)"
+                                >
+                                  <XCircle size={15} />
+                                  <span>إلغاء (مرفوض)</span>
+                                </button>
+
+                                {/* زر تنزيل الصور كملف مضغوط */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkDownloadZip(selectedReqsList)}
+                                  className="bulk-action-btn"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '7px 14px',
+                                    background: '#faf5ff',
+                                    color: '#7c3aed',
+                                    border: '1px solid #d8b4fe',
+                                    borderRadius: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="تنزيل إيصالات ومرفقات الطلبات المحددة في ملف ZIP واحد"
+                                >
+                                  <Download size={15} />
+                                  <span>تنزيل الصور (ZIP)</span>
+                                </button>
+
+                                {/* زر حذف المحدد */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkDelete(selectedReqsList)}
+                                  className="bulk-action-btn"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '7px 14px',
+                                    background: '#fff1f2',
+                                    color: '#e11d48',
+                                    border: '1px solid #ffe4e6',
+                                    borderRadius: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="حذف جميع الطلبات المحددة نهائياً"
+                                >
+                                  <Trash2 size={15} />
+                                  <span>حذف</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {showDefaultColumnsModal && (
                           <div style={{

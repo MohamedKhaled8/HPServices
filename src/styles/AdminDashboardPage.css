@@ -4084,3 +4084,91 @@
     min-height: 100px !important;
   }
 }
+
+/* ==========================================================================
+   Service Requests Bulk Actions (الإجراءات الجماعية للطلبات)
+   ========================================================================== */
+
+@keyframes slideUpBulkBar {
+  from {
+    transform: translate(-50%, 60px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+.bulk-actions-floating-bar {
+  animation: slideUpBulkBar 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.bulk-action-btn:hover {
+  filter: brightness(0.95);
+  transform: translateY(-1px);
+}
+
+.bulk-action-btn:active {
+  transform: translateY(0);
+}
+
+.bulk-selected-cell {
+  background-color: #dbeafe !important;
+  border-right: 3px solid #2563eb !important;
+}
+
+.requests-table-selected-row {
+  background-color: #eff6ff !important;
+}
+
+.requests-table-selected-row:hover {
+  background-color: #e0f2fe !important;
+}
+
+.spreadsheet-cell[data-col="0"] {
+  cursor: grab !important;
+}
+
+.spreadsheet-cell[data-col="0"]:active {
+  cursor: grabbing !important;
+}
+
+@media (max-width: 900px) {
+  .bulk-actions-floating-bar {
+    bottom: 12px !important;
+    left: 8px !important;
+    right: 8px !important;
+    transform: none !important;
+    width: auto !important;
+    max-width: 100% !important;
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .bulk-actions-buttons-container {
+    width: 100%;
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .bulk-actions-buttons-container::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .bulk-actions-buttons-container::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+  }
+
+  .bulk-action-btn {
+    flex-shrink: 0;
+    padding: 7px 11px !important;
+    font-size: 12px !important;
+    white-space: nowrap;
+  }
+}
