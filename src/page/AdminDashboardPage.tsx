@@ -2257,7 +2257,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     } else {
       setToastState({
         message: `تم تحديث ${successCount} طلب، وتعذر تحديث ${failCount} طلب.`,
-        type: 'warning',
+        type: 'error',
         duration: 5000
       });
     }
@@ -2310,7 +2310,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     } else {
       setToastState({
         message: `تم حذف ${successCount} طلب، وتعذر حذف ${failCount} طلب.`,
-        type: 'warning',
+        type: 'error',
         duration: 5000
       });
     }
@@ -2348,7 +2348,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         ).replace(/\D/g, '').trim();
 
         const safeName = rawName.replace(/[\\/:*?"<>|]/g, '_') || `request_${req.id || i + 1}`;
-        const folderName = `${i + 1}_${rawPhone ? `${safeName}_${rawPhone}` : safeName}`;
+        const folderName = `${i + 1}_${rawPhone ? `${safeName} - ${rawPhone}` : safeName}`;
         const folder = zip.folder(folderName) || zip;
 
         const imagesToDownload: { url: string; name: string }[] = [];
@@ -2389,7 +2389,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       }
 
       if (totalFilesFound === 0) {
-        setToastState({ message: 'لم يتم العثور على أي صور أو إيصالات في الطلبات المحددة', type: 'info' });
+        setToastState({ message: 'لم يتم العثور على أي صور أو إيصالات في الطلبات المحددة', type: 'error' });
         setIsBulkProcessingRequests(false);
         setBulkActionProgress(null);
         return;
@@ -2451,7 +2451,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       ).replace(/\D/g, '').trim();
 
       const safeName = rawName.replace(/[\\/:*?"<>|]/g, '_') || `request_${request.id || 'unknown'}`;
-      const zipBaseName = rawPhone ? `${safeName}_${rawPhone}` : safeName;
+      const zipBaseName = rawPhone ? `${safeName} - ${rawPhone}` : safeName;
       const folderLabel = zipBaseName;
 
       const zip = new JSZip();
