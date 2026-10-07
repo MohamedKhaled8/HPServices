@@ -2126,15 +2126,24 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 }
 
                 const ep = data.data && typeof data.data === 'object' ? data.data : {};
-                let orderNumber = String(ep.orderNumber ?? '').trim();
-                if ((!orderNumber || orderNumber === 'undefined' || orderNumber === 'null') && typeof ep.rawText === 'string') {
+                const isValidRefNum = (num: string) => {
+                  const s = String(num || '').trim().replace(/\D/g, '');
+                  return s.length >= 9 && s.length <= 11 && !s.startsWith('2024') && !s.startsWith('2025') && !s.startsWith('2026');
+                };
+
+                let orderNumber = String(ep.referenceNumber || ep.orderNumber || '').trim();
+                if (!isValidRefNum(orderNumber) && typeof ep.rawText === 'string') {
                   const m =
-                    ep.rawText.match(/رقم الطلب\s*[:\-]?\s*([0-9]+)/) ||
-                    ep.rawText.match(/رقم المرجعي\s*[:\-]?\s*([0-9]+)/);
-                  if (m?.[1]) orderNumber = m[1].trim();
+                    ep.rawText.match(/الرقم\s*المرجعي[\s\S]*?([98][0-9]{9})/) ||
+                    ep.rawText.match(/في\s*انتظار\s*الدفع[\s\S]*?([98][0-9]{9})/) ||
+                    ep.rawText.match(/([98][0-9]{9})\s*[\r\n\s]*\[?فتح\]?/) ||
+                    ep.rawText.match(/\b(9[0-9]{9})\b/);
+                  if (m?.[1] && isValidRefNum(m[1])) {
+                    orderNumber = m[1].trim();
+                  }
                 }
                 if (!orderNumber || orderNumber === 'undefined' || orderNumber === 'null') {
-                  setToastState({ message: 'رد السيرفر لا يحتوي على رقم طلب صالح. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
+                  setToastState({ message: 'رد السيرفر لا يحتوي على رقم مرجعي صالح من فوري. راجع سجلات خادم الأتمتة.', type: 'error', duration: 8000 });
                   return;
                 }
 
@@ -2151,6 +2160,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     entity: String(ep.entity || 'كلية التربية'),
                     serviceType: String(ep.serviceType || 'دبلوم (2025 - 2026)'),
                     orderNumber,
+                    referenceNumber: orderNumber,
                     status: String(ep.status || 'NEW'),
                     rawText: String(ep.rawText || ''),
                     createdAt: new Date().toISOString()
@@ -2158,7 +2168,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
                   await saveElectronicPaymentCode(codeData);
                   setToastState({
-                    message: `تم الحفظ — رقم الطلب: ${orderNumber || '—'}`,
+                    message: `تم الحفظ — الرقم المرجعي: ${orderNumber || '—'}`,
                     type: 'success',
                     duration: 7000
                   });
@@ -4289,7 +4299,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                     };
                     const colEpOrderNumber = {
                       id: 'ep_order_number',
-                      label: 'رقم الطلب',
+                      label: 'الرقم المرجعي',
                       getValue: (r: any) => {
                         const studentData = students[r.studentId];
                         let code = r.id ? epCodesIndex[String(r.id)] : undefined;
@@ -9029,9 +9039,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                         </th>
                         <th style={{ padding: '12px', textAlign: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                            رقم الطلب
+                            الرقم المرجعي
                             <span title="نسخ العمود كامل">
-                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('رقم الطلب', 7)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
+                              <Copy size={14} style={{ cursor: 'pointer', color: '#10b981', opacity: 0.7, transition: 'opacity 0.2s' }} onClick={() => copyEPColumn('الرقم المرجعي', 7)} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'} />
                             </span>
                           </div>
                         </th>
@@ -9061,7 +9071,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                               ? new Date(code.createdAt.seconds * 1000).toLocaleString('ar-EG')
                               : (code.createdAt ? new Date(code.createdAt).toLocaleString('ar-EG') : 'الان')}
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.orderNumber}</td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: '#2563eb', background: '#f0f9ff', userSelect: 'text', cursor: 'text' }}>{code.referenceNumber || code.orderNumber}</td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
                             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
                               {(() => {

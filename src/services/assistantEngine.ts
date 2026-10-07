@@ -1104,7 +1104,7 @@ function promptOrShowOrder(
   if (ep?.orderNumber && profileId && nationalIdMatchesStudentOrRequest(student, request, profileId)) {
     return {
       reply: {
-        text: '**رقم الطلب — المصروفات**',
+        text: '**الرقم المرجعي — المصروفات**',
         cards: [
           {
             ...buildRequestCard(request, [], epCodes, { includeCodes: false }),
@@ -1119,7 +1119,7 @@ function promptOrShowOrder(
   }
   return {
     reply: {
-      text: '🔒 **تحقق أمني**\n\nلعرض رقم الطلب، اكتب **الرقم القومي** (14 رقم) في خانة الرسائل.',
+      text: '🔒 **تحقق أمني**\n\nلعرض الرقم المرجعي، اكتب **الرقم القومي** (14 رقم) في خانة الرسائل.',
       chips: [{ id: 'cancel', label: 'إلغاء', payload: `service:${request.serviceId}:menu`, variant: 'outline' }],
     },
     pending: { type: 'national_id', intent: 'order_number', requestId: request.id! },
@@ -1203,7 +1203,7 @@ export function handleNationalIdInput(
   if (!ep?.orderNumber) {
     return {
       reply: {
-        text: '✅ تم التحقق، لكن **رقم الطلب** غير متاح بعد.',
+        text: '✅ تم التحقق، لكن **الرقم المرجعي** غير متاح بعد.',
         chips: [backChip],
       },
       pending: null,

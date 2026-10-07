@@ -154,6 +154,7 @@ export const SERVICES: Service[] = [
       { name: 'full_name_arabic', label: 'الاسم رباعي باللغة العربية', type: 'editable', required: true },
       { name: 'national_id', label: 'الرقم القومي', type: 'editable', required: true },
       { name: 'whatsapp_number', label: 'رقم واتساب للتواصل', type: 'editable', required: true },
+      { name: 'email', label: 'البريد الإلكتروني', type: 'editable', required: true },
       { name: 'diploma_type', label: 'نوع الدبلومة', type: 'select', required: true, options: ['اختر نوع الدبلومة', ...DIPLOMA_TYPES] },
       { name: 'track_category', label: 'المسار', type: 'select', required: true, options: ['اختر المسار', 'الأول', 'الثاني', 'الثالث', 'أخرى'] },
       { name: 'track_other', label: 'اذكر المسار', type: 'text', required: false },

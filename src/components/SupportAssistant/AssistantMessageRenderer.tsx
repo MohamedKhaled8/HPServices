@@ -73,7 +73,7 @@ function RequestCard({ card }: { card: AssistantRequestCard }) {
           )}
           {card.codes.orderNumber && (
             <div className="sa-code-item order">
-              <span className="sa-code-label">رقم الطلب</span>
+              <span className="sa-code-label">الرقم المرجعي</span>
               <span className="sa-code-value">{card.codes.orderNumber}</span>
             </div>
           )}

@@ -1029,47 +1029,49 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                                             </button>
                                                         </div>
                                                     ) : (
-                                                        <input
-                                                            id={field.name}
-                                                            type={field.name === 'email' ? 'email' : (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id') ? 'tel' : 'text')}
-                                                            inputMode={(field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) ? 'numeric' : 'text'}
-                                                            maxLength={(field.name.includes('phone') || field.name.includes('whatsapp')) ? 11 : (field.name.includes('national_id') ? 14 : undefined)}
-                                                            value={val || ''}
-                                                            onChange={(e) => {
-                                                                let v = e.target.value;
-                                                                if (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) {
-                                                                    v = v.replace(/\D/g, '');
-                                                                } else if (field.name === 'full_name_english') {
-                                                                    // السماح بالحروف الإنجليزية والمسافات فقط
-                                                                    const cleaned = v.replace(/[^a-zA-Z ]/g, '');
-                                                                    if (cleaned !== v) {
-                                                                        setEnglishNameWarning(true);
-                                                                        setTimeout(() => setEnglishNameWarning(false), 3000);
-                                                                    } else {
-                                                                        setEnglishNameWarning(false);
+                                                        <>
+                                                            <input
+                                                                id={field.name}
+                                                                type={field.name === 'email' ? 'email' : (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id') ? 'tel' : 'text')}
+                                                                inputMode={(field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) ? 'numeric' : 'text'}
+                                                                maxLength={(field.name.includes('phone') || field.name.includes('whatsapp')) ? 11 : (field.name.includes('national_id') ? 14 : undefined)}
+                                                                value={val || ''}
+                                                                onChange={(e) => {
+                                                                    let v = e.target.value;
+                                                                    if (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) {
+                                                                        v = v.replace(/\D/g, '');
+                                                                    } else if (field.name === 'full_name_english') {
+                                                                        // السماح بالحروف الإنجليزية والمسافات فقط
+                                                                        const cleaned = v.replace(/[^a-zA-Z ]/g, '');
+                                                                        if (cleaned !== v) {
+                                                                            setEnglishNameWarning(true);
+                                                                            setTimeout(() => setEnglishNameWarning(false), 3000);
+                                                                        } else {
+                                                                            setEnglishNameWarning(false);
+                                                                        }
+                                                                        v = cleaned;
                                                                     }
-                                                                    v = cleaned;
-                                                                }
-                                                                handleServiceDataChange(field.name, v);
-                                                            }}
-                                                            placeholder={field.name === 'full_name_english' ? 'English letters only - e.g. Ahmed Mohamed' : (field.name === 'email' ? 'example@gmail.com' : field.label)}
-                                                            required={field.required}
-                                                            className={`editable-input ${(formAttempted && missingFieldNames.includes(field.name)) ? 'error-border' : ''}`}
-                                                            dir={field.name === 'full_name_english' ? 'ltr' : undefined}
-                                                        />
-                                                        {field.name === 'full_name_english' && englishNameWarning && (
-                                                            <div style={{
-                                                                color: '#ef4444',
-                                                                fontSize: '12px',
-                                                                marginTop: '4px',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '4px'
-                                                            }}>
-                                                                <span>⚠️</span>
-                                                                <span>يُسمح بالحروف الإنجليزية والمسافات فقط. الرموز والأرقام والحروف العربية غير مسموح بها.</span>
-                                                            </div>
-                                                        )}
+                                                                    handleServiceDataChange(field.name, v);
+                                                                }}
+                                                                placeholder={field.name === 'full_name_english' ? 'English letters only - e.g. Ahmed Mohamed' : (field.name === 'email' ? 'example@gmail.com' : field.label)}
+                                                                required={field.required}
+                                                                className={`editable-input ${(formAttempted && missingFieldNames.includes(field.name)) ? 'error-border' : ''}`}
+                                                                dir={field.name === 'full_name_english' ? 'ltr' : undefined}
+                                                            />
+                                                            {field.name === 'full_name_english' && englishNameWarning && (
+                                                                <div style={{
+                                                                    color: '#ef4444',
+                                                                    fontSize: '12px',
+                                                                    marginTop: '4px',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px'
+                                                                }}>
+                                                                    <span>⚠️</span>
+                                                                    <span>يُسمح بالحروف الإنجليزية والمسافات فقط. الرموز والأرقام والحروف العربية غير مسموح بها.</span>
+                                                                </div>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </div>
                                             );

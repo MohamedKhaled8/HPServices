@@ -699,14 +699,14 @@ export const AdminAssistantTab: React.FC<AdminAssistantTabProps> = ({
                                 {orderVal && (
                                   <div className="admin-code-box" style={{ background: '#f0fdf4', borderColor: '#22c55e' }}>
                                     <div>
-                                      <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>رقم الطلب (المصروفات):</span>
+                                      <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>الرقم المرجعي (المصروفات):</span>
                                       <span className="admin-code-value" style={{ color: '#15803d' }}>{orderVal}</span>
                                     </div>
                                     <button
-                                      onClick={() => handleCopy(orderVal, 'رقم الطلب')}
+                                      onClick={() => handleCopy(orderVal, 'الرقم المرجعي')}
                                       className="admin-copy-icon-btn"
                                       style={{ color: '#16a34a' }}
-                                      title="نسخ رقم الطلب"
+                                      title="نسخ الرقم المرجعي"
                                     >
                                       {copiedText === orderVal ? <Check size={16} color="#059669" /> : <Copy size={16} />}
                                     </button>

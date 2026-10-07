@@ -644,8 +644,8 @@ app.post(
                 nationalID: nationalID,
                 mobile: phone,
                 orderNumber,
-                serviceType: result.serviceType || 'دبلوم (2025 - 2026)',
-                entity: result.entity || 'كلية التربية',
+                serviceType: result.serviceType || 'دبلوم (2025-2026)',
+                entity: result.entity || 'كلية التربية (دراسات عليا)',
                 status: result.status || 'NEW',
                 rawText: result.rawText || ''
             }
@@ -1616,416 +1616,515 @@ async function runAutomation(data) {
 // Electronic Payment Automation (USC payment.usc.edu.eg)
 // =====================================================
 
-async function runElectronicPaymentAutomation(data) {
-    const browser = await chromium.launch({
-        headless: true, // Changed to true for production
-        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-gpu', '--disable-dev-shm-usage']
-    });
-    const context = await browser.newContext({
-        viewport: null,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+// دالة الاستعلام واستخراج الرقم المرجعي لفوري من بوابة "طلباتي وإيصالاتي"
+// دالة إتمام اختيار الدفع في فوري واستخراج الرقم المرجعي مباشرة من شاشة فوري
+async function triggerFawryModalConfirm(page) {
+    let capturedRef = '';
 
-    page.setDefaultTimeout(20000);
-    page.setDefaultNavigationTimeout(25000);
+    // 1. مراقب الشبكة لالتقاط الرقم المرجعي من فوري
+    const responseHandler = async (response) => {
+        try {
+            const url = response.url().toLowerCase();
+            if (url.includes('fawry') || url.includes('payment') || url.includes('bill') || url.includes('charge')) {
+                const ct = response.headers()['content-type'] || '';
+                if (ct.includes('application/json')) {
+                    const json = await response.json().catch(() => null);
+                    if (json) {
+                        const str = JSON.stringify(json);
+                        console.log(`[EP] 🌐 Fawry response packet: ${str.slice(0, 200)}`);
+                        const m = str.match(/"(?:fawryRefNumber|referenceNumber|billReference|paymentRef|fawry_ref_number)"\s*:\s*"?([98][0-9]{9})"?/i);
+                        if (m && m[1]) {
+                            capturedRef = m[1];
+                            console.log(`[EP] 🎯 Captured Fawry Reference Number from network API: ${capturedRef}`);
+                        }
+                    }
+                }
+            }
+        } catch { }
+    };
+    page.on('response', responseHandler);
+
+    // 2. خطاف callback و postMessage في المتصفح
+    await page.evaluate(() => {
+        window.__fawryResultRef = null;
+        window.addEventListener('message', function (event) {
+            try {
+                let d = event.data;
+                if (typeof d === 'string') {
+                    try { d = JSON.parse(d); } catch (_) { }
+                }
+                if (d && typeof d === 'object') {
+                    const ref = d.fawryRefNumber || d.referenceNumber || d.billReference;
+                    if (ref && /^([98][0-9]{9})$/.test(String(ref))) {
+                        window.__fawryResultRef = String(ref);
+                    }
+                }
+            } catch (e) { }
+        });
+    }).catch(() => { });
 
     try {
-        console.log('🌍 [EP] Step 1: Navigating to payment portal...');
-        await page.goto('https://payment.usc.edu.eg/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { });
-        await page.waitForTimeout(700);
+        const fawryBtn = page.locator('#fawry-pay, button:has-text("ادفع عن طريق فوري"), a:has-text("ادفع عن طريق فوري")').first();
+        if (await fawryBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+            await fawryBtn.scrollIntoViewIfNeeded();
+            await fawryBtn.click({ force: true });
+            console.log('[EP] ✅ Clicked #fawry-pay button');
+            await page.waitForTimeout(3000);
 
-        // -------- Selects: الجهة + نوع الخدمة (ثابت حسب تصميم الموقع) --------
-        // من اللوج السابق:
-        // Select 0: 0 options
-        // Select 1: إختر, كلية التربية, كلية الحقوق...
-        // إذن:
-        //   select[1] = الجهة (كلية التربية, كلية الحقوق, ...)
-        //   select[0] = نوع الخدمة (يتم تحميله بعد اختيار الكلية)
-
-        console.log('📋 [EP] Step 2: Selecting entity (with Self-Healing)...');
-
-        const entitySelect = await healingSelect(page, {
-            description: 'قائمة اختيار الكلية / الجهة',
-            nthIndex: 1,
-            expectedOptionHints: ['كلية', 'التربية', 'دراسات عليا', 'الحقوق', 'التجارة'],
-            primarySelector: 'select:nth-of-type(2)'
-        }) || page.locator('select').nth(1);
-
-        const entityOptions = await entitySelect.locator('option').allInnerTexts();
-        console.log('[EP] Entity options:', entityOptions);
-
-        const requestedServiceStr = normalizeArabic(data.serviceType || data.serviceName || 'دبلوم');
-        const isDiploma = requestedServiceStr.includes('دبلوم');
-
-        let wantedEntity = data.entityName;
-        if (!wantedEntity) {
-            wantedEntity = isDiploma ? 'كلية التربية (دراسات عليا)' : 'كلية التربية';
-        }
-
-        let entityIndex = entityOptions.findIndex(o => normalizeArabic(o).includes(normalizeArabic(wantedEntity)));
-
-        // إذا كان يطلب دبلوم، نفضل اختيار دراسات عليا صراحة
-        if (isDiploma && (entityIndex <= 0 || !normalizeArabic(entityOptions[entityIndex] || '').includes('دراسات عليا'))) {
-            const pgIndex = entityOptions.findIndex(o => normalizeArabic(o).includes('دراسات عليا'));
-            if (pgIndex > 0) {
-                entityIndex = pgIndex;
-            }
-        }
-
-        if (entityIndex <= 0 && entityOptions.length > 1) {
-            entityIndex = 1; // أول اختيار حقيقي بعد "إختر"
-        }
-
-        if (entityIndex > 0) {
-            await entitySelect.selectOption({ index: entityIndex });
-            console.log(`[EP] ✅ Selected entity: "${entityOptions[entityIndex]}"`);
-        } else {
-            throw new Error('لم يتم العثور على "كلية التربية" في قائمة الجهة');
-        }
-
-        // انتظر حتى يتم تحميل نوع الخدمة بعد اختيار الكلية
-        console.log('⏳ [EP] Waiting for service-type options to load...');
-        await page.waitForTimeout(1500);
-
-        console.log('📘 [EP] Step 2b: Selecting service type (with Self-Healing)...');
-        const serviceSelect = await healingSelect(page, {
-            description: 'قائمة نوع الخدمة',
-            nthIndex: 0,
-            expectedOptionHints: ['دبلوم', 'خدمة', 'شهادة', 'مصاريف'],
-            primarySelector: 'select:first-of-type'
-        }) || page.locator('select').first();
-
-        let serviceOptions = await serviceSelect.locator('option').allInnerTexts();
-        console.log('[EP] Raw service options:', serviceOptions);
-
-        // أعد المحاولة حتى تظهر الخيارات (في حالة AJAX)
-        for (let i = 0; i < 5 && serviceOptions.length <= 1; i++) {
-            await page.waitForTimeout(900);
-            serviceOptions = await serviceSelect.locator('option').allInnerTexts();
-            console.log(`[EP] Waiting service options... try ${i + 1}:`, serviceOptions);
-        }
-
-        if (serviceOptions.length <= 1) {
-            throw new Error('قائمة نوع الخدمة لم يتم تحميلها بعد اختيار الكلية');
-        }
-
-        const wantedService = data.serviceType || data.serviceName || 'دبلوم';
-        let serviceIndex = serviceOptions.findIndex(o => normalizeArabic(o).includes(normalizeArabic(wantedService)));
-        if (serviceIndex <= 0) {
-            serviceIndex = serviceOptions.findIndex(o => normalizeArabic(o).includes('دبلوم'));
-        }
-        if (serviceIndex <= 0) {
-            // ابحث عن أول خيار صالح وغير "إختر" وغير disabled
-            serviceIndex = serviceOptions.findIndex((o, idx) => idx > 0 && !isSelectUnsetLabel(o) && normalizeArabic(o) !== 'لايوجد');
-        }
-
-        if (serviceIndex > 0) {
-            await serviceSelect.selectOption({ index: serviceIndex });
-            console.log(`[EP] ✅ Selected service: "${serviceOptions[serviceIndex]}"`);
-        } else {
-            throw new Error('لم يتم العثور على خدمة صالحة ومفعّلة للإختيار');
-        }
-
-        // -------- تعبئة الحقول النصية --------
-        console.log('✉️ [EP] Step 3: Filling all text inputs...');
-        const allInputs = await page.locator('input:not([type="password"]):not([type="hidden"]):not([disabled])').all();
-        console.log(`[EP] Found ${allInputs.length} text inputs`);
-
-        const dataToFill = [data.email, data.fullNameArabic, data.nationalID, data.phone];
-        let dataIndex = 0;
-
-        for (let i = 0; i < allInputs.length && dataIndex < dataToFill.length; i++) {
-            try {
-                const input = allInputs[i];
-                const type = await input.getAttribute('type') || 'text';
-
-                // Skip non-text inputs
-                if (type !== 'text' && type !== 'email' && type !== 'tel' && type !== '') {
-                    continue;
-                }
-
-                await input.fill(dataToFill[dataIndex]);
-                console.log(`[EP] ✅ Filled input ${i}: "${dataToFill[dataIndex]}"`);
-                dataIndex++;
-
-                await page.waitForTimeout(120);
-            } catch (e) {
-                console.log(`[EP] Error with input ${i}:`, e.message);
-            }
-        }
-
-        await page.waitForTimeout(300);
-
-        // Click "متابعة"
-        console.log('➡️ [EP] Step 4: Clicking متابعة (with Self-Healing)...');
-        const continueButton = await healingButton(page, {
-            description: 'زر متابعة الطلب',
-            expectedTextHints: ['متابعه', 'متابعة', 'تأكيد', 'Submit', 'Next'],
-            primarySelector: 'button:has-text("متابعة"), input[value*="متابعة"]'
-        }) || page.locator('button, input').filter({ hasText: /متابعه|متابعة/i }).first();
-
-        if (await continueButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await continueButton.click();
-            await Promise.race([
-                page.waitForLoadState('domcontentloaded', { timeout: 4000 }).catch(() => { }),
-                page.waitForTimeout(1200)
-            ]);
-        } else {
-            throw new Error('لم يتم العثور على زر "متابعة"');
-        }
-
-        // Check for errors
-        const errorText = await page.locator('.alert, .error, .text-danger, [class*="alert"], [class*="error"]').first().innerText().catch(() => '');
-        if (errorText && errorText.length > 5) {
-            console.log(`[EP] ⚠️ Error found: ${errorText}`);
-            throw new Error(`خطأ من موقع الجامعة: ${errorText}`);
-        }
-
-        // Select Fawry Pay -> ادفع فورى -> تأكيد
-        console.log('💳 [EP] Step 5: Selecting Fawry Pay...');
-        await page.waitForTimeout(600);
-
-        // أحياناً الأيقونة تكون صورة فقط بدون نص، لذلك نجرب عدّة طرق:
-        let fawryClicked = false;
-
-        // 5.0 المحاولة الأوضح: الـ input type="image" الخاص بـ FawryPay
-        const fawryInput = page.locator('input#xsrrs, input[type="image"][onclick*="FawryPay"]').first();
-        if (await fawryInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            console.log('[EP] Found Fawry input image (xsrrs), clicking...');
-            await fawryInput.scrollIntoViewIfNeeded();
-            await page.waitForTimeout(150);
-            await fawryInput.click({ force: true });
-            fawryClicked = true;
-        }
-
-        // 5.1 ابحث عن زر / رابط يحتوي على النص (لو فشل الـ input)
-        const fawryBtnText = page.locator('button, a, div, span').filter({
-            hasText: /fawry|فورى|فوري/i
-        }).first();
-        if (!fawryClicked && await fawryBtnText.isVisible({ timeout: 5000 }).catch(() => false)) {
-            console.log('[EP] Found Fawry element by text, clicking...');
-            await fawryBtnText.scrollIntoViewIfNeeded();
-            await fawryBtnText.click({ force: true });
-            fawryClicked = true;
-        }
-
-        // 5.2 إن لم يُوجد نص، ابحث عن صورة شعار Fawry
-        if (!fawryClicked) {
-            const fawryImg = page.locator('img[src*="fawry" i], img[alt*="fawry" i], img[title*="fawry" i]').first();
-            if (await fawryImg.isVisible({ timeout: 5000 }).catch(() => false)) {
-                console.log('[EP] Found Fawry image, clicking parent button/link...');
-                const parent = fawryImg.locator('xpath=ancestor-or-self::button | ancestor-or-self::a | ancestor-or-self::div[1]');
-                if (await parent.isVisible({ timeout: 5000 }).catch(() => false)) {
-                    await parent.scrollIntoViewIfNeeded();
-                    await parent.click({ force: true });
-                    fawryClicked = true;
-                } else {
-                    await fawryImg.scrollIntoViewIfNeeded();
-                    await fawryImg.click({ force: true });
-                    fawryClicked = true;
-                }
-            }
-        }
-
-        // 5.3 كـ fallback أخير: اضغط آخر صورة في الصفحة (غالباً شعار Fawry أسفل الجدول)
-        if (!fawryClicked) {
-            const allImgs = await page.locator('img').all();
-            console.log(`[EP] No explicit Fawry element found, total images on page: ${allImgs.length}`);
-            if (allImgs.length > 0) {
-                console.log('[EP] Trying to click last image on page as Fawry fallback...');
-                const lastImg = allImgs[allImgs.length - 1];
-                try {
-                    const src = await lastImg.getAttribute('src');
-                    const alt = await lastImg.getAttribute('alt');
-                    console.log('[EP] Last image src:', src, 'alt:', alt);
-                } catch (e) { }
-
-                try {
-                    await lastImg.scrollIntoViewIfNeeded();
-                    await page.waitForTimeout(250);
-                    await lastImg.click({ force: true });
-                    fawryClicked = true;
-                } catch (e) {
-                    console.log('[EP] Fallback last-image click failed:', e.message);
-                }
-            }
-        }
-
-        if (!fawryClicked) {
-            console.log('[EP] ⚠️ Could not find any Fawry Pay trigger, continuing anyway (will still try to read order number).');
-        }
-
-        if (fawryClicked) {
-            await page.waitForTimeout(700);
-        }
-
-        async function findFawryFrameBySelectors(timeoutMs) {
-            const started = Date.now();
-            while (Date.now() - started < timeoutMs) {
-                const frames = page.frames();
-                for (const frame of frames) {
+            for (let attempt = 0; attempt < 15; attempt++) {
+                const allContexts = [page, ...page.frames()];
+                for (const ctx of allContexts) {
                     try {
-                        const hasPay = await frame
-                            .locator('#payment-step span.deliver.ng-binding', { hasText: 'ادفع فورى' })
-                            .first()
-                            .isVisible({ timeout: 250 })
-                            .catch(() => false);
-                        const hasConfirm = await frame.locator('#billUploadFormConfBTN').first().isVisible({ timeout: 250 }).catch(() => false);
-                        if (hasPay || hasConfirm) return frame;
-                    } catch { }
-                }
-                await page.waitForTimeout(500);
-            }
-            return null;
-        }
-
-        // ----- داخل نافذة فوري: اختيار "ادفع فورى" ثم الضغط على "تأكيد" -----
-        // ملاحظة: عناصر فوري قد تكون داخل iframe، لذلك نبحث في جميع الـ frames
-        console.log('💳 [EP] Step 5b: Selecting "ادفع فورى" inside Fawry modal (frames-aware)...');
-
-        let fawryFrame = null;
-        let modalOpened = false;
-        for (let modalAttempt = 0; modalAttempt < 2 && !modalOpened; modalAttempt++) {
-            console.log(`[EP] Fawry modal attempt ${modalAttempt + 1}/2`);
-            for (let attempt = 0; attempt < 5 && !fawryFrame; attempt++) {
-                const frames = page.frames();
-                console.log(`[EP] Frames count (attempt ${attempt + 1}):`, frames.length);
-                for (const frame of frames) {
-                    try {
-                        const label = frame.locator('#payment-step span.deliver.ng-binding', { hasText: 'ادفع فورى' }).first();
-                        if (await label.isVisible({ timeout: 900 }).catch(() => false)) {
-                            fawryFrame = frame;
-                            console.log('[EP] ✅ Found Fawry frame containing "ادفع فورى".');
+                        const payFawryEl = ctx.locator('label, span, div, p').filter({ hasText: /ادفع فورى|ادفع فوري/i }).first();
+                        if (await payFawryEl.isVisible({ timeout: 300 }).catch(() => false)) {
+                            const precedingRadio = payFawryEl.locator('xpath=preceding::input[@type="radio"][1]');
+                            if (await precedingRadio.isVisible({ timeout: 300 }).catch(() => false)) {
+                                await precedingRadio.click({ force: true });
+                            } else {
+                                await payFawryEl.click({ force: true });
+                            }
+                            console.log('[EP] ✅ Selected "ادفع فورى"');
+                            break;
+                        }
+                        const radios = await ctx.locator('input[type="radio"]').all();
+                        if (radios.length >= 2) {
+                            await radios[1].click({ force: true });
+                            console.log('[EP] ✅ Clicked radio #2');
                             break;
                         }
                     } catch { }
                 }
-                if (!fawryFrame) {
-                    await page.waitForTimeout(600);
-                }
-            }
-
-            if (!fawryFrame) {
-                // أحيانًا الضغط على فوري لا يفتح المودال/iframe، فنجرّب إعادة الفتح تلقائيًا.
-                console.log('[EP] ⚠️ Fawry frame not found. Retrying open modal (Escape + re-click xsrrs)...');
-                await page.keyboard.press('Escape').catch(() => { });
                 await page.waitForTimeout(500);
-                if (await fawryInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-                    await fawryInput.scrollIntoViewIfNeeded().catch(() => { });
-                    await page.waitForTimeout(250);
-                    await fawryInput.click({ force: true }).catch(() => { });
-                    await page.waitForTimeout(900);
+
+                let confirmed = false;
+                for (const ctx of [page, ...page.frames()]) {
+                    try {
+                        const btn = ctx.locator('#billUploadFormConfBTN, button:has-text("تأكيد"), button:has-text("تاكيد")').first();
+                        if (await btn.isVisible({ timeout: 400 }).catch(() => false)) {
+                            await btn.click({ force: true });
+                            console.log('[EP] ✅ Clicked "تأكيد" in Fawry modal');
+                            confirmed = true;
+                            break;
+                        }
+                    } catch { }
                 }
-                // انتظر ظهور أي إطار به selectors
-                fawryFrame = await findFawryFrameBySelectors(12000);
-            }
 
-            modalOpened = !!fawryFrame;
-        }
+                if (confirmed) {
+                    console.log('⏳ [EP] Waiting for Fawry to display reference number on screen...');
+                    for (let w = 0; w < 15; w++) {
+                        await page.waitForTimeout(1000);
 
-        const frameCtx = fawryFrame || page;
+                        if (capturedRef) return capturedRef;
 
-        // 5b.1 اختَر خيار "ادفع فورى"
-        const payFawryLabel = frameCtx.locator('#payment-step span.deliver.ng-binding', { hasText: 'ادفع فورى' }).first();
-        if (await payFawryLabel.isVisible({ timeout: 8000 }).catch(() => false)) {
-            try {
-                const payFawryRadio = payFawryLabel.locator('xpath=preceding::input[1]');
-                if (await payFawryRadio.isVisible({ timeout: 2000 }).catch(() => false)) {
-                    await payFawryRadio.click({ force: true });
-                    console.log('[EP] ✅ Selected "ادفع فورى" by clicking radio.');
-                } else {
-                    await payFawryLabel.click({ force: true });
-                    console.log('[EP] ✅ Selected "ادفع فورى" by clicking label.');
+                        const cb = await page.evaluate(() => window.__fawryResultRef).catch(() => null);
+                        if (cb && /^([98][0-9]{9})$/.test(String(cb))) {
+                            console.log(`[EP] 🎯 Captured from window callback: ${cb}`);
+                            return String(cb);
+                        }
+
+                        for (const ctx of [page, ...page.frames()]) {
+                            try {
+                                const fText = await ctx.locator('body').innerText().catch(() => '');
+                                if (!fText) continue;
+                                const m =
+                                    fText.match(/الرقم\s*المرجعي[\s\S]*?([98][0-9]{9})/) ||
+                                    fText.match(/كود\s*السداد[\s\S]*?([98][0-9]{9})/) ||
+                                    fText.match(/رقم\s*المرجع[\s\S]*?([98][0-9]{9})/) ||
+                                    fText.match(/\b([98][0-9]{9})\b/);
+                                if (m && m[1] && !m[1].startsWith('2024') && !m[1].startsWith('2025') && !m[1].startsWith('2026')) {
+                                    console.log(`[EP] 🏆 Fawry Reference Number extracted from modal screen: ${m[1]}`);
+                                    return m[1].trim();
+                                }
+                            } catch { }
+                        }
+                    }
+                    break;
                 }
-            } catch (e) {
-                console.log('[EP] ⚠️ Could not click radio for "ادفع فورى":', e.message);
-                await payFawryLabel.click({ force: true });
             }
-            await frameCtx.waitForTimeout(500);
-        } else {
-            console.log('[EP] ⚠️ Could not find "ادفع فورى" option inside any frame.');
+        }
+    } catch (e) {
+        console.log(`[EP] ⚠️ triggerFawryModalConfirm warning: ${e.message}`);
+    } finally {
+        page.off('response', responseHandler);
+    }
+
+    return capturedRef || null;
+}
+
+// دالة الاستعلام واستخراج الرقم المرجعي لفوري من بوابة "طلباتي وإيصالاتي"
+async function lookupReceiptsFromPortal(page, nationalID, phone, isRetry = false) {
+    if (!nationalID || !phone) return null;
+    const cleanNID = String(nationalID).trim();
+    const cleanPhone = String(phone).trim();
+    console.log(`📋 [EP-Receipts] Checking /receipts for NID: ${cleanNID}, Phone: ${cleanPhone}...`);
+
+    try {
+        await page.goto('https://payment.usc.edu.eg/receipts', { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page.waitForTimeout(800);
+
+        const nidInput = page.locator('input#profileId, input[name="profileId"]').first();
+        const mobileInput = page.locator('input#mobile, input[name="mobile"]').first();
+        const submitBtn = page.locator('button[type="submit"], button:has-text("عرض الطلبات")').first();
+
+        if (await nidInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await nidInput.fill(cleanNID);
+            await mobileInput.fill(cleanPhone);
+            await page.waitForTimeout(300);
+
+            await Promise.all([
+                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { }),
+                submitBtn.click()
+            ]);
+            await page.waitForTimeout(2000);
         }
 
-        // 5b.2 زر "تأكيد" داخل نافذة فوري
-        console.log('💳 [EP] Step 5c: Clicking Fawry "تأكيد" button...');
-        const confirmBtn = frameCtx.locator('#billUploadFormConfBTN').first();
-        if (await confirmBtn.isVisible({ timeout: 8000 }).catch(() => false)) {
-            await confirmBtn.scrollIntoViewIfNeeded();
-            await frameCtx.waitForTimeout(500);
-            await confirmBtn.click({ force: true });
-            console.log('[EP] ✅ Clicked Fawry confirm button.');
-        } else {
-            console.log('[EP] ⚠️ Could not find Fawry confirm button (#billUploadFormConfBTN) in any frame.');
+        const bodyText = await page.locator('body').innerText().catch(() => '');
+        console.log(`[EP-Receipts] Page text preview:\n${bodyText.slice(0, 800)}`);
+
+        if (bodyText.includes('لا توجد طلبات') || bodyText.includes('لم يتم العثور')) {
+            console.log('[EP-Receipts] ℹ️ No receipts found.');
+            return null;
         }
 
-        // Wait for final Fawry payment reference number
-        console.log('⏳ [EP] Step 6: Waiting for final Fawry reference (رقم الطلب من فوري)...');
-        let orderNumber = '';
-        let bodyTextContent = '';
+        const isCandidateValid = (val) => {
+            if (!val) return false;
+            const digits = String(val).replace(/\D/g, '');
+            // الرقم المرجعي لفوري في مصر يتكون من 10 أرقام (مثل 9686326369)
+            if (digits.length < 9 || digits.length > 11) return false;
+            // استبعاد السنوات الدراسية قطعياً مثل 20252026
+            if (digits.startsWith('2024') || digits.startsWith('2025') || digits.startsWith('2026')) {
+                return false;
+            }
+            if (digits === cleanNID || cleanNID.includes(digits)) return false;
+            if (digits === cleanPhone || cleanPhone.includes(digits)) return false;
+            return true;
+        };
 
-        // انتظر تغيّر الصفحة / الـ URL بعد الضغط على تأكيد
+        // 1. فحص أعمدة الجدول بدقة
+        const headers = await page.locator('table thead th').allInnerTexts().catch(() => []);
+        let refColIndex = headers.findIndex(h => h.includes('المرجعي'));
+        console.log(`[EP-Receipts] Table headers: ${JSON.stringify(headers)}, refColIndex: ${refColIndex}`);
+
+        const rows = await page.locator('table tbody tr').all().catch(() => []);
+        if (rows.length > 0) {
+            console.log(`[EP-Receipts] Found ${rows.length} rows in receipts table`);
+            for (const row of rows) {
+                const cells = await row.locator('td').allInnerTexts().catch(() => []);
+                console.log(`[EP-Receipts] Row cells: ${JSON.stringify(cells)}`);
+
+                // أ) فحص عمود الرقم المرجعي تحديداً (الخلية 4)
+                const candidate = refColIndex >= 0 && cells[refColIndex] ? cells[refColIndex] : (cells[4] || '');
+                const cClean = candidate.trim().replace(/\D/g, '');
+                if (isCandidateValid(cClean)) {
+                    console.log(`[EP-Receipts] 🎯 Found exact Fawry Reference Number: ${cClean}`);
+                    return { referenceNumber: cClean, rawText: bodyText };
+                }
+
+                // ب) فحص باقي الخلايا عن رقم 10 أرقام
+                for (let i = cells.length - 1; i >= 0; i--) {
+                    const cellDigits = cells[i].trim().replace(/\D/g, '');
+                    if (isCandidateValid(cellDigits)) {
+                        console.log(`[EP-Receipts] 🎯 Found valid Fawry ref from cell #${i}: ${cellDigits}`);
+                        return { referenceNumber: cellDigits, rawText: bodyText };
+                    }
+                }
+
+                // ج) إذا كان الطلب موجوداً ولكن بحالة "لم يكتمل" والرقم "—"، نضغط زر "فتح" لتفعيل فوري
+                if (!isRetry) {
+                    const rowText = cells.join(' ');
+                    if (rowText.includes('لم يكتمل') || candidate.includes('—') || candidate.includes('-')) {
+                        const openLink = row.locator('a:has-text("فتح")').first();
+                        if (await openLink.isVisible({ timeout: 1000 }).catch(() => false)) {
+                            console.log('[EP-Receipts] ℹ️ Order is "لم يكتمل", clicking "فتح" to trigger Fawry code...');
+                            await openLink.click();
+                            await page.waitForTimeout(3000);
+                            const modalRef = await triggerFawryModalConfirm(page);
+                            if (modalRef) {
+                                console.log(`[EP-Receipts] 🎯 Got reference number directly from Fawry modal: ${modalRef}`);
+                                return { referenceNumber: modalRef, rawText: bodyText };
+                            }
+                            return await lookupReceiptsFromPortal(page, nationalID, phone, true);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. البحث بنمط التعبير النمطي (Regex) عن 10 أرقام تبدأ بـ 9 أو 8 (مثل 9686326369)
+        const regexPatterns = [
+            /الرقم\s*المرجعي[\s\S]*?([98][0-9]{9})/i,
+            /في\s*انتظار\s*الدفع[\s\S]*?([98][0-9]{9})/i,
+            /([98][0-9]{9})\s*[\r\n\s]*\[?فتح\]?/i,
+            /\b(9[0-9]{9})\b/
+        ];
+
+        for (const rx of regexPatterns) {
+            const m = bodyText.match(rx);
+            if (m && m[1] && isCandidateValid(m[1])) {
+                console.log(`[EP-Receipts] 🎯 Found valid Fawry ref via regex: ${m[1].trim()}`);
+                return { referenceNumber: m[1].trim(), rawText: bodyText };
+            }
+        }
+
+        return null;
+    } catch (e) {
+        console.error('[EP-Receipts] Error during lookup:', e.message);
+        return null;
+    }
+}
+
+async function runElectronicPaymentAutomation(data) {
+    const browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-gpu', '--disable-dev-shm-usage']
+    });
+    const context = await browser.newContext({
+        viewport: { width: 1366, height: 768 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
+    const page = await context.newPage();
+
+    page.setDefaultTimeout(25000);
+    page.setDefaultNavigationTimeout(30000);
+
+    try {
+        // -------- الخطوة 0: فحص صفحة "طلباتي وإيصالاتي" أولاً لمعرفة إذا كان الطلب مسجل مسبقاً --------
+        console.log('🔍 [EP] Checking if order already exists in /receipts (لإعادة القبول أو التحديث)...');
+        const existingReceipt = await lookupReceiptsFromPortal(page, data.nationalID, data.phone);
+        if (existingReceipt && existingReceipt.referenceNumber) {
+            console.log(`[EP] 🏆 Order already found in receipts! Fawry Reference Number: ${existingReceipt.referenceNumber}`);
+            await browser.close().catch(() => { });
+            return {
+                orderNumber: existingReceipt.referenceNumber,
+                referenceNumber: existingReceipt.referenceNumber,
+                entity: 'كلية التربية (دراسات عليا)',
+                serviceType: 'دبلوم (2025-2026)',
+                email: data.email,
+                nationalID: data.nationalID,
+                name: data.fullNameArabic,
+                mobile: data.phone,
+                status: 'NEW',
+                rawText: existingReceipt.rawText ? existingReceipt.rawText.substring(0, 3000) : ''
+            };
+        }
+
+        // إذا لم يكن مسجلاً، نسجل الطلب جديداً من البوابة الرئيسية
+        console.log('🌍 [EP] Step 1: Navigating to payment portal (https://payment.usc.edu.eg/)...');
+        await page.goto('https://payment.usc.edu.eg/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { });
+        await page.waitForTimeout(1000);
+
+        // -------- الخطوة 2: اختيار الجهة افتراضياً "كلية التربية (دراسات عليا)" --------
+        console.log('📋 [EP] Step 2: Selecting faculty (كلية التربية (دراسات عليا))...');
+        const facultySelect = page.locator('select#faculty, select[name="faculty"], select[data-faculty-select]').first();
+        await facultySelect.waitFor({ state: 'visible', timeout: 15000 });
+
+        let selectedFaculty = false;
+        try {
+            await facultySelect.selectOption('edu');
+            selectedFaculty = true;
+            console.log('[EP] ✅ Selected faculty by value="edu"');
+        } catch {
+            const facultyOpts = await facultySelect.locator('option').all();
+            for (const opt of facultyOpts) {
+                const text = (await opt.innerText()).trim();
+                const val = await opt.getAttribute('value');
+                if (text.includes('دراسات عليا') && text.includes('التربية')) {
+                    await facultySelect.selectOption(val);
+                    selectedFaculty = true;
+                    console.log(`[EP] ✅ Selected faculty by text: "${text}" (${val})`);
+                    break;
+                }
+            }
+        }
+
+        if (!selectedFaculty) {
+            await facultySelect.selectOption({ label: 'كلية التربية (دراسات عليا)' }).catch(async () => {
+                await facultySelect.selectOption({ index: 6 });
+            });
+        }
+
+        await facultySelect.dispatchEvent('change').catch(() => { });
+        await page.waitForTimeout(1500);
+
+        // -------- الخطوة 2b: اختيار الخدمة افتراضياً "دبلوم (2025-2026)" --------
+        console.log('📘 [EP] Step 2b: Selecting service (دبلوم (2025-2026))...');
+        const serviceSelect = page.locator('select#service, select[name="service"], select[data-service-select]').first();
+        await serviceSelect.waitFor({ state: 'visible', timeout: 15000 });
+
+        for (let i = 0; i < 8; i++) {
+            const count = await serviceSelect.locator('option').count();
+            if (count > 1) break;
+            await page.waitForTimeout(1000);
+        }
+
+        let selectedService = false;
+        try {
+            await serviceSelect.selectOption('2');
+            selectedService = true;
+            console.log('[EP] ✅ Selected service by value="2"');
+        } catch {
+            const sOptions = await serviceSelect.locator('option').all();
+            for (const opt of sOptions) {
+                const text = (await opt.innerText()).trim();
+                const val = await opt.getAttribute('value');
+                if (text.includes('دبلوم') && (text.includes('2025') || text.includes('2026'))) {
+                    await serviceSelect.selectOption(val);
+                    selectedService = true;
+                    console.log(`[EP] ✅ Selected service by text: "${text}" (${val})`);
+                    break;
+                }
+            }
+        }
+
+        if (!selectedService) {
+            await serviceSelect.selectOption({ index: 1 }).catch(() => { });
+            console.log('[EP] ⚠️ Fallback to service index 1');
+        }
+
+        await serviceSelect.dispatchEvent('change').catch(() => { });
+        await page.waitForTimeout(800);
+
+        // -------- الخطوة 3: تعبئة البيانات الشخصية (الاسم، الرقم القومي، الموبايل، البريد الإلكتروني) --------
+        console.log('✉️ [EP] Step 3: Filling user details...');
+
+        // 1. الاسم بالكامل
+        const nameInput = page.locator('input#name, input[name="name"]').first();
+        if (await nameInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+            await nameInput.fill(data.fullNameArabic || '');
+            console.log(`[EP] ✅ Name filled: "${data.fullNameArabic}"`);
+        } else {
+            const firstTxt = page.locator('input:not([type="hidden"]):not([disabled])').first();
+            await firstTxt.fill(data.fullNameArabic || '');
+        }
+        await page.waitForTimeout(200);
+
+        // 2. الرقم القومي
+        const nidInput = page.locator('input#profileId, input[name="profileId"], input[maxlength="14"]').first();
+        if (await nidInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+            await nidInput.fill(data.nationalID || '');
+            console.log(`[EP] ✅ National ID filled: "${data.nationalID}"`);
+        } else {
+            const textInputs = await page.locator('input:not([type="hidden"]):not([disabled])').all();
+            if (textInputs[1]) await textInputs[1].fill(data.nationalID || '');
+        }
+        await page.waitForTimeout(200);
+
+        // 3. الموبايل
+        const mobileInput = page.locator('input#mobile, input[name="mobile"], input[maxlength="11"]').first();
+        if (await mobileInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+            await mobileInput.fill(data.phone || '');
+            console.log(`[EP] ✅ Mobile filled: "${data.phone}"`);
+        } else {
+            const textInputs = await page.locator('input:not([type="hidden"]):not([disabled])').all();
+            if (textInputs[2]) await textInputs[2].fill(data.phone || '');
+        }
+        await page.waitForTimeout(200);
+
+        // 4. البريد الإلكتروني
+        const emailInput = page.locator('input#email, input[name="email"], input[type="email"]').first();
+        if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+            await emailInput.fill(data.email || '');
+            console.log(`[EP] ✅ Email filled: "${data.email}"`);
+        } else {
+            const textInputs = await page.locator('input:not([type="hidden"]):not([disabled])').all();
+            if (textInputs[3]) await textInputs[3].fill(data.email || '');
+        }
+        await page.waitForTimeout(400);
+
+        // -------- الخطوة 4: الضغط على "متابعة" --------
+        console.log('➡️ [EP] Step 4: Clicking متابعة...');
+        const continueBtn = page.locator('button[type="submit"], button:has-text("متابعة"), input[value*="متابعة"]').first();
+        await continueBtn.scrollIntoViewIfNeeded();
+        await continueBtn.click();
+
         await Promise.race([
-            page.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => { }),
-            page.waitForTimeout(2000)
+            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { }),
+            page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { }),
+            page.waitForTimeout(4000)
         ]);
 
-        // نبحث عن رقم الطلب في الصفحة الرئيسية وكل الـ frames
-        const searchContexts = [page, ...page.frames()];
-
-        for (let attempt = 0; attempt < 8 && !orderNumber; attempt++) {
-            for (const ctx of searchContexts) {
-                try {
-                    bodyTextContent = await ctx.locator('body').innerText().catch(() => '');
-                    if (!bodyTextContent) continue;
-
-                    // 6.1 "رقم الطلب : XXXXX" كما في الصورة
-                    const orderMatch = bodyTextContent.match(/رقم الطلب\s*[:\-]?\s*([0-9]+)/);
-                    if (orderMatch && orderMatch[1]) {
-                        orderNumber = orderMatch[1];
-                        console.log('[EP] ✅ Found رقم الطلب:', orderNumber);
-                        break;
-                    }
-
-                    // 6.2 رقم مرجعي / رقم دفع
-                    const fawryMatch =
-                        bodyTextContent.match(/رقم المرجعي\s*[:\-]?\s*([0-9]+)/) ||
-                        bodyTextContent.match(/رقم الدفع\s*[:\-]?\s*([0-9]+)/);
-                    if (fawryMatch && fawryMatch[1]) {
-                        orderNumber = fawryMatch[1];
-                        console.log('[EP] ✅ Found Fawry reference number:', orderNumber);
-                        break;
-                    }
-                } catch { }
-            }
-
-            if (orderNumber) break;
-
-            console.log(`[EP] Fawry reference not found yet, retrying ${attempt + 1}/8...`);
-            await page.waitForTimeout(1200);
+        // فحص وجود أي أخطاء من الموقع
+        const errorAlert = await page.locator('.alert:not(.alert-info), .error, .text-danger, .invalid-feedback').first().innerText().catch(() => '');
+        if (errorAlert && errorAlert.trim().length > 4 && !errorAlert.includes('راجع بياناتك')) {
+            console.log(`[EP] ⚠️ Error alert found: ${errorAlert}`);
+            // حتى مع وجود تحذير، قد يكون الطلب سُجل، لذا سنتحقق من receipts
         }
 
-        if (!orderNumber) {
-            console.log('[EP] ⚠️ Fawry reference number not found. Will return empty but include rawText for debugging.');
-        } else {
-            console.log(`[EP] ✅ Final Fawry reference number: ${orderNumber}`);
+        // -------- الخطوة 4b: الضغط على زر فوري وتأكيد طريقة "ادفع فورى" لتوليد الرقم المرجعي --------
+        console.log('💳 [EP] Triggering Fawry modal confirmation on review page...');
+        const modalRef = await triggerFawryModalConfirm(page);
+        if (modalRef) {
+            console.log(`[EP] 🏆 Got reference directly from Fawry modal on review page: ${modalRef}`);
+            await browser.close().catch(() => {});
+            return {
+                orderNumber: modalRef,
+                referenceNumber: modalRef,
+                entity: 'كلية التربية (دراسات عليا)',
+                serviceType: 'دبلوم (2025-2026)',
+                email: data.email,
+                nationalID: data.nationalID,
+                name: data.fullNameArabic,
+                mobile: data.phone,
+                status: 'NEW',
+                rawText: `الرقم المرجعي الصادر من فوري: ${modalRef}`
+            };
         }
+
+        // -------- الخطوة 5: الذهاب لـ /receipts لاستخراج الرقم المرجعي لفوري فوراً --------
+        console.log('📋 [EP] Step 5: Navigating to /receipts to extract Fawry Reference Number...');
+        await page.waitForTimeout(1000);
+        const newlyCreatedReceipt = await lookupReceiptsFromPortal(page, data.nationalID, data.phone);
+
+        let referenceNumber = '';
+        if (newlyCreatedReceipt && newlyCreatedReceipt.referenceNumber) {
+            referenceNumber = newlyCreatedReceipt.referenceNumber;
+            console.log(`[EP] 🏆 Success! Extracted Fawry Reference Number from receipts: ${referenceNumber}`);
+        }
+
+        // إذا لم يعثر عليه من receipts، نقوم بالضغط على زر فوري كحل احتياطي
+        if (!referenceNumber) {
+            console.log('[EP] Fallback: Trying Fawry payment button flow...');
+            try {
+                await page.goto('https://payment.usc.edu.eg/', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
+                // محاولة أخرى لـ receipts بعد ثانيتين
+                await page.waitForTimeout(2000);
+                const retryReceipt = await lookupReceiptsFromPortal(page, data.nationalID, data.phone);
+                if (retryReceipt && retryReceipt.referenceNumber) {
+                    referenceNumber = retryReceipt.referenceNumber;
+                }
+            } catch { }
+        }
+
+        let fullBodyText = '';
+        try {
+            fullBodyText = await page.locator('body').innerText().catch(() => '');
+        } catch { }
 
         await browser.close();
 
+        if (!referenceNumber) {
+            console.error('[EP] ❌ Failed to extract Fawry Reference Number. Full text preview:', fullBodyText.substring(0, 500));
+            throw new Error('لم يتم استخراج الرقم المرجعي لفوري من بوابة الدفع. يرجى إعادة المحاولة.');
+        }
+
+        console.log(`[EP] ✅ Final Fawry Reference Number: ${referenceNumber}`);
+
         return {
-            orderNumber,
-            entity: 'كلية التربية',
-            serviceType: 'دبلوم',
+            orderNumber: referenceNumber,
+            referenceNumber: referenceNumber,
+            entity: 'كلية التربية (دراسات عليا)',
+            serviceType: 'دبلوم (2025-2026)',
             email: data.email,
             nationalID: data.nationalID,
+            name: data.fullNameArabic,
+            mobile: data.phone,
             status: 'NEW',
-            rawText: bodyTextContent.substring(0, 2000)
+            rawText: fullBodyText.substring(0, 3000)
         };
     } catch (error) {
         console.error('[EP] ❌ Fatal Error:', error);
-        await browser.close();
+        await browser.close().catch(() => { });
         throw error;
     }
 }

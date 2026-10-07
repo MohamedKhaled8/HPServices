@@ -186,7 +186,7 @@ const ApprovedRequestsPage: React.FC<ApprovedRequestsPageProps> = ({ onBack }) =
                                                             )}
                                                             {epCode && (
                                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                                                    رقم الطلب: {epCode.orderNumber || 'لا يوجد'}
+                                                                    الرقم المرجعي: {epCode.referenceNumber || epCode.orderNumber || 'لا يوجد'}
                                                                 </span>
                                                             )}
                                                         </>
