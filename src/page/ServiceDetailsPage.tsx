@@ -54,6 +54,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
     const [wantsMalazem, setWantsMalazem] = useState(false);
     const [missingFieldNames, setMissingFieldNames] = useState<string[]>([]);
     const [formAttempted, setFormAttempted] = useState(false);
+    const [englishNameWarning, setEnglishNameWarning] = useState(false);
 
     useEffect(() => {
         const unsubscribe = subscribeToServiceSettings(setServiceSettings);
@@ -1038,13 +1039,37 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                                                 let v = e.target.value;
                                                                 if (field.name.includes('phone') || field.name.includes('whatsapp') || field.name.includes('national_id')) {
                                                                     v = v.replace(/\D/g, '');
+                                                                } else if (field.name === 'full_name_english') {
+                                                                    // السماح بالحروف الإنجليزية والمسافات فقط
+                                                                    const cleaned = v.replace(/[^a-zA-Z ]/g, '');
+                                                                    if (cleaned !== v) {
+                                                                        setEnglishNameWarning(true);
+                                                                        setTimeout(() => setEnglishNameWarning(false), 3000);
+                                                                    } else {
+                                                                        setEnglishNameWarning(false);
+                                                                    }
+                                                                    v = cleaned;
                                                                 }
                                                                 handleServiceDataChange(field.name, v);
                                                             }}
-                                                            placeholder={field.name === 'email' ? 'example@gmail.com' : field.label}
+                                                            placeholder={field.name === 'full_name_english' ? 'English letters only - e.g. Ahmed Mohamed' : (field.name === 'email' ? 'example@gmail.com' : field.label)}
                                                             required={field.required}
                                                             className={`editable-input ${(formAttempted && missingFieldNames.includes(field.name)) ? 'error-border' : ''}`}
+                                                            dir={field.name === 'full_name_english' ? 'ltr' : undefined}
                                                         />
+                                                        {field.name === 'full_name_english' && englishNameWarning && (
+                                                            <div style={{
+                                                                color: '#ef4444',
+                                                                fontSize: '12px',
+                                                                marginTop: '4px',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px'
+                                                            }}>
+                                                                <span>⚠️</span>
+                                                                <span>يُسمح بالحروف الإنجليزية والمسافات فقط. الرموز والأرقام والحروف العربية غير مسموح بها.</span>
+                                                            </div>
+                                                        )}
                                                     )}
                                                 </div>
                                             );
