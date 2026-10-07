@@ -12,7 +12,7 @@ WORKDIR /app
 
 # نسخ ملفات المشروع
 COPY package*.json ./
-COPY server.js automationCrypto.js ./
+COPY server.js automationCrypto.js selfHealingSelector.js ./
 
 # تثبيت المكتبات
 RUN npm install
