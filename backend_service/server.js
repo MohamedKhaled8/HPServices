@@ -113,7 +113,7 @@ const NEW_PORTAL_ACCOUNT_PASSWORD = 'StudentPass123!';
 const DT_SERVER_META_BASE = { dtApi: '2.1' };
 
 /** يُسجَّل عند التشغيل — للتأكد أن HF يشغّل آخر ملف server.js وليس صورة Docker قديمة */
-const DT_BUILD_TAG = 'ep-fawry-instant-capture-2026-10-08';
+const DT_BUILD_TAG = 'ep-fawry-v3-robust-2026-10-08';
 
 /**
  * بوابة الدفع غير مستقرة مع جلسات متوازية؛ ننفّذ طلبات الدفع بالتتابع.
@@ -1667,10 +1667,12 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
             const url = response.url().toLowerCase();
             if (url.includes('atfawry.com') || url.includes('fawry') || url.includes('payment') || url.includes('bill') || url.includes('charge')) {
                 const ct = response.headers()['content-type'] || '';
-                if (ct.includes('application/json') || ct.includes('text/plain') || ct.includes('javascript')) {
+                if (ct.includes('application/json') || ct.includes('text/plain') || ct.includes('javascript') || ct.includes('html')) {
                     const text = await response.text().catch(() => '');
-                    if (text && text.length < 50000) {
-                        const m = text.match(/"(?:fawryRefNumber|referenceNumber|billReference|paymentRef|merchantRefNum|refNumber|referenceNo|refNo)"\s*:\s*"?([0-9]{8,12})"?/i);
+                    if (text && text.length < 80000) {
+                        const m =
+                            text.match(/"(?:fawryRefNumber|referenceNumber|billReference|paymentRef|merchantRefNum|refNumber|referenceNo|refNo|orderNumber|fawryRef)"\s*:\s*"?([0-9]{8,12})"?/i) ||
+                            text.match(/([98][0-9]{9})/);
                         if (m && m[1] && isValidFawryRef(m[1], nationalID, phone)) {
                             capturedRef = m[1].trim();
                             console.log(`[EP] 🎯 Captured Fawry Reference Number from network packet: ${capturedRef}`);
@@ -1703,7 +1705,7 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
 
         // 4. محاولة العثور على إطار فوري (iframe)
         console.log('[EP] ⏳ Checking for Fawry iframe modal...');
-        const iframeHandle = await page.waitForSelector('iframe[src*="atfawry.com"]', { timeout: 8000 }).catch(() => null);
+        const iframeHandle = await page.waitForSelector('iframe[src*="atfawry.com"]', { timeout: 10000 }).catch(() => null);
         let fawryFrame = iframeHandle ? await iframeHandle.contentFrame() : null;
         if (!fawryFrame) {
             fawryFrame = page.frames().find(f => f.url().includes('atfawry.com')) || page;
@@ -1712,8 +1714,8 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
         // 5. اختيار "ادفع فورى" بدقة
         console.log('[EP] 🔘 Selecting "ادفع فورى"...');
         const payFawryLabel = fawryFrame.locator('label[for="PMTMethodATFawryIN"], label:has-text("ادفع فورى"), label:has-text("ادفع فوري")').first();
-        if (await payFawryLabel.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await payFawryLabel.click({ force: true });
+        if (await payFawryLabel.isVisible({ timeout: 6000 }).catch(() => false)) {
+            await payFawryLabel.click({ force: true }).catch(() => {});
         }
 
         await fawryFrame.evaluate(() => {
@@ -1731,21 +1733,45 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
         }).catch(() => {});
         console.log('[EP] ✅ Selected "ادفع فورى"');
 
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(600);
 
-        // 6. الضغط على زر "تأكيد"
+        // 6. الضغط على زر "تأكيد" مع تعدد المحددات
         console.log('[EP] 🔘 Clicking "تأكيد"...');
-        const confirmBtn = fawryFrame.locator('#billUploadFormConfBTN, button:has-text("تأكيد"), button:has-text("تاكيد")').first();
-        if (await confirmBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await confirmBtn.click({ force: true });
-            console.log('[EP] ✅ Clicked "تأكيد" in Fawry modal');
+        const confirmSelectors = [
+            '#billUploadFormConfBTN',
+            'button:has-text("تأكيد")',
+            'button:has-text("تاكيد")',
+            'input[value*="تأكيد"]',
+            'input[value*="تاكيد"]',
+            'button[type="submit"]',
+            'input[type="submit"]',
+            '.btn-primary'
+        ];
+        let confirmClicked = false;
+        for (const sel of confirmSelectors) {
+            const btn = fawryFrame.locator(sel).first();
+            if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                await btn.scrollIntoViewIfNeeded().catch(() => {});
+                await btn.click({ force: true }).catch(() => {});
+                console.log(`[EP] ✅ Clicked "تأكيد" in Fawry modal (${sel})`);
+                confirmClicked = true;
+                break;
+            }
+        }
+        if (!confirmClicked) {
+            await fawryFrame.evaluate(() => {
+                const btn = document.getElementById('billUploadFormConfBTN') || document.querySelector('button[type="submit"], input[type="submit"]');
+                if (btn) btn.click();
+            }).catch(() => {});
+            console.log('[EP] ℹ️ Attempted DOM click for confirm button');
         }
 
-        // 7. مراقبة ظهور الرقم المرجعي (من الشبكة، من الفريم، أو من الصفحة الأساسية)
+        // 7. مراقبة ظهور الرقم المرجعي (مهلة كافية حتى 20 ثانية)
         console.log('⏳ [EP] Waiting for Fawry reference number to resolve...');
-        for (let w = 0; w < 12; w++) {
+        for (let w = 0; w < 22; w++) {
             if (capturedRef) return capturedRef;
 
+            // فحص الإطارات والصفحة الأساسية
             for (const ctx of [fawryFrame, page, ...page.frames()]) {
                 try {
                     const fText = await ctx.locator('body').innerText().catch(() => '');
@@ -1757,7 +1783,20 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
                 } catch { }
             }
 
-            await page.waitForTimeout(600);
+            // فحص رابط الصفحة في حال تم التحويل إليها
+            try {
+                const curUrl = page.url();
+                if (curUrl.includes('/pay/')) {
+                    const pageText = await page.locator('body').innerText().catch(() => '');
+                    const found = extractRefFromText(pageText);
+                    if (found) {
+                        console.log(`[EP] 🏆 Fawry Reference Number extracted from pay URL redirect: ${found}`);
+                        return found;
+                    }
+                }
+            } catch { }
+
+            await page.waitForTimeout(900);
         }
     } catch (e) {
         console.log(`[EP] ⚠️ triggerFawryModalConfirm warning: ${e.message}`);
@@ -1829,15 +1868,23 @@ async function lookupReceiptsFromPortal(page, nationalID, phone, isRetry = false
                     const rowText = cells.join(' ');
                     if (rowText.includes('لم يكتمل') || candidate.includes('—') || candidate.includes('-')) {
                         const openLink = row.locator('a:has-text("فتح")').first();
-                        if (await openLink.isVisible({ timeout: 1000 }).catch(() => false)) {
-                            console.log('[EP-Receipts] ℹ️ Order is "لم يكتمل", clicking "فتح" to trigger Fawry code...');
-                            await openLink.click();
+                        if (await openLink.isVisible({ timeout: 1500 }).catch(() => false)) {
+                            console.log('[EP-Receipts] ℹ️ Order is "لم يكتمل", navigating to "فتح" pay link...');
+                            const href = await openLink.getAttribute('href').catch(() => null);
+                            if (href) {
+                                const targetUrl = href.startsWith('http') ? href : new URL(href, page.url()).href;
+                                await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+                            } else {
+                                await openLink.click({ force: true }).catch(() => {});
+                            }
                             await page.waitForTimeout(1500);
                             const modalRef = await triggerFawryModalConfirm(page, cleanNID, cleanPhone);
                             if (modalRef) {
                                 console.log(`[EP-Receipts] 🎯 Got reference number directly from Fawry modal: ${modalRef}`);
                                 return { referenceNumber: modalRef, rawText: bodyText };
                             }
+                            console.log('[EP-Receipts] ⏳ Waiting 3s for portal order status update...');
+                            await page.waitForTimeout(3000);
                             return await lookupReceiptsFromPortal(page, nationalID, phone, true);
                         }
                     }
