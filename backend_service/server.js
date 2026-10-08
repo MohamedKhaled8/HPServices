@@ -1618,24 +1618,35 @@ async function runAutomation(data) {
 
 // دالة الاستعلام واستخراج الرقم المرجعي لفوري من بوابة "طلباتي وإيصالاتي"
 // دالة إتمام اختيار الدفع في فوري واستخراج الرقم المرجعي مباشرة من شاشة فوري
-async function triggerFawryModalConfirm(page) {
+function isValidFawryRef(val, nationalID, phone) {
+    if (!val) return false;
+    const digits = String(val).trim().replace(/\D/g, '');
+    if (digits.length < 8 || digits.length > 12) return false;
+    if (digits.startsWith('2024') || digits.startsWith('2025') || digits.startsWith('2026')) return false;
+    const cleanNID = String(nationalID || '').trim();
+    const cleanPhone = String(phone || '').trim();
+    if (cleanNID && (digits === cleanNID || cleanNID.includes(digits))) return false;
+    if (cleanPhone && (digits === cleanPhone || cleanPhone.includes(digits))) return false;
+    return true;
+}
+
+// دالة إتمام اختيار الدفع في فوري واستخراج الرقم المرجعي مباشرة من الشبكة أو نافذة فوري
+async function triggerFawryModalConfirm(page, nationalID, phone) {
     let capturedRef = '';
 
-    // 1. مراقب الشبكة لالتقاط الرقم المرجعي من فوري
+    // 1. مراقب الشبكة الفوري لالتقاط الرد من سيرفرات فوري مباشرة
     const responseHandler = async (response) => {
         try {
             const url = response.url().toLowerCase();
-            if (url.includes('fawry') || url.includes('payment') || url.includes('bill') || url.includes('charge')) {
+            if (url.includes('fawry') || url.includes('payment') || url.includes('bill') || url.includes('charge') || url.includes('checkout')) {
                 const ct = response.headers()['content-type'] || '';
-                if (ct.includes('application/json')) {
-                    const json = await response.json().catch(() => null);
-                    if (json) {
-                        const str = JSON.stringify(json);
-                        console.log(`[EP] 🌐 Fawry response packet: ${str.slice(0, 200)}`);
-                        const m = str.match(/"(?:fawryRefNumber|referenceNumber|billReference|paymentRef|fawry_ref_number)"\s*:\s*"?([98][0-9]{9})"?/i);
-                        if (m && m[1]) {
-                            capturedRef = m[1];
-                            console.log(`[EP] 🎯 Captured Fawry Reference Number from network API: ${capturedRef}`);
+                if (ct.includes('application/json') || ct.includes('text/plain') || ct.includes('javascript')) {
+                    const text = await response.text().catch(() => '');
+                    if (text && text.length < 50000) {
+                        const m = text.match(/"(?:fawryRefNumber|referenceNumber|billReference|paymentRef|merchantRefNum|refNumber|referenceNo|refNo|fawry_ref_number)"\s*:\s*"?([0-9]{8,12})"?/i);
+                        if (m && m[1] && isValidFawryRef(m[1], nationalID, phone)) {
+                            capturedRef = m[1].trim();
+                            console.log(`[EP] 🎯 Captured Fawry Reference Number from network packet: ${capturedRef}`);
                         }
                     }
                 }
@@ -1644,7 +1655,7 @@ async function triggerFawryModalConfirm(page) {
     };
     page.on('response', responseHandler);
 
-    // 2. خطاف callback و postMessage في المتصفح
+    // 2. مراقبة رسائل postMessage و window callbacks
     await page.evaluate(() => {
         window.__fawryResultRef = null;
         window.addEventListener('message', function (event) {
@@ -1654,8 +1665,8 @@ async function triggerFawryModalConfirm(page) {
                     try { d = JSON.parse(d); } catch (_) { }
                 }
                 if (d && typeof d === 'object') {
-                    const ref = d.fawryRefNumber || d.referenceNumber || d.billReference;
-                    if (ref && /^([98][0-9]{9})$/.test(String(ref))) {
+                    const ref = d.fawryRefNumber || d.referenceNumber || d.billReference || d.merchantRefNum || d.refNumber || d.paymentRef;
+                    if (ref && /^[0-9]{8,12}$/.test(String(ref))) {
                         window.__fawryResultRef = String(ref);
                     }
                 }
@@ -1664,83 +1675,88 @@ async function triggerFawryModalConfirm(page) {
     }).catch(() => { });
 
     try {
-        const fawryBtn = page.locator('#fawry-pay, button:has-text("ادفع عن طريق فوري"), a:has-text("ادفع عن طريق فوري")').first();
-        if (await fawryBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
-            await fawryBtn.scrollIntoViewIfNeeded();
+        // البحث عن زر الدفع بفوري والضغط عليه
+        const fawryBtn = page.locator('#fawry-pay, button:has-text("ادفع عن طريق فوري"), a:has-text("ادفع عن طريق فوري"), button:has-text("فوري"), a:has-text("فوري"), img[src*="fawry"]').first();
+        if (await fawryBtn.isVisible({ timeout: 6000 }).catch(() => false)) {
+            await fawryBtn.scrollIntoViewIfNeeded().catch(() => {});
             await fawryBtn.click({ force: true });
-            console.log('[EP] ✅ Clicked #fawry-pay button');
-            await page.waitForTimeout(3000);
+            console.log('[EP] ✅ Clicked Fawry button on review page');
+        } else {
+            console.log('[EP] ℹ️ Fawry button not visible directly, checking if modal is already open...');
+        }
 
-            for (let attempt = 0; attempt < 15; attempt++) {
-                const allContexts = [page, ...page.frames()];
-                for (const ctx of allContexts) {
-                    try {
-                        const payFawryEl = ctx.locator('label, span, div, p').filter({ hasText: /ادفع فورى|ادفع فوري/i }).first();
-                        if (await payFawryEl.isVisible({ timeout: 300 }).catch(() => false)) {
-                            const precedingRadio = payFawryEl.locator('xpath=preceding::input[@type="radio"][1]');
-                            if (await precedingRadio.isVisible({ timeout: 300 }).catch(() => false)) {
-                                await precedingRadio.click({ force: true });
-                            } else {
-                                await payFawryEl.click({ force: true });
-                            }
-                            console.log('[EP] ✅ Selected "ادفع فورى"');
-                            break;
+        // اختيار خيار "ادفع فورى"
+        let selectedOption = false;
+        for (let attempt = 0; attempt < 8; attempt++) {
+            if (capturedRef) break;
+            const allContexts = [page, ...page.frames()];
+            for (const ctx of allContexts) {
+                try {
+                    const payFawryEl = ctx.locator('label, span, div, p').filter({ hasText: /ادفع فورى|ادفع فوري/i }).first();
+                    if (await payFawryEl.isVisible({ timeout: 200 }).catch(() => false)) {
+                        const precedingRadio = payFawryEl.locator('xpath=preceding::input[@type="radio"][1]');
+                        if (await precedingRadio.isVisible({ timeout: 200 }).catch(() => false)) {
+                            await precedingRadio.click({ force: true }).catch(() => {});
                         }
-                        const radios = await ctx.locator('input[type="radio"]').all();
-                        if (radios.length >= 2) {
-                            await radios[1].click({ force: true });
-                            console.log('[EP] ✅ Clicked radio #2');
-                            break;
-                        }
-                    } catch { }
-                }
-                await page.waitForTimeout(500);
-
-                let confirmed = false;
-                for (const ctx of [page, ...page.frames()]) {
-                    try {
-                        const btn = ctx.locator('#billUploadFormConfBTN, button:has-text("تأكيد"), button:has-text("تاكيد")').first();
-                        if (await btn.isVisible({ timeout: 400 }).catch(() => false)) {
-                            await btn.click({ force: true });
-                            console.log('[EP] ✅ Clicked "تأكيد" in Fawry modal');
-                            confirmed = true;
-                            break;
-                        }
-                    } catch { }
-                }
-
-                if (confirmed) {
-                    console.log('⏳ [EP] Waiting for Fawry to display reference number on screen...');
-                    for (let w = 0; w < 15; w++) {
-                        await page.waitForTimeout(1000);
-
-                        if (capturedRef) return capturedRef;
-
-                        const cb = await page.evaluate(() => window.__fawryResultRef).catch(() => null);
-                        if (cb && /^([98][0-9]{9})$/.test(String(cb))) {
-                            console.log(`[EP] 🎯 Captured from window callback: ${cb}`);
-                            return String(cb);
-                        }
-
-                        for (const ctx of [page, ...page.frames()]) {
-                            try {
-                                const fText = await ctx.locator('body').innerText().catch(() => '');
-                                if (!fText) continue;
-                                const m =
-                                    fText.match(/الرقم\s*المرجعي[\s\S]*?([98][0-9]{9})/) ||
-                                    fText.match(/كود\s*السداد[\s\S]*?([98][0-9]{9})/) ||
-                                    fText.match(/رقم\s*المرجع[\s\S]*?([98][0-9]{9})/) ||
-                                    fText.match(/\b([98][0-9]{9})\b/);
-                                if (m && m[1] && !m[1].startsWith('2024') && !m[1].startsWith('2025') && !m[1].startsWith('2026')) {
-                                    console.log(`[EP] 🏆 Fawry Reference Number extracted from modal screen: ${m[1]}`);
-                                    return m[1].trim();
-                                }
-                            } catch { }
-                        }
+                        await payFawryEl.click({ force: true }).catch(() => {});
+                        console.log('[EP] ✅ Selected "ادفع فورى"');
+                        selectedOption = true;
+                        break;
                     }
+                    const radios = await ctx.locator('input[type="radio"]').all();
+                    if (radios.length >= 2) {
+                        await radios[1].click({ force: true }).catch(() => {});
+                        selectedOption = true;
+                        break;
+                    }
+                } catch { }
+            }
+            if (selectedOption) break;
+            await page.waitForTimeout(300);
+        }
+
+        // الضغط على زر "تأكيد"
+        for (const ctx of [page, ...page.frames()]) {
+            try {
+                const btn = ctx.locator('#billUploadFormConfBTN, button:has-text("تأكيد"), button:has-text("تاكيد"), input[value*="تأكيد"]').first();
+                if (await btn.isVisible({ timeout: 400 }).catch(() => false)) {
+                    await btn.click({ force: true }).catch(() => {});
+                    console.log('[EP] ✅ Clicked "تأكيد" in Fawry modal');
                     break;
                 }
+            } catch { }
+        }
+
+        // انتظار ظهور الرقم المرجعي (شبكة / Callback / DOM)
+        console.log('⏳ [EP] Waiting for Fawry reference number to resolve...');
+        for (let w = 0; w < 12; w++) {
+            if (capturedRef) return capturedRef;
+
+            const cb = await page.evaluate(() => window.__fawryResultRef).catch(() => null);
+            if (cb && isValidFawryRef(cb, nationalID, phone)) {
+                console.log(`[EP] 🎯 Captured from window callback: ${cb}`);
+                return String(cb);
             }
+
+            for (const ctx of [page, ...page.frames()]) {
+                try {
+                    const fText = await ctx.locator('body').innerText().catch(() => '');
+                    if (!fText) continue;
+                    const m =
+                        fText.match(/الرقم\s*المرجعي[\s\S]*?([0-9]{8,12})/) ||
+                        fText.match(/كود\s*السداد[\s\S]*?([0-9]{8,12})/) ||
+                        fText.match(/رقم\s*المرجع[\s\S]*?([0-9]{8,12})/) ||
+                        fText.match(/كود\s*الدفع[\s\S]*?([0-9]{8,12})/) ||
+                        fText.match(/كود\s*فوري[\s\S]*?([0-9]{8,12})/) ||
+                        fText.match(/Reference\s*(?:No|Number|Code)?[\s\S]*?([0-9]{8,12})/i);
+                    if (m && m[1] && isValidFawryRef(m[1], nationalID, phone)) {
+                        console.log(`[EP] 🏆 Fawry Reference Number extracted from modal screen: ${m[1]}`);
+                        return m[1].trim();
+                    }
+                } catch { }
+            }
+
+            await page.waitForTimeout(500);
         }
     } catch (e) {
         console.log(`[EP] ⚠️ triggerFawryModalConfirm warning: ${e.message}`);
@@ -1760,7 +1776,6 @@ async function lookupReceiptsFromPortal(page, nationalID, phone, isRetry = false
 
     try {
         await page.goto('https://payment.usc.edu.eg/receipts', { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page.waitForTimeout(800);
 
         const nidInput = page.locator('input#profileId, input[name="profileId"]').first();
         const mobileInput = page.locator('input#mobile, input[name="mobile"]').first();
@@ -1769,67 +1784,46 @@ async function lookupReceiptsFromPortal(page, nationalID, phone, isRetry = false
         if (await nidInput.isVisible({ timeout: 5000 }).catch(() => false)) {
             await nidInput.fill(cleanNID);
             await mobileInput.fill(cleanPhone);
-            await page.waitForTimeout(300);
 
             await Promise.all([
                 page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { }),
                 submitBtn.click()
             ]);
-            await page.waitForTimeout(2000);
         }
 
         const bodyText = await page.locator('body').innerText().catch(() => '');
-        console.log(`[EP-Receipts] Page text preview:\n${bodyText.slice(0, 800)}`);
-
         if (bodyText.includes('لا توجد طلبات') || bodyText.includes('لم يتم العثور')) {
             console.log('[EP-Receipts] ℹ️ No receipts found.');
             return null;
         }
 
-        const isCandidateValid = (val) => {
-            if (!val) return false;
-            const digits = String(val).replace(/\D/g, '');
-            // الرقم المرجعي لفوري في مصر يتكون من 10 أرقام (مثل 9686326369)
-            if (digits.length < 9 || digits.length > 11) return false;
-            // استبعاد السنوات الدراسية قطعياً مثل 20252026
-            if (digits.startsWith('2024') || digits.startsWith('2025') || digits.startsWith('2026')) {
-                return false;
-            }
-            if (digits === cleanNID || cleanNID.includes(digits)) return false;
-            if (digits === cleanPhone || cleanPhone.includes(digits)) return false;
-            return true;
-        };
-
         // 1. فحص أعمدة الجدول بدقة
         const headers = await page.locator('table thead th').allInnerTexts().catch(() => []);
         let refColIndex = headers.findIndex(h => h.includes('المرجعي'));
-        console.log(`[EP-Receipts] Table headers: ${JSON.stringify(headers)}, refColIndex: ${refColIndex}`);
 
         const rows = await page.locator('table tbody tr').all().catch(() => []);
         if (rows.length > 0) {
-            console.log(`[EP-Receipts] Found ${rows.length} rows in receipts table`);
             for (const row of rows) {
                 const cells = await row.locator('td').allInnerTexts().catch(() => []);
-                console.log(`[EP-Receipts] Row cells: ${JSON.stringify(cells)}`);
 
-                // أ) فحص عمود الرقم المرجعي تحديداً (الخلية 4)
+                // فحص عمود الرقم المرجعي
                 const candidate = refColIndex >= 0 && cells[refColIndex] ? cells[refColIndex] : (cells[4] || '');
                 const cClean = candidate.trim().replace(/\D/g, '');
-                if (isCandidateValid(cClean)) {
+                if (isValidFawryRef(cClean, cleanNID, cleanPhone)) {
                     console.log(`[EP-Receipts] 🎯 Found exact Fawry Reference Number: ${cClean}`);
                     return { referenceNumber: cClean, rawText: bodyText };
                 }
 
-                // ب) فحص باقي الخلايا عن رقم 10 أرقام
+                // فحص باقي الخلايا
                 for (let i = cells.length - 1; i >= 0; i--) {
                     const cellDigits = cells[i].trim().replace(/\D/g, '');
-                    if (isCandidateValid(cellDigits)) {
+                    if (isValidFawryRef(cellDigits, cleanNID, cleanPhone)) {
                         console.log(`[EP-Receipts] 🎯 Found valid Fawry ref from cell #${i}: ${cellDigits}`);
                         return { referenceNumber: cellDigits, rawText: bodyText };
                     }
                 }
 
-                // ج) إذا كان الطلب موجوداً ولكن بحالة "لم يكتمل" والرقم "—"، نضغط زر "فتح" لتفعيل فوري
+                // إذا كان الطلب بحالة "لم يكتمل" والرقم "—"، نضغط زر "فتح"
                 if (!isRetry) {
                     const rowText = cells.join(' ');
                     if (rowText.includes('لم يكتمل') || candidate.includes('—') || candidate.includes('-')) {
@@ -1837,8 +1831,8 @@ async function lookupReceiptsFromPortal(page, nationalID, phone, isRetry = false
                         if (await openLink.isVisible({ timeout: 1000 }).catch(() => false)) {
                             console.log('[EP-Receipts] ℹ️ Order is "لم يكتمل", clicking "فتح" to trigger Fawry code...');
                             await openLink.click();
-                            await page.waitForTimeout(3000);
-                            const modalRef = await triggerFawryModalConfirm(page);
+                            await page.waitForTimeout(1500);
+                            const modalRef = await triggerFawryModalConfirm(page, cleanNID, cleanPhone);
                             if (modalRef) {
                                 console.log(`[EP-Receipts] 🎯 Got reference number directly from Fawry modal: ${modalRef}`);
                                 return { referenceNumber: modalRef, rawText: bodyText };
@@ -1850,17 +1844,18 @@ async function lookupReceiptsFromPortal(page, nationalID, phone, isRetry = false
             }
         }
 
-        // 2. البحث بنمط التعبير النمطي (Regex) عن 10 أرقام تبدأ بـ 9 أو 8 (مثل 9686326369)
+        // 2. البحث بنمط Regex
         const regexPatterns = [
-            /الرقم\s*المرجعي[\s\S]*?([98][0-9]{9})/i,
-            /في\s*انتظار\s*الدفع[\s\S]*?([98][0-9]{9})/i,
-            /([98][0-9]{9})\s*[\r\n\s]*\[?فتح\]?/i,
-            /\b(9[0-9]{9})\b/
+            /الرقم\s*المرجعي[\s\S]*?([0-9]{8,12})/i,
+            /في\s*انتظار\s*الدفع[\s\S]*?([0-9]{8,12})/i,
+            /كود\s*السداد[\s\S]*?([0-9]{8,12})/i,
+            /([0-9]{8,12})\s*[\r\n\s]*\[?فتح\]?/i,
+            /\b([98][0-9]{7,11})\b/
         ];
 
         for (const rx of regexPatterns) {
             const m = bodyText.match(rx);
-            if (m && m[1] && isCandidateValid(m[1])) {
+            if (m && m[1] && isValidFawryRef(m[1], cleanNID, cleanPhone)) {
                 console.log(`[EP-Receipts] 🎯 Found valid Fawry ref via regex: ${m[1].trim()}`);
                 return { referenceNumber: m[1].trim(), rawText: bodyText };
             }
@@ -1884,38 +1879,16 @@ async function runElectronicPaymentAutomation(data) {
     });
     const page = await context.newPage();
 
-    page.setDefaultTimeout(25000);
-    page.setDefaultNavigationTimeout(30000);
+    page.setDefaultTimeout(20000);
+    page.setDefaultNavigationTimeout(25000);
 
     try {
-        // -------- الخطوة 0: فحص صفحة "طلباتي وإيصالاتي" أولاً لمعرفة إذا كان الطلب مسجل مسبقاً --------
-        console.log('🔍 [EP] Checking if order already exists in /receipts (لإعادة القبول أو التحديث)...');
-        const existingReceipt = await lookupReceiptsFromPortal(page, data.nationalID, data.phone);
-        if (existingReceipt && existingReceipt.referenceNumber) {
-            console.log(`[EP] 🏆 Order already found in receipts! Fawry Reference Number: ${existingReceipt.referenceNumber}`);
-            await browser.close().catch(() => { });
-            return {
-                orderNumber: existingReceipt.referenceNumber,
-                referenceNumber: existingReceipt.referenceNumber,
-                entity: 'كلية التربية (دراسات عليا)',
-                serviceType: 'دبلوم (2025-2026)',
-                email: data.email,
-                nationalID: data.nationalID,
-                name: data.fullNameArabic,
-                mobile: data.phone,
-                status: 'NEW',
-                rawText: existingReceipt.rawText ? existingReceipt.rawText.substring(0, 3000) : ''
-            };
-        }
+        // -------- الخطوة 1: الدخول المباشر للبوابة الرئيسية للتسجيل الفوري --------
+        console.log('🌍 [EP] Step 1: Navigating directly to payment portal (https://payment.usc.edu.eg/)...');
+        await page.goto('https://payment.usc.edu.eg/', { waitUntil: 'domcontentloaded', timeout: 35000 });
 
-        // إذا لم يكن مسجلاً، نسجل الطلب جديداً من البوابة الرئيسية
-        console.log('🌍 [EP] Step 1: Navigating to payment portal (https://payment.usc.edu.eg/)...');
-        await page.goto('https://payment.usc.edu.eg/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { });
-        await page.waitForTimeout(1000);
-
-        // -------- الخطوة 2: اختيار الجهة افتراضياً "كلية التربية (دراسات عليا)" --------
-        console.log('📋 [EP] Step 2: Selecting faculty (كلية التربية (دراسات عليا))...');
+        // -------- الخطوة 2: اختيار الجهة (كلية التربية - دراسات عليا) --------
+        console.log('📋 [EP] Step 2: Selecting faculty (كلية التربية - دراسات عليا)...');
         const facultySelect = page.locator('select#faculty, select[name="faculty"], select[data-faculty-select]').first();
         await facultySelect.waitFor({ state: 'visible', timeout: 15000 });
 
@@ -1943,20 +1916,18 @@ async function runElectronicPaymentAutomation(data) {
                 await facultySelect.selectOption({ index: 6 });
             });
         }
-
         await facultySelect.dispatchEvent('change').catch(() => { });
-        await page.waitForTimeout(1500);
 
-        // -------- الخطوة 2b: اختيار الخدمة افتراضياً "دبلوم (2025-2026)" --------
+        // -------- الخطوة 2b: اختيار الخدمة (دبلوم) فور تحميل الخيارات --------
         console.log('📘 [EP] Step 2b: Selecting service (دبلوم (2025-2026))...');
         const serviceSelect = page.locator('select#service, select[name="service"], select[data-service-select]').first();
         await serviceSelect.waitFor({ state: 'visible', timeout: 15000 });
 
-        for (let i = 0; i < 8; i++) {
-            const count = await serviceSelect.locator('option').count();
-            if (count > 1) break;
-            await page.waitForTimeout(1000);
-        }
+        // انتظار ذكي حتى تمتلئ الخيارات ديناميكياً بعد تغيير الكلية
+        await page.waitForFunction(() => {
+            const el = document.querySelector('select#service, select[name="service"]');
+            return el && el.options && el.options.length > 1;
+        }, { timeout: 6000 }).catch(() => { });
 
         let selectedService = false;
         try {
@@ -1979,84 +1950,81 @@ async function runElectronicPaymentAutomation(data) {
 
         if (!selectedService) {
             await serviceSelect.selectOption({ index: 1 }).catch(() => { });
-            console.log('[EP] ⚠️ Fallback to service index 1');
         }
-
         await serviceSelect.dispatchEvent('change').catch(() => { });
-        await page.waitForTimeout(800);
 
-        // -------- الخطوة 3: تعبئة البيانات الشخصية (الاسم، الرقم القومي، الموبايل، البريد الإلكتروني) --------
+        // -------- الخطوة 3: تعبئة البيانات الشخصية --------
         console.log('✉️ [EP] Step 3: Filling user details...');
-
-        // 1. الاسم بالكامل
         const nameInput = page.locator('input#name, input[name="name"]').first();
-        if (await nameInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+        if (await nameInput.isVisible({ timeout: 3000 }).catch(() => false)) {
             await nameInput.fill(data.fullNameArabic || '');
-            console.log(`[EP] ✅ Name filled: "${data.fullNameArabic}"`);
         } else {
             const firstTxt = page.locator('input:not([type="hidden"]):not([disabled])').first();
             await firstTxt.fill(data.fullNameArabic || '');
         }
-        await page.waitForTimeout(200);
 
-        // 2. الرقم القومي
         const nidInput = page.locator('input#profileId, input[name="profileId"], input[maxlength="14"]').first();
-        if (await nidInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+        if (await nidInput.isVisible({ timeout: 3000 }).catch(() => false)) {
             await nidInput.fill(data.nationalID || '');
-            console.log(`[EP] ✅ National ID filled: "${data.nationalID}"`);
         } else {
             const textInputs = await page.locator('input:not([type="hidden"]):not([disabled])').all();
             if (textInputs[1]) await textInputs[1].fill(data.nationalID || '');
         }
-        await page.waitForTimeout(200);
 
-        // 3. الموبايل
         const mobileInput = page.locator('input#mobile, input[name="mobile"], input[maxlength="11"]').first();
-        if (await mobileInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+        if (await mobileInput.isVisible({ timeout: 3000 }).catch(() => false)) {
             await mobileInput.fill(data.phone || '');
-            console.log(`[EP] ✅ Mobile filled: "${data.phone}"`);
         } else {
             const textInputs = await page.locator('input:not([type="hidden"]):not([disabled])').all();
             if (textInputs[2]) await textInputs[2].fill(data.phone || '');
         }
-        await page.waitForTimeout(200);
 
-        // 4. البريد الإلكتروني
         const emailInput = page.locator('input#email, input[name="email"], input[type="email"]').first();
-        if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+        if (await emailInput.isVisible({ timeout: 3000 }).catch(() => false)) {
             await emailInput.fill(data.email || '');
-            console.log(`[EP] ✅ Email filled: "${data.email}"`);
         } else {
             const textInputs = await page.locator('input:not([type="hidden"]):not([disabled])').all();
             if (textInputs[3]) await textInputs[3].fill(data.email || '');
         }
-        await page.waitForTimeout(400);
 
-        // -------- الخطوة 4: الضغط على "متابعة" --------
+        // -------- الخطوة 4: الضغط على "متابعة" والانتقال فوراً --------
         console.log('➡️ [EP] Step 4: Clicking متابعة...');
         const continueBtn = page.locator('button[type="submit"], button:has-text("متابعة"), input[value*="متابعة"]').first();
-        await continueBtn.scrollIntoViewIfNeeded();
-        await continueBtn.click();
+        await continueBtn.scrollIntoViewIfNeeded().catch(() => {});
 
-        await Promise.race([
+        await Promise.all([
             page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { }),
-            page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => { }),
-            page.waitForTimeout(4000)
+            continueBtn.click()
         ]);
 
-        // فحص وجود أي أخطاء من الموقع
+        // التحقق مما إذا كان الطلب مسجلاً مسبقاً في رسائل التنبيه بالموقع
         const errorAlert = await page.locator('.alert:not(.alert-info), .error, .text-danger, .invalid-feedback').first().innerText().catch(() => '');
-        if (errorAlert && errorAlert.trim().length > 4 && !errorAlert.includes('راجع بياناتك')) {
-            console.log(`[EP] ⚠️ Error alert found: ${errorAlert}`);
-            // حتى مع وجود تحذير، قد يكون الطلب سُجل، لذا سنتحقق من receipts
+        if (errorAlert && (errorAlert.includes('مسجل مسبقاً') || errorAlert.includes('يوجد طلب') || errorAlert.includes('مسبقا'))) {
+            console.log(`[EP] ℹ️ Order reported already registered by site: "${errorAlert.trim()}". Checking receipts directly...`);
+            const existingReceipt = await lookupReceiptsFromPortal(page, data.nationalID, data.phone);
+            if (existingReceipt && existingReceipt.referenceNumber) {
+                await browser.close().catch(() => { });
+                return {
+                    orderNumber: existingReceipt.referenceNumber,
+                    referenceNumber: existingReceipt.referenceNumber,
+                    entity: 'كلية التربية (دراسات عليا)',
+                    serviceType: 'دبلوم (2025-2026)',
+                    email: data.email,
+                    nationalID: data.nationalID,
+                    name: data.fullNameArabic,
+                    mobile: data.phone,
+                    status: 'NEW',
+                    rawText: existingReceipt.rawText ? existingReceipt.rawText.substring(0, 3000) : ''
+                };
+            }
         }
 
-        // -------- الخطوة 4b: الضغط على زر فوري وتأكيد طريقة "ادفع فورى" لتوليد الرقم المرجعي --------
+        // -------- الخطوة 5: تأكيد اختيار فوري واستخراج الرقم المرجعي فوراً --------
         console.log('💳 [EP] Triggering Fawry modal confirmation on review page...');
-        const modalRef = await triggerFawryModalConfirm(page);
+        const modalRef = await triggerFawryModalConfirm(page, data.nationalID, data.phone);
         if (modalRef) {
-            console.log(`[EP] 🏆 Got reference directly from Fawry modal on review page: ${modalRef}`);
-            await browser.close().catch(() => {});
+            console.log(`[EP] 🏆 Got reference directly from Fawry: ${modalRef}`);
+            await browser.close().catch(() => { });
             return {
                 orderNumber: modalRef,
                 referenceNumber: modalRef,
@@ -2071,29 +2039,14 @@ async function runElectronicPaymentAutomation(data) {
             };
         }
 
-        // -------- الخطوة 5: الذهاب لـ /receipts لاستخراج الرقم المرجعي لفوري فوراً --------
-        console.log('📋 [EP] Step 5: Navigating to /receipts to extract Fawry Reference Number...');
-        await page.waitForTimeout(1000);
+        // -------- الخطوة 6: حل احتياطي سريع عبر /receipts إذا تعذر التقاطه من المودال --------
+        console.log('📋 [EP] Fallback: Checking /receipts to extract Fawry Reference Number...');
         const newlyCreatedReceipt = await lookupReceiptsFromPortal(page, data.nationalID, data.phone);
 
         let referenceNumber = '';
         if (newlyCreatedReceipt && newlyCreatedReceipt.referenceNumber) {
             referenceNumber = newlyCreatedReceipt.referenceNumber;
-            console.log(`[EP] 🏆 Success! Extracted Fawry Reference Number from receipts: ${referenceNumber}`);
-        }
-
-        // إذا لم يعثر عليه من receipts، نقوم بالضغط على زر فوري كحل احتياطي
-        if (!referenceNumber) {
-            console.log('[EP] Fallback: Trying Fawry payment button flow...');
-            try {
-                await page.goto('https://payment.usc.edu.eg/', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
-                // محاولة أخرى لـ receipts بعد ثانيتين
-                await page.waitForTimeout(2000);
-                const retryReceipt = await lookupReceiptsFromPortal(page, data.nationalID, data.phone);
-                if (retryReceipt && retryReceipt.referenceNumber) {
-                    referenceNumber = retryReceipt.referenceNumber;
-                }
-            } catch { }
+            console.log(`[EP] 🏆 Success! Extracted Fawry Reference Number from receipts fallback: ${referenceNumber}`);
         }
 
         let fullBodyText = '';
@@ -2101,7 +2054,7 @@ async function runElectronicPaymentAutomation(data) {
             fullBodyText = await page.locator('body').innerText().catch(() => '');
         } catch { }
 
-        await browser.close();
+        await browser.close().catch(() => { });
 
         if (!referenceNumber) {
             console.error('[EP] ❌ Failed to extract Fawry Reference Number. Full text preview:', fullBodyText.substring(0, 500));
