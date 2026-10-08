@@ -1,3 +1,8 @@
 node_modules
 .env
 npm-debug.log
+scratch_*.js
+test_ep_debug.js
+update_server_fawry.js
+ocr_debug.txt
+
