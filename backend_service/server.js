@@ -1704,17 +1704,18 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
         }
 
         // 4. محاولة العثور على إطار فوري (iframe)
-        console.log('[EP] ⏳ Checking for Fawry iframe modal...');
-        const iframeHandle = await page.waitForSelector('iframe[src*="atfawry.com"]', { timeout: 10000 }).catch(() => null);
+        console.log('[EP] ⏳ Waiting for Fawry iframe modal to attach...');
+        const iframeHandle = await page.waitForSelector('iframe[src*="atfawry.com"]', { timeout: 15000 }).catch(() => null);
         let fawryFrame = iframeHandle ? await iframeHandle.contentFrame() : null;
         if (!fawryFrame) {
             fawryFrame = page.frames().find(f => f.url().includes('atfawry.com')) || page;
         }
 
-        // 5. اختيار "ادفع فورى" بدقة
-        console.log('[EP] 🔘 Selecting "ادفع فورى"...');
+        // 5. انتظار تحميل شاشة الخيارات (AngularJS Template) واختيار "ادفع فورى"
+        console.log('[EP] 🔘 Waiting for "ادفع فورى" in iframe...');
         const payFawryLabel = fawryFrame.locator('label[for="PMTMethodATFawryIN"], label:has-text("ادفع فورى"), label:has-text("ادفع فوري")').first();
-        if (await payFawryLabel.isVisible({ timeout: 6000 }).catch(() => false)) {
+        await payFawryLabel.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+        if (await payFawryLabel.isVisible().catch(() => false)) {
             await payFawryLabel.click({ force: true }).catch(() => {});
         }
 
@@ -1723,8 +1724,8 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
             if (radio) {
                 radio.checked = true;
                 if (window.angular) {
-                    window.angular.element(radio).triggerHandler('click');
-                    window.angular.element(radio).triggerHandler('change');
+                    angular.element(radio).triggerHandler('click');
+                    angular.element(radio).triggerHandler('change');
                 } else {
                     radio.dispatchEvent(new Event('change', { bubbles: true }));
                     radio.dispatchEvent(new Event('click', { bubbles: true }));
@@ -1733,32 +1734,17 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
         }).catch(() => {});
         console.log('[EP] ✅ Selected "ادفع فورى"');
 
-        await page.waitForTimeout(600);
+        // انتظار استقرار النموذج وتفعيل زر التأكيد
+        await page.waitForTimeout(1000);
 
-        // 6. الضغط على زر "تأكيد" مع تعدد المحددات
+        // 6. الضغط على زر "تأكيد"
         console.log('[EP] 🔘 Clicking "تأكيد"...');
-        const confirmSelectors = [
-            '#billUploadFormConfBTN',
-            'button:has-text("تأكيد")',
-            'button:has-text("تاكيد")',
-            'input[value*="تأكيد"]',
-            'input[value*="تاكيد"]',
-            'button[type="submit"]',
-            'input[type="submit"]',
-            '.btn-primary'
-        ];
-        let confirmClicked = false;
-        for (const sel of confirmSelectors) {
-            const btn = fawryFrame.locator(sel).first();
-            if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-                await btn.scrollIntoViewIfNeeded().catch(() => {});
-                await btn.click({ force: true }).catch(() => {});
-                console.log(`[EP] ✅ Clicked "تأكيد" in Fawry modal (${sel})`);
-                confirmClicked = true;
-                break;
-            }
-        }
-        if (!confirmClicked) {
+        const confirmBtn = fawryFrame.locator('#billUploadFormConfBTN, button:has-text("تأكيد"), button:has-text("تاكيد")').first();
+        await confirmBtn.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+        if (await confirmBtn.isVisible().catch(() => false)) {
+            await confirmBtn.click({ force: true }).catch(() => {});
+            console.log('[EP] ✅ Clicked "تأكيد" in Fawry modal');
+        } else {
             await fawryFrame.evaluate(() => {
                 const btn = document.getElementById('billUploadFormConfBTN') || document.querySelector('button[type="submit"], input[type="submit"]');
                 if (btn) btn.click();
