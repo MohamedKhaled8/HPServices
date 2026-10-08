@@ -2050,9 +2050,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
               setToastState({
                 message: queuePosition > 1
                   ? `طلب الدفع في انتظار الدور (رقم ${queuePosition})...`
-                  : 'جاري الحصول على رقم الطلب… قد يستغرق دقيقة أو أكثر.',
+                  : 'جاري استخراج الرقم المرجعي لفوري من بوابة الدفع...',
                 type: 'loading',
-                duration: 5000
+                duration: 60000
               });
 
               // استخدام البيانات المعدلة من الطلب أولاً، ثم البيانات الأصلية كاحتياطي
@@ -2064,6 +2064,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 nationalID: rdEp.national_id || sdEp?.nationalID || '',
                 phone: rdEp.whatsapp_number || sdEp?.whatsappNumber || ''
               };
+
+              if (!payload.fullNameArabic || !payload.nationalID || !payload.phone) {
+                setToastState({
+                  message: 'بيانات الطالب غير مكتملة (الاسم أو الرقم القومي أو الموبايل مفقود).',
+                  type: 'error',
+                  duration: 8000
+                });
+                return;
+              }
 
               const API_BASE_URL_EP = getAutomationApiBaseUrl();
               if (!API_BASE_URL_EP) {
