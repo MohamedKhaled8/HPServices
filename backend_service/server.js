@@ -113,7 +113,7 @@ const NEW_PORTAL_ACCOUNT_PASSWORD = 'StudentPass123!';
 const DT_SERVER_META_BASE = { dtApi: '2.1' };
 
 /** يُسجَّل عند التشغيل — للتأكد أن HF يشغّل آخر ملف server.js وليس صورة Docker قديمة */
-const DT_BUILD_TAG = 'ep-fawry-v3-robust-2026-10-08';
+const DT_BUILD_TAG = 'ep-fawry-v4-strict-prefix-2026-10-09';
 
 /**
  * بوابة الدفع غير مستقرة مع جلسات متوازية؛ ننفّذ طلبات الدفع بالتتابع.
@@ -1634,16 +1634,19 @@ function isValidFawryRef(val, nationalID, phone) {
 async function triggerFawryModalConfirm(page, nationalID, phone) {
     let capturedRef = '';
 
-    // دالة مساعدة سريعة للبحث عن الرقم المرجعي في نصوص الصفحة أو الفريمات
+    let confirmSubmitted = false;
+
+    // دالة مساعدة دقيقة للبحث عن الرقم المرجعي لفوري
     const extractRefFromText = (text) => {
         if (!text) return null;
         const m =
-            text.match(/الرقم\s*المرجعي\s*(?:لفوري)?\s*[:\-]?\s*([0-9]{8,12})/i) ||
             text.match(/رقم\s*الطلب\s*[:\-]?\s*([0-9]{8,12})/i) ||
+            text.match(/الرقم\s*المرجعي\s*(?:لفوري)?\s*[:\-]?\s*([0-9]{8,12})/i) ||
             text.match(/كود\s*السداد\s*[:\-]?\s*([0-9]{8,12})/i) ||
             text.match(/رقم\s*المرجع\s*[:\-]?\s*([0-9]{8,12})/i) ||
             text.match(/Reference\s*(?:No|Number|Code)?\s*[:\-]?\s*([0-9]{8,12})/i) ||
-            text.match(/\b([98][0-9]{9})\b/);
+            text.match(/إدفع\s*طلبك\s*باستخدام\s*رقم\s*الطلب[\s\S]*?([0-9]{8,12})/i) ||
+            text.match(/\b(96[0-9]{8})\b/);
         if (m && m[1] && isValidFawryRef(m[1], nationalID, phone)) {
             return m[1].trim();
         }
@@ -1661,18 +1664,19 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
         }
     } catch { }
 
-    // 2. مراقب الشبكة الفوري لالتقاط الرد من سيرفرات فوري مباشرة
+    // 2. مراقب الشبكة الفوري لالتقاط الرد من سيرفرات فوري حصراً بعد تأكيد وسيلة الدفع
     const responseHandler = async (response) => {
         try {
+            if (!confirmSubmitted) return;
             const url = response.url().toLowerCase();
-            if (url.includes('atfawry.com') || url.includes('fawry') || url.includes('payment') || url.includes('bill') || url.includes('charge')) {
+            if (url.includes('atfawry.com') || url.includes('fawry') || url.includes('payment') || url.includes('bill')) {
                 const ct = response.headers()['content-type'] || '';
                 if (ct.includes('application/json') || ct.includes('text/plain') || ct.includes('javascript') || ct.includes('html')) {
                     const text = await response.text().catch(() => '');
                     if (text && text.length < 80000) {
                         const m =
                             text.match(/"(?:fawryRefNumber|referenceNumber|billReference|paymentRef|merchantRefNum|refNumber|referenceNo|refNo|orderNumber|fawryRef)"\s*:\s*"?([0-9]{8,12})"?/i) ||
-                            text.match(/([98][0-9]{9})/);
+                            (url.includes('fawry/service') && text.match(/\b(96[0-9]{8})\b/));
                         if (m && m[1] && isValidFawryRef(m[1], nationalID, phone)) {
                             capturedRef = m[1].trim();
                             console.log(`[EP] 🎯 Captured Fawry Reference Number from network packet: ${capturedRef}`);
@@ -1739,6 +1743,7 @@ async function triggerFawryModalConfirm(page, nationalID, phone) {
 
         // 6. الضغط على زر "تأكيد"
         console.log('[EP] 🔘 Clicking "تأكيد"...');
+        confirmSubmitted = true;
         const confirmBtn = fawryFrame.locator('#billUploadFormConfBTN, button:has-text("تأكيد"), button:has-text("تاكيد")').first();
         await confirmBtn.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
         if (await confirmBtn.isVisible().catch(() => false)) {
