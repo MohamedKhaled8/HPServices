@@ -1862,6 +1862,41 @@ const compressImageForUpload = async (blobOrFile: Blob | File, maxWidth = 1280, 
           resolve(blobOrFile);
           return;
         }
+
+        // فحص سريع لجودة المحتوى (منع رفع الصور السوداء بالكامل أو البيضاء الفارغة)
+        try {
+          const sampleSize = 32;
+          const sCanvas = document.createElement('canvas');
+          sCanvas.width = sampleSize;
+          sCanvas.height = sampleSize;
+          const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
+          if (sCtx) {
+            sCtx.drawImage(img, 0, 0, sampleSize, sampleSize);
+            const pData = sCtx.getImageData(0, 0, sampleSize, sampleSize).data;
+            let totB = 0;
+            let minB = 255;
+            let maxB = 0;
+            const pCount = pData.length / 4;
+            for (let i = 0; i < pData.length; i += 4) {
+              const b = 0.299 * pData[i] + 0.587 * pData[i + 1] + 0.114 * pData[i + 2];
+              totB += b;
+              if (b < minB) minB = b;
+              if (b > maxB) maxB = b;
+            }
+            const avgB = totB / pCount;
+            if (avgB < 15 && maxB < 40) {
+              reject(new Error('الصورة المرفقة مظلمة أو سوداء تماماً، يرجى تشغيل الإضاءة أو إعادة التقاط الصورة بوضوح.'));
+              return;
+            }
+            if (avgB > 245 && minB > 225) {
+              reject(new Error('الصورة المرفقة فارغة أو بيضاء تماماً، يرجى التأكد من اختيار الصورة أو الإيصال الصحيح.'));
+              return;
+            }
+          }
+        } catch {
+          // في حال حدوث أي خطأ في فحص الـ Canvas نكمل بشكل طبيعي
+        }
+
         ctx.drawImage(img, 0, 0, width, height);
         canvas.toBlob(
           (compressedBlob) => {

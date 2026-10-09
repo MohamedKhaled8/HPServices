@@ -75,7 +75,7 @@ const ADMIN_NAVIGATION: AdminNavGroup[] = [
       { id: 'assignments', label: 'تكليف', icon: FileCheck, kind: 'tab' },
       { id: 'certificates', label: 'اونلاين', icon: Award, kind: 'tab' },
       { id: 'digitalTransformation', label: 'تحول', icon: Zap, kind: 'tab' },
-      { id: 'digitalTransformationCodes', label: 'كود تحول', icon: Zap, kind: 'tab' },
+      // { id: 'digitalTransformationCodes', label: 'كود تحول', icon: Zap, kind: 'tab' }, // معطل مؤقتاً لتوفير الأداء والريكويستات (الكود محفوظ بالكامل)
       { id: 'electronicPaymentCodes', label: 'اكواد مصاريف', icon: CreditCard, kind: 'tab' },
       { id: 'finalReview', label: 'مراجعة', icon: Search, kind: 'tab' },
       { id: 'graduationProject', label: 'مشروع', icon: GraduationCap, kind: 'tab' },
@@ -95,7 +95,7 @@ const ADMIN_NAVIGATION: AdminNavGroup[] = [
     id: 'tools',
     label: 'الأدوات',
     items: [
-      { id: 'whatsapp', label: 'الواتساب', icon: MessageSquare, kind: 'tab' },
+      // { id: 'whatsapp', label: 'الواتساب', icon: MessageSquare, kind: 'tab' }, // معطل مؤقتاً لتوفير الطلبات والتوكين (الكود محفوظ بالكامل)
       { id: 'adminAssistant', label: 'المساعد الذكي للاستعلامات', icon: Bot, kind: 'tab' },
       { id: 'botTraining', label: 'تدريب الشات بوت', icon: Brain, kind: 'tab' }
     ]

@@ -73,7 +73,77 @@ const FileUpload: React.FC<FileUploadProps> = ({
     return { valid: true };
   };
 
-  const handleFileSelect = (files: FileList | null) => {
+  // فحص ما إذا كانت الصورة سوداء بالكامل (مظلمة) أو بيضاء تماماً (فارغة)
+  const checkImageBlankness = (file: File): Promise<{ isBlank: boolean; reason?: string }> => {
+    return new Promise((resolve) => {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (ext === 'pdf' || file.type === 'application/pdf') {
+        return resolve({ isBlank: false });
+      }
+
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          const size = 32; // حجم مصغر لفحص فوري فائق السرعة
+          canvas.width = size;
+          canvas.height = size;
+
+          if (!ctx) return resolve({ isBlank: false });
+
+          ctx.drawImage(img, 0, 0, size, size);
+          const imgData = ctx.getImageData(0, 0, size, size).data;
+
+          let totalBrightness = 0;
+          let minBrightness = 255;
+          let maxBrightness = 0;
+          const pixelCount = imgData.length / 4;
+
+          for (let i = 0; i < imgData.length; i += 4) {
+            const b = 0.299 * imgData[i] + 0.587 * imgData[i + 1] + 0.114 * imgData[i + 2];
+            totalBrightness += b;
+            if (b < minBrightness) minBrightness = b;
+            if (b > maxBrightness) maxBrightness = b;
+          }
+
+          const avgBrightness = totalBrightness / pixelCount;
+
+          // 1. فحص إذا كانت سوداء بالكامل أو مظلمة جداً (كاميرا مغطاة أو ظلام تام)
+          if (avgBrightness < 15 && maxBrightness < 40) {
+            return resolve({
+              isBlank: true,
+              reason: 'الصورة مظلمة أو سوداء تماماً ولا يمكن قراءتها، يرجى تشغيل الإضاءة أو إعادة التقاط الصورة بوضوح.'
+            });
+          }
+
+          // 2. فحص إذا كانت بيضاء أو فارغة بالكامل (لا تحتوي على نصوص أو محتوى)
+          if (avgBrightness > 245 && minBrightness > 225) {
+            return resolve({
+              isBlank: true,
+              reason: 'الصورة بيضاء أو فارغة تماماً، يرجى التأكد من اختيار الصورة أو الإيصال الصحيح.'
+            });
+          }
+
+          resolve({ isBlank: false });
+        } catch {
+          resolve({ isBlank: false });
+        }
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve({ isBlank: false });
+      };
+
+      img.src = url;
+    });
+  };
+
+  const handleFileSelect = async (files: FileList | null) => {
     setError('');
     setSuccess('');
 
@@ -82,21 +152,37 @@ const FileUpload: React.FC<FileUploadProps> = ({
     const filesArray = Array.from(files);
     const validFiles: File[] = [];
 
-    // First, validate all files
-    filesArray.forEach((file) => {
+    // First, validate all files for format and size
+    for (const file of filesArray) {
       const validation = isValidFile(file);
       if (!validation.valid) {
         setError(validation.error || 'خطأ في التحقق من الملف');
-      } else {
-        validFiles.push(file);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        return;
       }
-    });
-
-    if (validFiles.length === 0) {
-      return;
     }
 
     setIsProcessing(true);
+
+    // Second, validate image clarity (prevent solid black / solid white uploads)
+    for (const file of filesArray) {
+      const blankCheck = await checkImageBlankness(file);
+      if (blankCheck.isBlank) {
+        setIsProcessing(false);
+        const errorMsg = filesArray.length > 1
+          ? `الملف "${file.name}": ${blankCheck.reason}`
+          : (blankCheck.reason || 'الصورة غير واضحة، يرجى إعادة التقاط الصورة بوضوح.');
+        setError(errorMsg);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        return;
+      }
+      validFiles.push(file);
+    }
+
     let processedCount = 0;
     const newFiles: UploadedFile[] = [];
 

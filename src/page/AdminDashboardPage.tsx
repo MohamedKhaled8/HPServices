@@ -1684,10 +1684,11 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadLatestNews();
 
-    const unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
-      logger.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
-      setDtCodes(codes);
-    });
+    // معطل مؤقتاً لتوفير استعلامات قاعدة البيانات وتقليل الضغط (الكود محفوظ بالكامل للرجوع إليه)
+    // const unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
+    //   logger.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
+    //   setDtCodes(codes);
+    // });
     const unsubscribeEpCodes = subscribeToElectronicPaymentCodes((codes) => {
       logger.log('Real-time update: Electronic Payment Codes loaded:', codes.length);
       setEpCodes(codes);
@@ -1702,7 +1703,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       unsubscribeFinalReview();
       unsubscribeGraduation();
       unsubscribeStatement();
-      unsubscribeDtCodes();
+      // unsubscribeDtCodes();
       unsubscribeEpCodes();
     };
   }, [dataReady, isLoading]);
@@ -7164,7 +7165,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         />
       )}
 
-      {activeTab === 'whatsapp' && (
+      {/* معطل مؤقتاً لتوفير الطلبات والتوكين (الكود محفوظ بالكامل للرجوع إليه)
+      activeTab === 'whatsapp' && (
         <AdminWhatsAppTab
           showAlert={showAlert}
           showConfirm={showConfirm}
@@ -7173,7 +7175,8 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           students={students}
           serviceRequests={serviceRequests}
         />
-      )}
+      )
+      */}
 
       {activeTab === 'statementEnrollment' && (
         <div className="admin-content">
@@ -8552,7 +8555,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         )
       }
 
-      {
+      {/* معطل مؤقتاً لتوفير الأداء والريكويستات (الكود محفوظ بالكامل للرجوع إليه)
         activeTab === 'digitalTransformationCodes' && (
           <div className="admin-content">
             <div className="section-header">
@@ -8928,7 +8931,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
             </div>
           </div>
         )
-      }
+      */}
 
       {
         activeTab === 'electronicPaymentCodes' && (
