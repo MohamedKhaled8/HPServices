@@ -43,6 +43,8 @@ export interface StudentData {
   /** أكمل إجبار «سجل بياناتك» (يُضبط تلقائياً بعد طلب الخدمة 1) */
   routeRegistrationCompleted?: boolean;
   nationalID?: string;
+  legacyId?: string;
+  isMigrated?: boolean;
 }
 
 export interface Service {

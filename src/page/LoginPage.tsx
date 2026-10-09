@@ -291,7 +291,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
               <span className="wyf-ff-icon"><Mail size={17} /></span>
               <div className="wyf-ff-inner">
                 <label htmlFor="wyf-email-field" className="wyf-ff-label">
-                  البريد الإلكتروني أو الرقم القومي
+                  البريد الإلكتروني أو الرقم القومي أو الهاتف
                 </label>
                 <input
                   id="wyf-email-field"
@@ -481,7 +481,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
                   type="text"
                   value={forgotInput}
                   onChange={(e) => setForgotInput(e.target.value)}
-                  placeholder="البريد الإلكتروني أو الرقم القومي"
+                  placeholder="البريد الإلكتروني أو الرقم القومي أو الهاتف"
                   className="wyf-simple-input"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {

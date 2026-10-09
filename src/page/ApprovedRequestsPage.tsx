@@ -5,7 +5,7 @@ import { SERVICES } from '../constants/services';
 import { CheckCircle, ArrowLeft, Package, Clock, Calendar } from 'lucide-react';
 import '../styles/DashboardPage.css';
 
-import { subscribeToDigitalTransformationCodes, subscribeToElectronicPaymentCodes } from '../services/firebaseService';
+import { subscribeToCodesForRequests } from '../services/firebaseService';
 
 interface ApprovedRequestsPageProps {
     onBack: () => void;
@@ -17,11 +17,15 @@ const ApprovedRequestsPage: React.FC<ApprovedRequestsPageProps> = ({ onBack }) =
     const [dtCodes, setDtCodes] = React.useState<any[]>([]);
     const [epCodes, setEpCodes] = React.useState<any[]>([]);
 
+    // جلب أكواد الطلبات الموافق عليها فقط لهذا الطالب (يوفر آلاف القراءات)
     React.useEffect(() => {
-        const unsubDt = subscribeToDigitalTransformationCodes((codes) => setDtCodes(codes));
-        const unsubEp = subscribeToElectronicPaymentCodes((codes) => setEpCodes(codes));
-        return () => { unsubDt(); unsubEp(); };
-    }, []);
+        const reqIds = approvedRequests.map(r => r.id).filter(Boolean) as string[];
+        const unsub = subscribeToCodesForRequests(reqIds, (dt, ep) => {
+            setDtCodes(dt);
+            setEpCodes(ep);
+        });
+        return () => unsub();
+    }, [approvedRequests]);
 
     // Calculate total spent
     const totalSpent = approvedRequests.reduce((sum, req) => {

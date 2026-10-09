@@ -7,9 +7,6 @@ import LoginPage from './page/LoginPage';
 import DashboardPage from './page/DashboardPage';
 import ServiceDetailsPage from './page/ServiceDetailsPage';
 import ProfilePage from './page/ProfilePage';
-import AllUsersPage from './page/AllUsersPage';
-import AdminDashboardPage from './page/AdminDashboardPage';
-import AssignmentsManagementPage from './page/AssignmentsManagementPage';
 import StudentAssignmentsPage from './page/StudentAssignmentsPage';
 import ApprovedRequestsPage from './page/ApprovedRequestsPage';
 import NewsPage from './page/NewsPage';
@@ -17,6 +14,11 @@ import ResetPasswordPage from './page/ResetPasswordPage';
 import AboutPage from './page/AboutPage';
 import ContactPage from './page/ContactPage';
 import PrivacyPage from './page/PrivacyPage';
+
+// Lazy-load Admin pages only when accessed (drastically speeds up student load time)
+const AdminDashboardPage = React.lazy(() => import('./page/AdminDashboardPage'));
+const AssignmentsManagementPage = React.lazy(() => import('./page/AssignmentsManagementPage'));
+const AllUsersPage = React.lazy(() => import('./page/AllUsersPage'));
 import './styles/App.css';
 import StudentSupportAssistant from './components/SupportAssistant/StudentSupportAssistant';
 import StudentPhonePromptModal from './components/StudentPhonePromptModal';
@@ -298,7 +300,17 @@ const ProfileWrapper = () => {
 
 const AllUsersWrapper = () => {
     const navigate = useNavigate();
-    return <AllUsersPage onBack={() => navigate('/dashboard')} />;
+    return (
+        <React.Suspense fallback={
+            <div className="loading-container">
+                <div className="modern-loader">
+                    <div className="loader-spinner"></div>
+                </div>
+            </div>
+        }>
+            <AllUsersPage onBack={() => navigate('/dashboard')} />
+        </React.Suspense>
+    );
 };
 
 const NewsWrapper = () => {
@@ -322,17 +334,36 @@ const AdminDashboardWrapper = () => {
     };
 
     return (
-        <AdminDashboardPage
-            onLogout={handleLogout}
-            onBack={() => navigate('/dashboard')}
-            onAssignmentsClick={() => navigate('/admin/assignments')}
-        />
+        <React.Suspense fallback={
+            <div className="loading-container" style={{ position: 'fixed', zIndex: 9999 }}>
+                <div className="modern-loader">
+                    <div className="loader-spinner"></div>
+                    <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>جارٍ تحميل لوحة الإدارة...</p>
+                </div>
+            </div>
+        }>
+            <AdminDashboardPage
+                onLogout={handleLogout}
+                onBack={() => navigate('/dashboard')}
+                onAssignmentsClick={() => navigate('/admin/assignments')}
+            />
+        </React.Suspense>
     );
 };
 
 const AssignmentsWrapper = () => {
     const navigate = useNavigate();
-    return <AssignmentsManagementPage onBack={() => navigate('/admin')} />;
+    return (
+        <React.Suspense fallback={
+            <div className="loading-container">
+                <div className="modern-loader">
+                    <div className="loader-spinner"></div>
+                </div>
+            </div>
+        }>
+            <AssignmentsManagementPage onBack={() => navigate('/admin')} />
+        </React.Suspense>
+    );
 };
 
 // --- Main App Component ---
