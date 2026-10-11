@@ -2966,6 +2966,24 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
       // Always update Firestore data (including new password)
       await updateStudentData(editedStudentData.id, editedStudentData);
+
+      const updatedUser: StudentData = {
+        ...(originalStudent || {}),
+        ...editedStudentData
+      };
+
+      const studentId = editedStudentData.id;
+      // Immediately update local states so table & search results reflect new values without reloading
+      setAllStudents(prev => prev.map(s => s.id === studentId ? updatedUser : s));
+      setSearchResults(prev => prev ? prev.map(s => s.id === studentId ? updatedUser : s) : null);
+      setStudents(prev => ({
+        ...prev,
+        [studentId]: updatedUser
+      }));
+      if (studentsRef.current) {
+        studentsRef.current[studentId] = updatedUser;
+      }
+
       setIsEditingStudent(false);
 
       if (originalStudent && originalStudent.password !== editedStudentData.password && editedStudentData.password) {

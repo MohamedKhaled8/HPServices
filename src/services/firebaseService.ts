@@ -894,12 +894,53 @@ export const generateSearchKeywords = (studentData: Partial<StudentData>): strin
 
 export const updateStudentData = async (userId: string, data: Partial<StudentData>): Promise<void> => {
   try {
-    const keywords = generateSearchKeywords(data);
-    const payload = keywords.length > 0 ? { ...data, searchKeywords: keywords } : data;
+    const sanitizedData: any = { ...data };
+
+    // Mirror aliases so all queries and legacy fields stay in sync in Firestore
+    if (sanitizedData.fullNameArabic !== undefined) {
+      sanitizedData.full_name_arabic = sanitizedData.fullNameArabic;
+      sanitizedData.full_name = sanitizedData.fullNameArabic;
+    }
+    if (sanitizedData.vehicleNameEnglish !== undefined || sanitizedData.fullNameEnglish !== undefined) {
+      const eng = sanitizedData.fullNameEnglish || sanitizedData.vehicleNameEnglish || '';
+      sanitizedData.fullNameEnglish = eng;
+      sanitizedData.vehicleNameEnglish = eng;
+      sanitizedData.full_name_english = eng;
+    }
+    if (sanitizedData.whatsappNumber !== undefined) {
+      sanitizedData.whatsapp_number = sanitizedData.whatsappNumber;
+      sanitizedData.phone = sanitizedData.whatsappNumber;
+    }
+    if (sanitizedData.nationalID !== undefined) {
+      sanitizedData.national_id = sanitizedData.nationalID;
+    }
+    if (sanitizedData.diplomaType !== undefined) {
+      sanitizedData.diploma_type = sanitizedData.diplomaType;
+    }
+    if (sanitizedData.diplomaYear !== undefined) {
+      sanitizedData.diploma_year = sanitizedData.diplomaYear;
+    }
+    if (sanitizedData.track !== undefined) {
+      sanitizedData.track_name = sanitizedData.track;
+    }
+
+    // Clean undefined fields to prevent Firestore setDoc errors
+    const cleanPayload: Record<string, any> = {};
+    for (const [key, value] of Object.entries(sanitizedData)) {
+      if (value !== undefined) {
+        cleanPayload[key] = value;
+      }
+    }
+
+    const keywords = generateSearchKeywords(cleanPayload);
+    if (keywords.length > 0) {
+      cleanPayload.searchKeywords = keywords;
+    }
+
     await setDoc(
       doc(db, 'students', userId),
       {
-        ...payload,
+        ...cleanPayload,
         updatedAt: serverTimestamp()
       },
       { merge: true }
@@ -1738,9 +1779,25 @@ export const getStudentsCollectionCount = async (): Promise<number> => {
 
 const mapStudentDoc = (docSnap: QueryDocumentSnapshot<DocumentData>): StudentData => {
   const data = docSnap.data();
+  const fullNameArabic = data.fullNameArabic || data.full_name_arabic || data.full_name || '';
+  const fullNameEnglish = data.fullNameEnglish || data.full_name_english || data.vehicleNameEnglish || '';
+  const whatsappNumber = data.whatsappNumber || data.whatsapp_number || data.phone || data.phoneNumber || data.mobile || '';
+  const nationalID = data.nationalID || data.national_id || '';
+  const diplomaType = data.diplomaType || data.diploma_type || '';
+  const diplomaYear = data.diplomaYear || data.diploma_year || '';
+
   return {
     ...data,
     id: docSnap.id,
+    fullNameArabic,
+    fullNameEnglish,
+    vehicleNameEnglish: data.vehicleNameEnglish || fullNameEnglish,
+    whatsappNumber,
+    nationalID,
+    diplomaType,
+    diplomaYear,
+    course: data.course || data.track || data.track_name || '',
+    track: data.track || data.track_name || '',
     createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
   } as StudentData;
 };

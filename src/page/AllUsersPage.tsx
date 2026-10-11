@@ -189,6 +189,8 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
       setIsUpdating(true);
       // Directly call updateStudentData since subscribeToAllStudents is just the listener function
       await updateStudentData(studentId, { password: newPassword });
+      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, password: newPassword } : s));
+      setSearchResults(prev => prev ? prev.map(s => s.id === studentId ? { ...s, password: newPassword } : s) : null);
       setEditingStudent(null);
       alert('تم تحديث كلمة المرور بنجاح');
     } catch (error: any) {
@@ -203,6 +205,8 @@ const AllUsersPage: React.FC<AllUsersPageProps> = ({ onBack }) => {
     try {
       setIsUpdating(true);
       await deleteStudentData(studentId);
+      setStudents(prev => prev.filter(s => s.id !== studentId));
+      setSearchResults(prev => prev ? prev.filter(s => s.id !== studentId) : null);
       alert('تم حذف المشترك بنجاح');
     } catch (error: any) {
       alert('حدث خطأ أثناء الحذف: ' + error.message);
