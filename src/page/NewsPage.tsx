@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getLatestNews } from '../services/firebaseService';
 import { Bell, ArrowRight, Calendar, Bookmark, Share2, Info } from 'lucide-react';
 import { logger } from '../utils/logger';
+import LoadingDots from '../components/common/LoadingDots';
 import '../styles/GeometricShapes.css';
 import '../styles/NewsPage.css';
 
@@ -104,9 +105,7 @@ const NewsPage: React.FC<NewsPageProps> = ({ onBack }) => {
             <main className="news-container">
                 {loading ? (
                     <div className="news-loader-container">
-                        <div className="modern-loader">
-                            <div className="loader-spinner"></div>
-                        </div>
+                        <LoadingDots text="جارٍ جلب آخر الأخبار..." />
                     </div>
                 ) : (
                     <div className="news-content-card animate-slide-up">

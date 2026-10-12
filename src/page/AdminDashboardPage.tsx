@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, startTransition, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudent } from '../context';
+import LoadingDots from '../components/common/LoadingDots';
 import { doc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
@@ -3976,12 +3977,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   if (isLoading) {
     return (
       <div className="admin-dashboard-page">
-        <div className="loading-container">
-          <div className="modern-loader">
-            <div className="loader-spinner"></div>
-            <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>Loading...</p>
-          </div>
-        </div>
+        <LoadingDots fullScreen text="جارٍ تحميل لوحة الإدارة..." />
       </div>
     );
   }

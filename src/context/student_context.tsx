@@ -9,11 +9,14 @@ import {
   subscribeToStudentData,
   ensureStudentDocExists
 } from '../services/firebaseService';
+import LoadingDots from '../components/common/LoadingDots';
 
 interface StudentContextType {
   student: StudentData | null;
   setStudent: (data: StudentData) => void;
   isLoggedIn: boolean;
+  isAdmin: boolean;
+  isAuthLoading: boolean;
   serviceRequests: ServiceRequest[];
   addServiceRequest: (request: ServiceRequest) => Promise<void>;
   updateServiceRequest: (id: string, request: Partial<ServiceRequest>) => void;
@@ -25,6 +28,7 @@ const StudentContext = createContext<StudentContextType | undefined>(undefined);
 
 export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [student, setStudent] = useState<StudentData | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -35,8 +39,9 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
       if (user) {
         try {
           // Check if user is admin
-          const isAdmin = await checkIsAdmin(user.uid);
-          if (isAdmin) {
+          const adminCheck = await checkIsAdmin(user.uid);
+          setIsAdmin(adminCheck);
+          if (adminCheck) {
             // Cleanup any previous student subscription (switching accounts)
             if (unsubscribeStudentDoc) {
               unsubscribeStudentDoc();
@@ -109,6 +114,7 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
           unsubscribeStudentDoc();
           unsubscribeStudentDoc = null;
         }
+        setIsAdmin(false);
         setStudent(null);
         setServiceRequests([]);
       }
@@ -142,6 +148,7 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
   const handleLogout = async () => {
     try {
       await logoutUser();
+      setIsAdmin(false);
       setStudent(null);
       setServiceRequests([]);
     } catch (error) {
@@ -175,6 +182,8 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     student,
     setStudent: handleSetStudent,
     isLoggedIn: student !== null,
+    isAdmin,
+    isAuthLoading: isLoading,
     serviceRequests,
     addServiceRequest,
     updateServiceRequest,
@@ -183,14 +192,7 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   if (isLoading) {
-    return (
-      <div className="loading-container" style={{ position: 'fixed', zIndex: 9999 }}>
-        <div className="modern-loader">
-          <div className="loader-spinner"></div>
-          <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>Loading...</p>
-        </div>
-      </div>
-    );
+    return <LoadingDots fullScreen text="جارٍ التحميل..." />;
   }
 
   return (

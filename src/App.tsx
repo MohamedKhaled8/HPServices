@@ -15,11 +15,30 @@ import AboutPage from './page/AboutPage';
 import ContactPage from './page/ContactPage';
 import PrivacyPage from './page/PrivacyPage';
 
+// Helper to retry dynamic import once upon deployment / chunk hash change
+const lazyWithRetry = (componentImport: () => Promise<any>) =>
+    React.lazy(async () => {
+        const pageHasBeenForceRefreshed = sessionStorage.getItem('chunk_force_refresh') === 'true';
+        try {
+            const component = await componentImport();
+            sessionStorage.setItem('chunk_force_refresh', 'false');
+            return component;
+        } catch (error: any) {
+            if (!pageHasBeenForceRefreshed) {
+                sessionStorage.setItem('chunk_force_refresh', 'true');
+                window.location.reload();
+                return new Promise(() => {});
+            }
+            throw error;
+        }
+    });
+
 // Lazy-load Admin pages only when accessed (drastically speeds up student load time)
-const AdminDashboardPage = React.lazy(() => import('./page/AdminDashboardPage'));
-const AssignmentsManagementPage = React.lazy(() => import('./page/AssignmentsManagementPage'));
-const AllUsersPage = React.lazy(() => import('./page/AllUsersPage'));
+const AdminDashboardPage = lazyWithRetry(() => import('./page/AdminDashboardPage'));
+const AssignmentsManagementPage = lazyWithRetry(() => import('./page/AssignmentsManagementPage'));
+const AllUsersPage = lazyWithRetry(() => import('./page/AllUsersPage'));
 import './styles/App.css';
+import LoadingDots from './components/common/LoadingDots';
 import StudentSupportAssistant from './components/SupportAssistant/StudentSupportAssistant';
 import StudentPhonePromptModal from './components/StudentPhonePromptModal';
 
@@ -72,6 +91,14 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
         this.state = { hasError: false, error: null };
     }
     static getDerivedStateFromError(error: Error) {
+        // إذا كان الخطأ بسبب تحديث ملفات البيلد على Vercel وطلب ملف قديم، نقوم بإعادة تحميل الصفحة فوراً للحصول على أحدث ملفات
+        if (error?.message && /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk/i.test(error.message)) {
+            const hasRefreshed = sessionStorage.getItem('chunk_reload_done') === 'true';
+            if (!hasRefreshed) {
+                sessionStorage.setItem('chunk_reload_done', 'true');
+                window.location.reload();
+            }
+        }
         return { hasError: true, error };
     }
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -98,42 +125,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
 // مكون حماية المسارات الخاصة بالمستخدمين المسجلين (الطلاب فقط)
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-    const { isLoggedIn } = useStudent();
-    const [isAuthChecking, setIsAuthChecking] = useState(true);
-    const [isAdmin, setIsAdmin] = useState<boolean>(false);
-
-    useEffect(() => {
-        const checkAuthAndRole = async () => {
-            try {
-                const user = getCurrentUser();
-                if (user) {
-                    const adminStatus = await checkIsAdmin(user.uid);
-                    setIsAdmin(adminStatus);
-                }
-            } catch (e) {
-                console.error(e);
-            } finally {
-                setIsAuthChecking(false);
-            }
-        };
-
-        if (isLoggedIn) {
-            checkAuthAndRole();
-        } else {
-            setIsAuthChecking(false);
-        }
-    }, [isLoggedIn]);
-
-    if (isAuthChecking) {
-        return (
-            <div className="loading-container" style={{ position: 'fixed', zIndex: 9999 }}>
-                <div className="modern-loader">
-                    <div className="loader-spinner"></div>
-                    <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>جارٍ التحقق...</p>
-                </div>
-            </div>
-        );
-    }
+    const { isLoggedIn, isAdmin } = useStudent();
 
     // غير مسجل دخول -> Login
     if (!isLoggedIn) {
@@ -150,36 +142,10 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // مكون حماية مسارات الأدمن
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
-    const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-    const [loading, setLoading] = useState(true);
+    const { isLoggedIn, isAdmin } = useStudent();
 
-    useEffect(() => {
-        const verifyAdmin = async () => {
-            try {
-                const user = getCurrentUser();
-                if (user) {
-                    const adminStatus = await checkIsAdmin(user.uid);
-                    setIsAdmin(adminStatus);
-                } else {
-                    setIsAdmin(false);
-                }
-            } catch (e) {
-                setIsAdmin(false);
-            } finally {
-                setLoading(false);
-            }
-        };
-        verifyAdmin();
-    }, []);
-
-    if (loading) {
-        return (
-            <div className="loading-container">
-                <div className="modern-loader">
-                    <div className="loader-spinner"></div>
-                </div>
-            </div>
-        );
+    if (!isLoggedIn) {
+        return <Navigate to="/login" replace />;
     }
 
     if (!isAdmin) {
@@ -301,13 +267,7 @@ const ProfileWrapper = () => {
 const AllUsersWrapper = () => {
     const navigate = useNavigate();
     return (
-        <React.Suspense fallback={
-            <div className="loading-container">
-                <div className="modern-loader">
-                    <div className="loader-spinner"></div>
-                </div>
-            </div>
-        }>
+        <React.Suspense fallback={<LoadingDots fullScreen text="جارٍ التحميل..." />}>
             <AllUsersPage onBack={() => navigate('/dashboard')} />
         </React.Suspense>
     );
@@ -334,14 +294,7 @@ const AdminDashboardWrapper = () => {
     };
 
     return (
-        <React.Suspense fallback={
-            <div className="loading-container" style={{ position: 'fixed', zIndex: 9999 }}>
-                <div className="modern-loader">
-                    <div className="loader-spinner"></div>
-                    <p style={{ fontFamily: 'sans-serif', marginTop: '10px', color: '#64748b' }}>جارٍ تحميل لوحة الإدارة...</p>
-                </div>
-            </div>
-        }>
+        <React.Suspense fallback={<LoadingDots fullScreen text="جارٍ تحميل لوحة الإدارة..." />}>
             <AdminDashboardPage
                 onLogout={handleLogout}
                 onBack={() => navigate('/dashboard')}
@@ -354,13 +307,7 @@ const AdminDashboardWrapper = () => {
 const AssignmentsWrapper = () => {
     const navigate = useNavigate();
     return (
-        <React.Suspense fallback={
-            <div className="loading-container">
-                <div className="modern-loader">
-                    <div className="loader-spinner"></div>
-                </div>
-            </div>
-        }>
+        <React.Suspense fallback={<LoadingDots fullScreen text="جارٍ التحميل..." />}>
             <AssignmentsManagementPage onBack={() => navigate('/admin')} />
         </React.Suspense>
     );

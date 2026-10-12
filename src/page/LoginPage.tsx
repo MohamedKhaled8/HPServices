@@ -92,7 +92,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
       setForgotResult({
         hint: '',
         found: false,
-        message: 'يرجى إدخال البريد الإلكتروني أو الرقم القومي أولاً',
+        message: 'يرجى إدخال البريد الإلكتروني أو رقم الهاتف أو الرقم القومي أولاً',
       });
       return;
     }
@@ -182,7 +182,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
     setError('');
 
     if (!formData.email || !formData.password) {
-      setError('يرجى إدخال البريد الإلكتروني (أو الرقم القومي) وكلمة المرور');
+      setError('يرجى إدخال البريد الإلكتروني أو رقم الهاتف أو الرقم القومي وكلمة المرور');
       setIsSubmitting(false);
       return;
     }
@@ -291,7 +291,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
               <span className="wyf-ff-icon"><Mail size={17} /></span>
               <div className="wyf-ff-inner">
                 <label htmlFor="wyf-email-field" className="wyf-ff-label">
-                  البريد الإلكتروني أو الرقم القومي أو الهاتف
+                  البريد الإلكتروني أو رقم الهاتف أو الرقم القومي
                 </label>
                 <input
                   id="wyf-email-field"
@@ -321,20 +321,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
                 <div className="wyf-password-box">
                   <input
                     id="wyf-password-field"
-                    type="text"
+                    type={showPassword ? 'text' : 'password'}
                     value={formData.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
-                    className={`wyf-ff-input ${!showPassword ? 'wyf-star-input' : ''}`}
+                    className="wyf-ff-input"
                     autoComplete="current-password"
                     disabled={isSubmitting}
                     placeholder=""
-                    style={{ WebkitTextSecurity: showPassword ? 'none' : 'none' } as any}
                   />
-                  {!showPassword && formData.password && (
-                    <div className="wyf-password-stars-overlay" aria-hidden="true">
-                      {'★'.repeat(formData.password.length)}
-                    </div>
-                  )}
                 </div>
               </div>
               <button
@@ -461,7 +455,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
                 </div>
                 <div>
                   <h3 className="wyf-simple-title">استعادة كلمة المرور</h3>
-                  <p className="wyf-simple-subtitle">أدخل بريدك الإلكتروني أو رقمك القومي للمساعدة</p>
+                  <p className="wyf-simple-subtitle">أدخل بريدك الإلكتروني أو رقم هاتفك أو رقمك القومي للمساعدة</p>
                 </div>
               </div>
               <button
@@ -481,7 +475,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
                   type="text"
                   value={forgotInput}
                   onChange={(e) => setForgotInput(e.target.value)}
-                  placeholder="البريد الإلكتروني أو الرقم القومي أو الهاتف"
+                  placeholder="البريد الإلكتروني أو رقم الهاتف أو الرقم القومي"
                   className="wyf-simple-input"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {

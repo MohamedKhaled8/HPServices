@@ -34,7 +34,9 @@ import {
   Upload,
   AlertCircle,
   CheckCircle,
-  Trash2
+  Trash2,
+  Edit2,
+  Check
 } from 'lucide-react';
 import '../styles/AssignmentsManagementPage.css';
 
@@ -174,6 +176,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   });
   const [newAssignmentName, setNewAssignmentName] = useState<string>('');
   const [newAssignmentPrice, setNewAssignmentPrice] = useState<string>('');
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+  const [editAssignmentName, setEditAssignmentName] = useState<string>('');
+  const [editAssignmentPrice, setEditAssignmentPrice] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Delete confirmation modal state
@@ -303,8 +308,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     }
   };
 
-  const handleAddAssignment = () => {
-    if (!newAssignmentName || !newAssignmentPrice || !assignmentsConfig) return;
+  const handleAddAssignment = async () => {
+    if (!newAssignmentName.trim() || !newAssignmentPrice || !assignmentsConfig) return;
     const price = parseFloat(newAssignmentPrice);
     if (isNaN(price) || price <= 0) {
       setAssignmentsMessage('يرجى إدخال سعر صحيح');
@@ -312,23 +317,102 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     }
     const newAssignment: AssignmentItem = {
       id: `assignment_${Date.now()}`,
-      name: newAssignmentName,
+      name: newAssignmentName.trim(),
       price: price
     };
-    setAssignmentsConfig({
+    const updatedConfig: AssignmentsServiceConfig = {
       ...assignmentsConfig,
       assignments: [...assignmentsConfig.assignments, newAssignment]
-    });
+    };
+    setAssignmentsConfig(updatedConfig);
     setNewAssignmentName('');
     setNewAssignmentPrice('');
+
+    // حفظ فوري في قاعدة البيانات حتى لا يضيع التكليف عند إعادة التحميل
+    setIsSaving(true);
+    try {
+      await updateAssignmentsServiceConfig(updatedConfig);
+      setAssignmentsMessage('تم إضافة وحفظ التكليف بنجاح ✅');
+      setTimeout(() => setAssignmentsMessage(null), 3500);
+    } catch (error: any) {
+      setAssignmentsMessage(error.message || 'حدث خطأ أثناء حفظ التكليف');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleRemoveAssignment = (id: string) => {
+  const handleRemoveAssignment = async (id: string) => {
     if (!assignmentsConfig) return;
-    setAssignmentsConfig({
+    const target = assignmentsConfig.assignments.find(a => a.id === id);
+    if (!window.confirm(`هل أنت متأكد من حذف تكليف "${target?.name || ''}"؟`)) return;
+
+    const updatedConfig: AssignmentsServiceConfig = {
       ...assignmentsConfig,
       assignments: assignmentsConfig.assignments.filter(a => a.id !== id)
-    });
+    };
+    setAssignmentsConfig(updatedConfig);
+
+    // حفظ فوري في قاعدة البيانات
+    setIsSaving(true);
+    try {
+      await updateAssignmentsServiceConfig(updatedConfig);
+      setAssignmentsMessage('تم حذف التكليف وحفظ التغييرات بنجاح ✅');
+      setTimeout(() => setAssignmentsMessage(null), 3500);
+    } catch (error: any) {
+      setAssignmentsMessage(error.message || 'حدث خطأ أثناء حفظ التغييرات');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleStartEditAssignment = (assignment: AssignmentItem) => {
+    setEditingAssignmentId(assignment.id);
+    setEditAssignmentName(assignment.name);
+    setEditAssignmentPrice(String(assignment.price));
+  };
+
+  const handleCancelEditAssignment = () => {
+    setEditingAssignmentId(null);
+    setEditAssignmentName('');
+    setEditAssignmentPrice('');
+  };
+
+  const handleSaveEditAssignment = async () => {
+    if (!editingAssignmentId || !assignmentsConfig) return;
+    if (!editAssignmentName.trim()) {
+      setAssignmentsMessage('يرجى إدخال اسم التكليف');
+      return;
+    }
+    const price = parseFloat(editAssignmentPrice);
+    if (isNaN(price) || price <= 0) {
+      setAssignmentsMessage('يرجى إدخال سعر صحيح');
+      return;
+    }
+
+    const updatedAssignments = assignmentsConfig.assignments.map(a =>
+      a.id === editingAssignmentId
+        ? { ...a, name: editAssignmentName.trim(), price: price }
+        : a
+    );
+    const updatedConfig: AssignmentsServiceConfig = {
+      ...assignmentsConfig,
+      assignments: updatedAssignments
+    };
+
+    setAssignmentsConfig(updatedConfig);
+    setEditingAssignmentId(null);
+
+    // حفظ فوري للتعديل في قاعدة البيانات
+    setIsSaving(true);
+    try {
+      await updateAssignmentsServiceConfig(updatedConfig);
+      setAssignmentsMessage('تم تعديل وحفظ بيانات وسعر التكليف بنجاح ✅');
+      setTimeout(() => setAssignmentsMessage(null), 3500);
+    } catch (error: any) {
+      setAssignmentsMessage(error.message || 'حدث خطأ أثناء حفظ التعديل');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleFileUpload = async (track: TrackKey, files: File[]) => {
@@ -947,7 +1031,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                       <div className="assignments-list-header">
                         <div>اسم التكليف</div>
                         <div>السعر (ج.م)</div>
-                        <div style={{ textAlign: 'center' }}>حذف</div>
+                        <div style={{ textAlign: 'center' }}>الإجراءات</div>
                       </div>
 
                       <div className="assignments-list">
@@ -956,24 +1040,82 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                             <p>لا توجد تكليفات مضافة حتى الآن</p>
                           </div>
                         ) : (
-                          assignmentsConfig.assignments.map(assignment => (
-                            <div key={assignment.id} className="assignment-item">
-                              <div className="assignment-info">
-                                <span className="assignment-name">{assignment.name}</span>
-                                <span className="assignment-price">
-                                  {assignment.price}
-                                </span>
+                          assignmentsConfig.assignments.map(assignment => {
+                            const isEditing = editingAssignmentId === assignment.id;
+                            return (
+                              <div key={assignment.id} className="assignment-item" style={{ alignItems: 'center' }}>
+                                {isEditing ? (
+                                  <>
+                                    <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <input
+                                        type="text"
+                                        value={editAssignmentName}
+                                        onChange={e => setEditAssignmentName(e.target.value)}
+                                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #94a3b8', flex: 2, minWidth: '130px' }}
+                                        placeholder="اسم التكليف"
+                                      />
+                                      <input
+                                        type="number"
+                                        value={editAssignmentPrice}
+                                        onChange={e => setEditAssignmentPrice(e.target.value)}
+                                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #94a3b8', width: '90px' }}
+                                        placeholder="السعر"
+                                      />
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                      <button
+                                        type="button"
+                                        onClick={handleSaveEditAssignment}
+                                        style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', fontWeight: '600' }}
+                                        title="حفظ التعديل"
+                                        disabled={isSaving}
+                                      >
+                                        <Check size={16} />
+                                        <span>حفظ</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={handleCancelEditAssignment}
+                                        style={{ background: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                        title="إلغاء التعديل"
+                                      >
+                                        <X size={16} />
+                                        <span>إلغاء</span>
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="assignment-info">
+                                      <span className="assignment-name">{assignment.name}</span>
+                                      <span className="assignment-price">
+                                        {assignment.price} ج.م
+                                      </span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditAssignment(assignment)}
+                                        style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', fontWeight: '600' }}
+                                        title="تعديل السعر أو الاسم"
+                                      >
+                                        <Edit2 size={15} />
+                                        <span>تعديل السعر</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveAssignment(assignment.id)}
+                                        className="remove-assignment-button"
+                                        title="حذف التكليف"
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveAssignment(assignment.id)}
-                                className="remove-assignment-button"
-                                title="حذف التكليف"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
                     </div>

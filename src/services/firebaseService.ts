@@ -113,58 +113,83 @@ export interface FoundStudentResult {
 }
 
 /**
+ * Convert Arabic-Indic (Eastern Arabic) numerals (٠-٩) and Persian numerals (۰-۹) to standard ASCII (0-9)
+ */
+export const convertArabicIndicToAscii = (str: string): string => {
+  if (!str) return '';
+  return str
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString());
+};
+
+/**
  * Universal Student Search in Firestore:
  * Searches flexibly across:
  * 1. Document ID / UID
  * 2. Email (exact and lowercase)
- * 3. National ID (14 digits, strings, numbers, variations: nationalID, national_id, nationalId)
+ * 3. National ID (14 digits, strings, numbers, variations: nationalID, national_id, nationalId, nid)
  * 4. Phone / WhatsApp (raw, stripped digits, Egyptian prefixes 01..., +201..., 201...)
+ * 5. Student Names (Arabic fullNameArabic, full_name, vehicleNameEnglish, fullNameEnglish)
  */
 export const findStudentInFirestore = async (rawIdentifier: string): Promise<FoundStudentResult | null> => {
-  const clean = rawIdentifier.trim();
-  if (!clean) return null;
+  if (!rawIdentifier) return null;
+  const originalClean = rawIdentifier.trim();
+  if (!originalClean) return null;
+  const clean = convertArabicIndicToAscii(originalClean).trim();
   const lower = clean.toLowerCase();
+  const digitsOnly = clean.replace(/\D/g, '');
   const studentsRef = collection(db, 'students');
 
   // 1. Direct doc lookup by UID or custom document ID
-  try {
-    const directSnap = await getDoc(doc(db, 'students', clean));
-    if (directSnap.exists()) {
-      const data = directSnap.data();
-      return { docId: directSnap.id, data: { id: directSnap.id, ...data } as StudentData };
-    }
-  } catch (_) {}
-
-  // 2. Email lookup (exact or lowercase)
-  if (clean.includes('@')) {
+  const directIds = [clean, originalClean];
+  if (digitsOnly && !directIds.includes(digitsOnly)) directIds.push(digitsOnly);
+  for (const did of directIds) {
     try {
-      let q = query(studentsRef, where('email', '==', lower));
-      let snap = await getDocs(q);
-      if (snap.empty && lower !== clean) {
-        q = query(studentsRef, where('email', '==', clean));
-        snap = await getDocs(q);
-      }
-      if (!snap.empty) {
-        const docSnap = snap.docs[0];
-        return { docId: docSnap.id, data: { id: docSnap.id, ...docSnap.data() } as StudentData };
+      const directSnap = await getDoc(doc(db, 'students', did));
+      if (directSnap.exists()) {
+        const data = directSnap.data();
+        return { docId: directSnap.id, data: { id: directSnap.id, ...data } as StudentData };
       }
     } catch (_) {}
   }
 
+  // 2. Email lookup (exact or lowercase)
+  if (clean.includes('@') || originalClean.includes('@')) {
+    const emailQueries = [
+      query(studentsRef, where('email', '==', lower)),
+      query(studentsRef, where('email', '==', clean)),
+      query(studentsRef, where('email', '==', originalClean.toLowerCase())),
+    ];
+    for (const q of emailQueries) {
+      try {
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const docSnap = snap.docs[0];
+          return { docId: docSnap.id, data: { id: docSnap.id, ...docSnap.data() } as StudentData };
+        }
+      } catch (_) {}
+    }
+  }
+
   // 3. National ID lookup
-  const digitsOnly = clean.replace(/\D/g, '');
   if (digitsOnly.length >= 10) {
     const natQueries = [
       query(studentsRef, where('nationalID', '==', clean)),
       query(studentsRef, where('nationalID', '==', digitsOnly)),
+      query(studentsRef, where('nationalID', '==', originalClean)),
       query(studentsRef, where('national_id', '==', clean)),
       query(studentsRef, where('national_id', '==', digitsOnly)),
+      query(studentsRef, where('national_id', '==', originalClean)),
       query(studentsRef, where('nationalId', '==', clean)),
-      query(studentsRef, where('nationalId', '==', digitsOnly))
+      query(studentsRef, where('nationalId', '==', digitsOnly)),
+      query(studentsRef, where('nationalNumber', '==', digitsOnly)),
+      query(studentsRef, where('national_number', '==', digitsOnly)),
+      query(studentsRef, where('nid', '==', digitsOnly))
     ];
     if (/^\d+$/.test(digitsOnly)) {
       natQueries.push(query(studentsRef, where('nationalID', '==', Number(digitsOnly))));
       natQueries.push(query(studentsRef, where('national_id', '==', Number(digitsOnly))));
+      natQueries.push(query(studentsRef, where('nationalId', '==', Number(digitsOnly))));
     }
 
     for (const q of natQueries) {
@@ -181,22 +206,40 @@ export const findStudentInFirestore = async (rawIdentifier: string): Promise<Fou
   // 4. WhatsApp / Phone lookup
   const phoneQueries = [
     query(studentsRef, where('whatsappNumber', '==', clean)),
+    query(studentsRef, where('whatsappNumber', '==', originalClean)),
     query(studentsRef, where('phone', '==', clean)),
     query(studentsRef, where('phoneNumber', '==', clean)),
-    query(studentsRef, where('mobile', '==', clean))
+    query(studentsRef, where('mobile', '==', clean)),
+    query(studentsRef, where('whatsapp', '==', clean)),
+    query(studentsRef, where('tel', '==', clean)),
   ];
 
   if (digitsOnly && digitsOnly.length >= 8) {
     phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', digitsOnly)));
     phoneQueries.push(query(studentsRef, where('phone', '==', digitsOnly)));
+    phoneQueries.push(query(studentsRef, where('phoneNumber', '==', digitsOnly)));
+    phoneQueries.push(query(studentsRef, where('mobile', '==', digitsOnly)));
 
     if (digitsOnly.startsWith('01') && digitsOnly.length === 11) {
       phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '+2' + digitsOnly)));
       phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '2' + digitsOnly)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', '+2' + digitsOnly)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', '2' + digitsOnly)));
     } else if (digitsOnly.startsWith('201') && digitsOnly.length === 12) {
       const local = '0' + digitsOnly.slice(2);
       phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', local)));
       phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '+' + digitsOnly)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', local)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', '+' + digitsOnly)));
+    } else if (clean.startsWith('+201') && digitsOnly.length === 12) {
+      const local = '0' + digitsOnly.slice(2);
+      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', local)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', local)));
+    }
+
+    if (/^\d+$/.test(digitsOnly)) {
+      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', Number(digitsOnly))));
+      phoneQueries.push(query(studentsRef, where('phone', '==', Number(digitsOnly))));
     }
   }
 
@@ -208,6 +251,38 @@ export const findStudentInFirestore = async (rawIdentifier: string): Promise<Fou
         return { docId: docSnap.id, data: { id: docSnap.id, ...docSnap.data() } as StudentData };
       }
     } catch (_) {}
+  }
+
+  // 5. Name lookup (Arabic / English)
+  if (!clean.includes('@') && digitsOnly.length < 7 && originalClean.length >= 2) {
+    const normArabic = normalizeArabicText(originalClean);
+    const nameQueries = [
+      query(studentsRef, where('fullNameArabic', '==', originalClean)),
+      query(studentsRef, where('full_name_arabic', '==', originalClean)),
+      query(studentsRef, where('full_name', '==', originalClean)),
+      query(studentsRef, where('fullName', '==', originalClean)),
+      query(studentsRef, where('name', '==', originalClean)),
+      query(studentsRef, where('vehicleNameEnglish', '==', originalClean)),
+      query(studentsRef, where('vehicleNameEnglish', '==', lower)),
+      query(studentsRef, where('fullNameEnglish', '==', originalClean)),
+      query(studentsRef, where('fullNameEnglish', '==', lower)),
+      query(studentsRef, where('full_name_english', '==', originalClean)),
+      query(studentsRef, where('name_en', '==', originalClean)),
+    ];
+    if (normArabic && normArabic !== originalClean) {
+      nameQueries.push(query(studentsRef, where('fullNameArabic', '==', normArabic)));
+      nameQueries.push(query(studentsRef, where('full_name_arabic', '==', normArabic)));
+    }
+
+    for (const q of nameQueries) {
+      try {
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const docSnap = snap.docs[0];
+          return { docId: docSnap.id, data: { id: docSnap.id, ...docSnap.data() } as StudentData };
+        }
+      } catch (_) {}
+    }
   }
 
   return null;
@@ -446,7 +521,8 @@ export const ensureStudentDocExists = async (
  * Helper to fetch a student's password hint (masked) for forgot-password
  */
 export const getStudentPasswordHint = async (identifier: string): Promise<{ password?: string; email?: string; accountExists?: boolean } | null> => {
-  const clean = identifier.trim();
+  const originalClean = identifier.trim();
+  const clean = convertArabicIndicToAscii(originalClean).trim();
   const lower = clean.toLowerCase();
   if (!clean) return null;
 
@@ -459,14 +535,14 @@ export const getStudentPasswordHint = async (identifier: string): Promise<{ pass
   }
 
   try {
-    const found = await findStudentInFirestore(clean);
+    const found = await findStudentInFirestore(originalClean) || (clean !== originalClean ? await findStudentInFirestore(clean) : null);
 
     if (found) {
       const docData = found.data as any;
       if (docData.role === 'admin' || docData.isAdmin === true || docData.email?.toLowerCase() === 'admin@example.com') {
         return { accountExists: false, email: clean };
       }
-      const pw = docData.password || docData.nationalID || '';
+      const pw = docData.password || docData.nationalID || docData.national_id || '';
       return {
         password: pw,
         email: docData.email || clean,
@@ -489,11 +565,12 @@ export const getStudentPasswordHint = async (identifier: string): Promise<{ pass
 
 /**
  * Single Entrypoint: Login or Automatic Registration with Auto-Healing.
+ * - Supports Login via: Email, National ID, Phone Number, or Full Name.
  * - If account exists in Firebase Auth and password matches: Logs in.
- * - If account exists in Firestore (restored user) but NOT in Firebase Auth:
+ * - If account exists in Firestore (restored/legacy user) but NOT in Firebase Auth:
  *   Validates password and automatically heals the account by creating their Auth user.
  * - If account exists and password is wrong: Throws error (does NOT create new account).
- * - If account does not exist anywhere: Automatically creates account with entered credentials.
+ * - If account does not exist anywhere: Automatically creates account with entered credentials if an email was entered.
  */
 export const loginOrRegisterUser = async (
   identifier: string,
@@ -503,109 +580,174 @@ export const loginOrRegisterUser = async (
     throw new Error('محاولات دخول متكررة. يرجى الانتظار دقيقة.');
   }
 
-  const cleanIdentifier = identifier.trim();
-  let email = cleanIdentifier;
-  let preFoundStudent: FoundStudentResult | null = null;
+  const rawClean = identifier.trim();
+  const clean = convertArabicIndicToAscii(rawClean).trim();
+  const cleanDigits = clean.replace(/\D/g, '');
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
 
-  // 1. Resolve identifier: check if it's National ID, Phone, or Email
-  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIdentifier);
+  if (!password) {
+    throw new Error('يرجى إدخال كلمة المرور');
+  }
 
-  if (!isEmail) {
-    preFoundStudent = await findStudentInFirestore(cleanIdentifier);
-    if (preFoundStudent && preFoundStudent.data.email) {
-      email = preFoundStudent.data.email;
-    } else if (/^\d{14}$/.test(cleanIdentifier)) {
-      email = `${cleanIdentifier}@hpservices.local`;
-    } else if (preFoundStudent) {
-      const nat = preFoundStudent.data.nationalID || cleanIdentifier.replace(/\D/g, '') || preFoundStudent.docId;
-      email = `${nat}@hpservices.local`;
+  // 1. Lookup student in Firestore by any entered identifier (Email, National ID, Phone, or Name)
+  const preFoundStudent = await findStudentInFirestore(rawClean) || (clean !== rawClean ? await findStudentInFirestore(clean) : null);
+
+  // 2. Build candidate emails to attempt direct Firebase Auth sign-in
+  const candidateEmails: string[] = [];
+  if (isEmail) {
+    candidateEmails.push(clean.toLowerCase());
+  }
+  if (preFoundStudent?.data.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(preFoundStudent.data.email)) {
+    const studentEmail = preFoundStudent.data.email.trim().toLowerCase();
+    if (!candidateEmails.includes(studentEmail)) {
+      candidateEmails.push(studentEmail);
+    }
+  }
+  const natId = preFoundStudent?.data.nationalID || (cleanDigits.length === 14 ? cleanDigits : '');
+  if (natId && !candidateEmails.includes(`${natId}@hpservices.local`)) {
+    candidateEmails.push(`${natId}@hpservices.local`);
+  }
+  if (cleanDigits.length === 14 && !candidateEmails.includes(`${cleanDigits}@hpservices.local`)) {
+    candidateEmails.push(`${cleanDigits}@hpservices.local`);
+  }
+  if (cleanDigits.length >= 10 && !candidateEmails.includes(`${cleanDigits}@hpservices.local`)) {
+    candidateEmails.push(`${cleanDigits}@hpservices.local`);
+  }
+  if (preFoundStudent?.docId && !candidateEmails.includes(`${preFoundStudent.docId}@hpservices.local`)) {
+    candidateEmails.push(`${preFoundStudent.docId}@hpservices.local`);
+  }
+
+  // Fallback if no candidate email exists
+  if (candidateEmails.length === 0) {
+    if (cleanDigits.length >= 10) {
+      candidateEmails.push(`${cleanDigits}@hpservices.local`);
+    } else if (!isEmail && !preFoundStudent) {
+      throw new Error('الحساب غير مسجل في النظام. يرجى التأكد من البريد أو الرقم القومي أو الهاتف.');
     } else {
-      throw new Error('الرقم القومي أو البريد الإلكتروني غير مسجل في النظام');
+      candidateEmails.push(clean);
     }
   }
 
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error('البريد الإلكتروني المدخل غير صالح');
+  // 3. Attempt direct sign-in across candidate emails with entered password
+  let loggedInUser: FirebaseUser | null = null;
+  let lastAuthError: any = null;
+
+  for (const candEmail of candidateEmails) {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, candEmail, password);
+      loggedInUser = userCredential.user;
+      break;
+    } catch (err: any) {
+      lastAuthError = err;
+    }
   }
 
-  if (!password || password.length < 6) {
-    throw new Error('كلمة المرور يجب أن تتكون من 6 أحرف أو أرقام على الأقل');
+  if (loggedInUser) {
+    const studentData = await ensureStudentDocExists(loggedInUser, loggedInUser.email || candidateEmails[0], password);
+    return { user: loggedInUser, isNewUser: false, studentData };
   }
 
-  try {
-    // Direct sign-in attempt
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const studentData = await ensureStudentDocExists(userCredential.user, email, password);
-    return { user: userCredential.user, isNewUser: false, studentData };
-  } catch (error: any) {
-    if (error.code === 'auth/wrong-password') {
+  // 4. Direct sign-in did not succeed.
+  // AUTO-HEALING & LEGACY ACCOUNT RESOLUTION:
+  const foundStudent = preFoundStudent || (isEmail ? await findStudentInFirestore(clean) : null);
+
+  if (foundStudent) {
+    const storedDoc = foundStudent.data as any;
+    const storedPassword = (storedDoc.password || '').toString().trim();
+    const storedNationalID = (storedDoc.nationalID || storedDoc.national_id || '').toString().trim();
+    const storedPhone = (storedDoc.whatsappNumber || storedDoc.phone || '').toString().trim();
+
+    // Check if entered password matches stored password, or national ID, or phone, or was empty
+    const passwordMatches =
+      (storedPassword && storedPassword === password) ||
+      (!storedPassword && storedNationalID && storedNationalID === password) ||
+      (storedNationalID && storedNationalID === password) ||
+      (storedPhone && storedPhone === password) ||
+      !storedPassword;
+
+    if (!passwordMatches) {
       throw new Error('كلمة المرور غير صحيحة');
     }
 
-    // When Auth user is not found or invalid credential (Firebase Email Enumeration Protection)
-    if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-      // AUTO-HEALING MECHANISM FOR RESTORED / LEGACY ACCOUNTS:
-      const foundStudent = preFoundStudent || await findStudentInFirestore(email) || await findStudentInFirestore(cleanIdentifier);
-
-      if (foundStudent) {
-        const storedDoc = foundStudent.data;
-        const storedPassword = (storedDoc.password || '').trim();
-        const storedNationalID = (storedDoc.nationalID || '').trim();
-
-        // Check if entered password matches stored password, or nationalID, or was empty
-        const passwordMatches =
-          (storedPassword && storedPassword === password) ||
-          (!storedPassword && storedNationalID && storedNationalID === password) ||
-          !storedPassword;
-
-        if (!passwordMatches) {
-          throw new Error('كلمة المرور غير صحيحة');
-        }
-
-        // Auto-heal: Create Auth user for the restored student
+    // Entered password matches Firestore record!
+    // If the account was previously in Auth with an older password (e.g. storedPassword or storedNationalID), try them:
+    const altPasswords = [storedPassword, storedNationalID].filter(p => p && p !== password);
+    for (const altPass of altPasswords) {
+      for (const candEmail of candidateEmails) {
         try {
-          const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
-          const studentData = await ensureStudentDocExists(newUserCredential.user, email, password);
-          return { user: newUserCredential.user, isNewUser: false, studentData };
-        } catch (createErr: any) {
-          if (createErr.code === 'auth/email-already-in-use') {
-            throw new Error('كلمة المرور غير صحيحة');
-          }
-          throw createErr;
-        }
+          const userCredential = await signInWithEmailAndPassword(auth, candEmail, altPass);
+          // Sync Auth password to what user entered
+          try {
+            await updatePassword(userCredential.user, password);
+            if (foundStudent.docId) {
+              await setDoc(doc(db, 'students', foundStudent.docId), { password, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+            }
+          } catch (_) {}
+          const studentData = await ensureStudentDocExists(userCredential.user, userCredential.user.email || candEmail, password);
+          return { user: userCredential.user, isNewUser: false, studentData };
+        } catch (_) {}
       }
+    }
 
-      // Brand-new user: create new account
-      try {
-        const newUserCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const studentData = await ensureStudentDocExists(newUserCredential.user, email, password);
-        return { user: newUserCredential.user, isNewUser: true, studentData };
-      } catch (createError: any) {
-        if (createError.code === 'auth/email-already-in-use') {
+    // Auto-heal: Create Auth user for the legacy / restored student
+    const targetEmail = (foundStudent.data.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(foundStudent.data.email))
+      ? foundStudent.data.email.trim().toLowerCase()
+      : (candidateEmails[0] || `${storedNationalID || foundStudent.docId}@hpservices.local`);
+
+    try {
+      const newUserCredential = await createUserWithEmailAndPassword(auth, targetEmail, password);
+      const studentData = await ensureStudentDocExists(newUserCredential.user, targetEmail, password);
+      return { user: newUserCredential.user, isNewUser: false, studentData };
+    } catch (createErr: any) {
+      if (createErr.code === 'auth/email-already-in-use') {
+        // Auth user already exists under targetEmail. Attempt sync via helper or throw clear message
+        try {
+          await changeOtherUserPasswordHelper(foundStudent.docId, password);
+          const retryCredential = await signInWithEmailAndPassword(auth, targetEmail, password);
+          const studentData = await ensureStudentDocExists(retryCredential.user, targetEmail, password);
+          return { user: retryCredential.user, isNewUser: false, studentData };
+        } catch (_) {
           throw new Error('كلمة المرور غير صحيحة');
         }
-        if (createError.code === 'auth/weak-password') {
-          throw new Error('كلمة المرور ضعيفة جداً. يجب أن تتكون من 6 أحرف على الأقل.');
-        }
-        if (createError.code === 'auth/invalid-email') {
-          throw new Error('البريد الإلكتروني المدخل غير صالح.');
-        }
-        throw new Error(createError.message || 'حدث خطأ أثناء إنشاء الحساب تلقائياً');
       }
+      throw new Error(createErr.message || 'حدث خطأ أثناء تهيئة الحساب');
     }
-
-    if (error.code === 'auth/invalid-email') {
-      throw new Error('البريد الإلكتروني المدخل غير صالح');
-    }
-    if (error.code === 'auth/too-many-requests') {
-      throw new Error('تم حظر المحاولات مؤقتاً بسبب كثرة الطلبات. يرجى المحاولة لاحقاً.');
-    }
-    if (error.code === 'auth/network-request-failed') {
-      throw new Error('تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.');
-    }
-
-    throw new Error(error.message || 'البيانات المدخلة أو كلمة المرور غير صحيحة');
   }
+
+  // 5. User does not exist in Firestore:
+  if (isEmail) {
+    if (password.length < 6) {
+      throw new Error('كلمة المرور يجب أن تتكون من 6 أحرف أو أرقام على الأقل');
+    }
+    try {
+      const newUserCredential = await createUserWithEmailAndPassword(auth, clean, password);
+      const studentData = await ensureStudentDocExists(newUserCredential.user, clean, password);
+      return { user: newUserCredential.user, isNewUser: true, studentData };
+    } catch (createError: any) {
+      if (createError.code === 'auth/email-already-in-use') {
+        throw new Error('كلمة المرور غير صحيحة');
+      }
+      if (createError.code === 'auth/weak-password') {
+        throw new Error('كلمة المرور ضعيفة جداً. يجب أن تتكون من 6 أحرف على الأقل.');
+      }
+      if (createError.code === 'auth/invalid-email') {
+        throw new Error('البريد الإلكتروني المدخل غير صالح.');
+      }
+      throw new Error(createError.message || 'حدث خطأ أثناء إنشاء الحساب تلقائياً');
+    }
+  }
+
+  if (lastAuthError?.code === 'auth/wrong-password') {
+    throw new Error('كلمة المرور غير صحيحة');
+  }
+  if (lastAuthError?.code === 'auth/too-many-requests') {
+    throw new Error('تم حظر المحاولات مؤقتاً بسبب كثرة الطلبات. يرجى المحاولة لاحقاً.');
+  }
+  if (lastAuthError?.code === 'auth/network-request-failed') {
+    throw new Error('تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.');
+  }
+
+  throw new Error('الحساب غير مسجل في النظام. يرجى التأكد من البريد أو الرقم القومي أو الهاتف.');
 };
 
 
