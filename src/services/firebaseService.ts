@@ -31,7 +31,8 @@ import {
   writeBatch,
   limit,
   startAfter,
-  getCountFromServer
+  getCountFromServer,
+  increment
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { auth, db, storage, firebaseConfig } from '../config/firebase';
@@ -90,6 +91,7 @@ export const registerUser = async (email: string, password: string, studentData:
     };
 
     await setDoc(doc(db, 'students', user.uid), studentDataWithId);
+    void incrementPlatformStudentsCount();
 
     return user;
   } catch (error: any) {
@@ -3164,6 +3166,7 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
 
     // Save request - only links, no base64, optimized and secure
     await setDoc(requestRef, safeRequestData);
+    void incrementPlatformRequestsCount();
     if (String(request.serviceId) === '1' && request.studentId) {
       try {
         await setDoc(
@@ -4480,3 +4483,72 @@ export const subscribeToServiceSettings = (
     return () => { };
   }
 };
+
+/**
+ * إحصائيات المنصة الحية (المشتركين والطلبات)
+ */
+export interface PlatformStatsData {
+  totalStudents: number;
+  totalRequests: number;
+}
+
+export const subscribeToPlatformStats = (
+  callback: (stats: PlatformStatsData) => void
+): (() => void) => {
+  try {
+    const statsDocRef = doc(db, 'configs', 'platformStats');
+    return onSnapshot(
+      statsDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          callback({
+            totalStudents: Number(data.totalStudents || 0),
+            totalRequests: Number(data.totalRequests || 0)
+          });
+        } else {
+          callback({ totalStudents: 0, totalRequests: 0 });
+        }
+      },
+      (error) => {
+        logger.warn('subscribeToPlatformStats notice:', error?.message);
+      }
+    );
+  } catch (error) {
+    logger.warn('subscribeToPlatformStats error:', error);
+    return () => {};
+  }
+};
+
+export const incrementPlatformRequestsCount = async (): Promise<void> => {
+  try {
+    const statsDocRef = doc(db, 'configs', 'platformStats');
+    await setDoc(
+      statsDocRef,
+      {
+        totalRequests: increment(1),
+        lastRequestAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  } catch (e: any) {
+    logger.warn('incrementPlatformRequestsCount notice:', e?.message);
+  }
+};
+
+export const incrementPlatformStudentsCount = async (): Promise<void> => {
+  try {
+    const statsDocRef = doc(db, 'configs', 'platformStats');
+    await setDoc(
+      statsDocRef,
+      {
+        totalStudents: increment(1),
+        lastStudentAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  } catch (e: any) {
+    logger.warn('incrementPlatformStudentsCount notice:', e?.message);
+  }
+};
+

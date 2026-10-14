@@ -5,6 +5,7 @@ import { SERVICES } from '../constants/services';
 import { checkIsAdmin, subscribeToServiceSettings, subscribeToLatestNews, subscribeToQuickNotification, subscribeToAdminPreferences } from '../services/firebaseService';
 import { ServiceSettings } from '../types';
 import { resolveHeroBackgroundUrls } from '../utils/backgroundImages';
+import LivePlatformStats from '../components/LivePlatformStats';
 import '../styles/DashboardPage.css';
 import '../styles/GeometricShapes.css';
 import {
@@ -484,7 +485,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       </header>
 
-      {/* stats removed per request */}
+      {/* Modern Live Platform Stats Counter */}
+      <LivePlatformStats isAdmin={isAdmin} />
 
       {/* Services Grid */}
       <main className="services-section" id="services">

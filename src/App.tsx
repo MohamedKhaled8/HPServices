@@ -254,7 +254,7 @@ const ServiceDetailsWrapper = () => {
         <ServiceDetailsPage
             serviceId={id}
             onBack={() => navigate('/dashboard')}
-            onSubmitSuccess={() => navigate('/dashboard')}
+            onSubmitSuccess={() => navigate('/dashboard', { replace: true })}
         />
     );
 };

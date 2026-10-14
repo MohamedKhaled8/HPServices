@@ -807,6 +807,58 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
         }
     };
 
+    const handleSuccessRedirect = () => {
+        const studentName =
+            (student?.fullNameArabic || '').trim() ||
+            (serviceData['full_name'] || '').trim() ||
+            (student?.fullNameEnglish || '').trim() ||
+            (student?.vehicleNameEnglish || '').trim() ||
+            'طالب';
+
+        const studentPhone =
+            (student?.whatsappNumber || '').trim() ||
+            (serviceData['whatsapp_number'] || '').trim() ||
+            (serviceData['phone'] || '').trim() ||
+            '';
+
+        const transferPhone =
+            (transferPhoneNumber || '').trim() ||
+            (serviceData['transfer_phone_number'] || '').trim();
+
+        const serviceTitle =
+            (service && service.id === '3' && bookConfig?.serviceName ? bookConfig.serviceName : null) ||
+            (service && service.id === '5' && assignmentsConfig?.serviceName ? assignmentsConfig.serviceName : null) ||
+            (service && service.id === '8' && finalReviewConfig?.serviceName ? finalReviewConfig.serviceName : null) ||
+            (service && service.id === '9' && graduationProjectConfig?.serviceName ? graduationProjectConfig.serviceName : null) ||
+            service?.nameAr ||
+            'خدمة';
+
+        const transferLine = transferPhone ? `* الرقم المحول منه : ${transferPhone}\n` : '';
+
+        const message = `💥 طلب خدمه 👇
+* رقم الموبيل : ${studentPhone}
+* الاسم : ${studentName}
+${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
+الطلب قيد الانتظار وفي انتظار الموافقة عليه
+اتش بي ... ثقه-امان-سرعة🥰`;
+
+        // نستخدم api.whatsapp.com مباشرة بدلاً من wa.me لأن إعادة توجيه wa.me تقوم بتشويه الإيموجي وتحويله إلى ؟
+        const whatsappUrl = `https://api.whatsapp.com/send?phone=${POST_SUBMIT_WHATSAPP_MSISDN}&text=${encodeURIComponent(message)}`;
+
+        // التوجيه فوراً إلى الصفحة الرئيسية (لوحة التحكم) لكي يجد الطالب نفسه في الرئيسية عند العودة من واتساب
+        onSubmitSuccess();
+
+        // فتح تطبيق أو موقع واتساب
+        try {
+            const win = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+            if (!win) {
+                window.location.href = whatsappUrl;
+            }
+        } catch (e) {
+            window.location.href = whatsappUrl;
+        }
+    };
+
     if (!service || !isActive) {
         return (
             <div className="service-details-page">
@@ -2145,7 +2197,7 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                                     </p>
 
                                     <button
-                                        onClick={onSubmitSuccess}
+                                        onClick={handleSuccessRedirect}
                                         className="success-confirm-btn"
                                     >
                                         <span>متابعة إلى لوحة التحكم</span>
