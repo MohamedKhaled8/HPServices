@@ -446,6 +446,11 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
             newMissingNames.push('certificate');
         }
 
+        // خدمة 5: حل وتسليم التكليفات - يجب اختيار تكليف واحد على الأقل
+        if (service.id === '5' && selectedAssignments.length === 0) {
+            newMissingNames.push('assignments');
+        }
+
         // التحقق من خيار أخرى للتخصص التربوي
         if (serviceData['educational_specialization'] === 'أخرى' || serviceData['educational_specialization'] === 'Other') {
             const otherSpec = (serviceData['educational_specialization_other'] || '').trim();
@@ -549,6 +554,20 @@ const ServiceDetailsPage: React.FC<ServiceDetailsPageProps> = ({
                 setIsSubmitting(false);
                 return;
             }
+        }
+
+        // للخدمة 5، يجب اختيار تكليف واحد على الأقل
+        if (service.id === '5' && selectedAssignments.length === 0) {
+            setSubmitMessage({
+                type: 'error',
+                text: 'يرجى تحديد التكليفات المطلوبة أولاً (يجب اختيار تكليف واحد على الأقل)'
+            });
+            setIsSubmitting(false);
+            const el = document.getElementById('assignments-selection-section');
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            return;
         }
 
         // للخدمة 6، يجب اختيار شهادة
@@ -902,8 +921,21 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
             <form onSubmit={handleSubmit} className="details-form" noValidate>
                 <div className="details-container">
                     {service.id === '5' && assignmentsConfig && (
-                        <section className="form-section section-assignments">
-                            <h2>حدد التكاليف المطلوبة</h2>
+                        <section
+                            id="assignments-selection-section"
+                            className={`form-section section-assignments ${(formAttempted && missingFieldNames.includes('assignments')) ? 'error-border' : ''}`}
+                            style={(formAttempted && missingFieldNames.includes('assignments')) ? { border: '2px solid #ef4444', borderRadius: '14px', padding: '20px', background: '#fef2f2', boxShadow: '0 0 0 4px rgba(239, 68, 68, 0.15)' } : {}}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                                <h2 style={{ margin: 0 }}>
+                                    حدد التكليفات المطلوبة <span className="required" style={{ color: '#ef4444' }}>*</span>
+                                </h2>
+                                {formAttempted && missingFieldNames.includes('assignments') && (
+                                    <span style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '14px', background: '#fee2e2', padding: '6px 14px', borderRadius: '8px', border: '1px solid #fca5a5' }}>
+                                        ⚠️ يجب اختيار تكليف واحد على الأقل للمتابعة
+                                    </span>
+                                )}
+                            </div>
                             <div className="assignments-cards-grid">
                                 {assignmentsConfig.assignments.map((assignment) => (
                                     <div
@@ -911,7 +943,11 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                                         className={`assignment-card ${selectedAssignments.includes(assignment.id) ? 'selected' : ''}`}
                                         onClick={() => {
                                             if (selectedAssignments.includes(assignment.id)) {
-                                                setSelectedAssignments(selectedAssignments.filter(id => id !== assignment.id));
+                                                const updated = selectedAssignments.filter(id => id !== assignment.id);
+                                                setSelectedAssignments(updated);
+                                                if (updated.length === 0) {
+                                                    setMissingFieldNames(prev => [...prev.filter(name => name !== 'assignments'), 'assignments']);
+                                                }
                                             } else {
                                                 // Implement mutual exclusivity for 500 and 300 EGP assignments
                                                 const selectedPrice = Number(assignment.price);
@@ -932,6 +968,7 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                                                 }
 
                                                 setSelectedAssignments([...newSelections, assignment.id]);
+                                                setMissingFieldNames(prev => prev.filter(name => name !== 'assignments'));
                                             }
                                         }}
                                     >
@@ -1915,15 +1952,21 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                                     </div>
                                 </div>
                             )}
-                            {service.id === '5' && assignmentsConfig && selectedAssignments.length > 0 && (
+                            {service.id === '5' && assignmentsConfig && (
                                 <div className="payment-amount">
-                                    <div className="selected-price">
-                                        <strong>
-                                            المبلغ المستحق للدفع: {assignmentsConfig.assignments
-                                                .filter(a => selectedAssignments.includes(a.id))
-                                                .reduce((sum, a) => sum + a.price, 0)} جنيه
-                                        </strong>
-                                    </div>
+                                    {selectedAssignments.length > 0 ? (
+                                        <div className="selected-price">
+                                            <strong>
+                                                المبلغ المستحق للدفع: {assignmentsConfig.assignments
+                                                    .filter(a => selectedAssignments.includes(a.id))
+                                                    .reduce((sum, a) => sum + a.price, 0)} جنيه
+                                            </strong>
+                                        </div>
+                                    ) : (
+                                        <div className="selected-price" style={{ color: '#d97706', background: '#fffbeb', border: '1px dashed #f59e0b', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', lineHeight: '1.6' }}>
+                                            ⚠️ <strong>يرجى اختيار التكليفات المطلوبة أولاً</strong> من الأعلى لعرض المبلغ المستحق للدفع وطرق التحويل.
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             {service.id === '10' && (
@@ -2119,13 +2162,45 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                                     ? 'يرجى رفع صور المستندات المطلوبة واسكرين تحويل المبلغ (يمكنك اختيار أكثر من ملف)'
                                     : 'يرجى تحميل اسكرين تحويل المبلغ قبل تقديم الطلب'}
                             </p>
-                            <FileUpload
-                                key={serviceId}
-                                onFilesSelected={setReceiptFiles}
-                                maxFileSize={5 * 1024 * 1024}
-                                acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF']}
-                                buttonLabel={service.id === '10' ? 'رفع الأوراق والمستندات (شهادة ميلاد - صورة شخصية - شهادة التخرج - شهادة التحول الرقمي - صورة تحويل المبلغ)' : 'حمل اسكرين تحويل المبلغ'}
-                            />
+                            {service.id === '5' && selectedAssignments.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '24px 16px', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px' }}>
+                                    <div style={{ fontSize: '26px', marginBottom: '8px' }}>📋</div>
+                                    <p style={{ fontWeight: 'bold', color: '#1e293b', margin: '0 0 6px 0', fontSize: '15px' }}>
+                                        يرجى تحديد التكليفات المطلوبة أولاً
+                                    </p>
+                                    <p style={{ color: '#64748b', fontSize: '13px', margin: '0 0 14px 0' }}>
+                                        لا يمكن رفع إيصال الدفع إلا بعد اختيار التكليفات لحساب إجمالي المبلغ المطلوب
+                                    </p>
+                                    <button
+                                        type="button"
+                                        style={{
+                                            padding: '8px 20px',
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            borderRadius: '8px',
+                                            background: '#2563eb',
+                                            color: '#ffffff',
+                                            border: 'none',
+                                            boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
+                                        }}
+                                        onClick={() => {
+                                            const el = document.getElementById('assignments-selection-section');
+                                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                        }}
+                                    >
+                                        اختر التكليفات المطلوبة الآن ↑
+                                    </button>
+                                </div>
+                            ) : (
+                                <FileUpload
+                                    key={serviceId}
+                                    onFilesSelected={setReceiptFiles}
+                                    maxFileSize={5 * 1024 * 1024}
+                                    acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF']}
+                                    buttonLabel={service.id === '10' ? 'رفع الأوراق والمستندات (شهادة ميلاد - صورة شخصية - شهادة التخرج - شهادة التحول الرقمي - صورة تحويل المبلغ)' : 'حمل اسكرين تحويل المبلغ'}
+                                />
+                            )}
                         </section>
                     )}
 
@@ -2165,7 +2240,7 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                         <button
                             type="submit"
                             className="submit-button"
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || (service.id === '5' && selectedAssignments.length === 0)}
                         >
                             {isSubmitting ? 'جاري التقديم...' : 'تقديم الطلب'}
                         </button>

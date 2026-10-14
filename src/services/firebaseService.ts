@@ -3061,6 +3061,14 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
 // Service Request Functions
 export const addServiceRequest = async (request: ServiceRequest): Promise<string> => {
   try {
+    // التحقق الصارم من الخدمة 5: حل وتسليم التكليفات (لا يجوز رفع الطلب بدون تحديد تكليف واحد على الأقل)
+    if (String(request.serviceId) === '5') {
+      const selected = request.data?.selectedAssignments;
+      if (!selected || !Array.isArray(selected) || selected.length === 0) {
+        throw new Error('لا يمكن تقديم طلب خدمة حل التكليفات دون تحديد تكليف واحد على الأقل.');
+      }
+    }
+
     // Each service has its own collection
     const collectionName = `serviceRequests_${request.serviceId}`;
     const requestRef = doc(collection(db, collectionName));
