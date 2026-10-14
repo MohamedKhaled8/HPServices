@@ -1287,23 +1287,106 @@ export const getAssignmentFilesForTrack = async (track: TrackKey): Promise<Assig
   }
 };
 
-export type ServiceTier = '500' | '300';
+export type ServiceTier = '500' | '300' | string;
 
-// Helper: Get student IDs who bought a specific assignment tier (by price) with accepted requests
-const getStudentIdsByTier = async (tierPrice: number): Promise<Set<string>> => {
+export interface DistributeTargetOptions {
+  tier?: ServiceTier;
+  assignmentId?: string;
+  assignmentName?: string;
+  price?: number;
+  namingMode?: 'personalized' | 'plain';
+}
+
+// Helper: Get student IDs who bought a specific assignment tier/service with accepted requests
+export const getStudentIdsByTier = async (
+  tierOrTarget: number | string | { assignmentId?: string; assignmentName?: string; tierPrice?: number; legacyTier?: string }
+): Promise<Set<string>> => {
   const collectionName = `serviceRequests_5`; // Service 5 = assignments
   const requestsSnap = await getDocs(collection(db, collectionName));
   const studentIds = new Set<string>();
+
+  let targetId: string | undefined;
+  let targetName: string | undefined;
+  let targetPrice: number | undefined;
+  let legacyTier: string | undefined;
+
+  if (typeof tierOrTarget === 'number') {
+    targetPrice = tierOrTarget;
+    legacyTier = String(tierOrTarget);
+  } else if (typeof tierOrTarget === 'string') {
+    if (tierOrTarget === '500' || tierOrTarget === '300' || tierOrTarget === '130') {
+      targetPrice = Number(tierOrTarget);
+      legacyTier = tierOrTarget;
+    } else {
+      targetId = tierOrTarget;
+    }
+  } else if (tierOrTarget && typeof tierOrTarget === 'object') {
+    targetId = tierOrTarget.assignmentId;
+    targetName = tierOrTarget.assignmentName;
+    targetPrice = tierOrTarget.tierPrice;
+    legacyTier = tierOrTarget.legacyTier;
+  }
+
+  const targetNameNorm = targetName ? targetName.trim().toLowerCase() : '';
 
   requestsSnap.forEach((docSnap) => {
     const data = docSnap.data();
     // Only include completed/accepted requests
     if (data.status !== 'completed') return;
 
-    const selectedData = data.data?.selectedAssignmentsData || [];
-    const hasThisTier = selectedData.some((a: any) => a.price === tierPrice);
+    const reqData = data.data || {};
+    const selectedAssignments: string[] = Array.isArray(reqData.selectedAssignments) ? reqData.selectedAssignments : [];
+    const selectedData: any[] = Array.isArray(reqData.selectedAssignmentsData) ? reqData.selectedAssignmentsData : [];
+    const totalPrice: number = typeof reqData.totalPrice === 'number' ? reqData.totalPrice : 0;
 
-    if (hasThisTier) {
+    let matched = false;
+
+    // 1. Direct match by assignmentId
+    if (targetId && (selectedAssignments.includes(targetId) || selectedData.some((a: any) => a.id === targetId))) {
+      matched = true;
+    }
+
+    // 2. Direct match by assignmentName
+    if (!matched && targetNameNorm) {
+      if (selectedData.some((a: any) => String(a.name || '').trim().toLowerCase() === targetNameNorm)) {
+        matched = true;
+      }
+    }
+
+    // 3. Match by price
+    if (!matched && targetPrice && targetPrice > 0) {
+      if (selectedData.some((a: any) => Number(a.price) === targetPrice) || totalPrice === targetPrice) {
+        matched = true;
+      }
+    }
+
+    // 4. Legacy fallback matching for 500, 300, 130
+    if (!matched && legacyTier) {
+      if (legacyTier === '500') {
+        if (
+          selectedData.some((a: any) => Number(a.price) === 500 || String(a.name || '').includes('تسليم') || String(a.name || '').includes('500')) ||
+          totalPrice === 500
+        ) {
+          matched = true;
+        }
+      } else if (legacyTier === '300') {
+        if (
+          selectedData.some((a: any) => Number(a.price) === 300 || String(a.name || '').toLowerCase().includes('pdf') || String(a.name || '').includes('فقط') || String(a.name || '').includes('300')) ||
+          totalPrice === 300
+        ) {
+          matched = true;
+        }
+      } else if (legacyTier === '130') {
+        if (
+          selectedData.some((a: any) => Number(a.price) === 130 || String(a.name || '').includes('تربية') || String(a.name || '').includes('عملي') || String(a.name || '').includes('130') || String(a.name || '').includes('موحد')) ||
+          totalPrice === 130
+        ) {
+          matched = true;
+        }
+      }
+    }
+
+    if (matched) {
       studentIds.add(data.studentId);
     }
   });
@@ -1314,10 +1397,23 @@ const getStudentIdsByTier = async (tierPrice: number): Promise<Set<string>> => {
 export const distributeAssignmentsForTrack = async (
   track: TrackKey,
   fileIds?: string[],
-  serviceTier?: ServiceTier
-): Promise<void> => {
+  serviceTierOrOptions?: ServiceTier | DistributeTargetOptions,
+  onProgress?: (processed: number, total: number, currentStudentName?: string) => void
+): Promise<{ total: number; sent: number }> => {
   try {
-    // 1) Get all files for this track (or only selected ones)
+    // 1) Parse options & target
+    let targetOptions: DistributeTargetOptions = {};
+    if (typeof serviceTierOrOptions === 'string') {
+      targetOptions = {
+        tier: serviceTierOrOptions,
+        price: serviceTierOrOptions === '500' ? 500 : serviceTierOrOptions === '300' ? 300 : undefined,
+        namingMode: serviceTierOrOptions === '300' ? 'plain' : 'personalized'
+      };
+    } else if (serviceTierOrOptions && typeof serviceTierOrOptions === 'object') {
+      targetOptions = serviceTierOrOptions;
+    }
+
+    // 2) Get all files for this track (or only selected ones)
     let files = await getAssignmentFilesForTrack(track);
     if (fileIds && fileIds.length > 0) {
       const fileIdSet = new Set(fileIds);
@@ -1327,12 +1423,18 @@ export const distributeAssignmentsForTrack = async (
       throw new Error('لا توجد ملفات مرفوعة لهذا المسار');
     }
 
-    // 2) Get targeted students by tier and/or track without scanning full collection
+    // 3) Get targeted students by tier/target and/or track without scanning full collection
     let targetStudentsMap: Record<string, StudentData> = {};
 
-    if (serviceTier) {
-      const tierPrice = serviceTier === '500' ? 500 : 300;
-      const tierStudentIds = await getStudentIdsByTier(tierPrice);
+    const hasTargetFilter = Boolean(targetOptions.tier || targetOptions.assignmentId || targetOptions.assignmentName || targetOptions.price);
+
+    if (hasTargetFilter) {
+      const tierStudentIds = await getStudentIdsByTier({
+        assignmentId: targetOptions.assignmentId,
+        assignmentName: targetOptions.assignmentName,
+        tierPrice: targetOptions.price || (targetOptions.tier === '500' ? 500 : targetOptions.tier === '300' ? 300 : undefined),
+        legacyTier: targetOptions.tier
+      });
       if (tierStudentIds.size > 0) {
         targetStudentsMap = await getStudentsByIds(Array.from(tierStudentIds));
       }
@@ -1361,15 +1463,19 @@ export const distributeAssignmentsForTrack = async (
     let students = allStudentsInTrack;
 
     if (students.length === 0) {
-      const tierLabel = serviceTier === '500' ? 'خدمة الـ 500' : serviceTier === '300' ? 'خدمة الـ 300' : 'هذا المسار';
+      const tierLabel = targetOptions.assignmentName || (targetOptions.tier === '500' ? 'خدمة الـ 500' : targetOptions.tier === '300' ? 'خدمة الـ 300' : 'هذا المسار');
       throw new Error(`لا يوجد طلاب مشتركين في ${tierLabel} في هذا المسار حالياً`);
     }
 
-    // 3) Shuffle files randomly
+    // 4) Shuffle files randomly
     const shuffledFiles = [...files].sort(() => Math.random() - 0.5);
 
-    // 4) Assign one file per student (allow reuse if files < students)
+    // 5) Assign one file per student (allow reuse if files < students)
     let fileIndex = 0;
+    const isPlainNaming = targetOptions.namingMode === 'plain' || (!targetOptions.namingMode && targetOptions.tier === '300');
+    let processedCount = 0;
+    const totalCount = students.length;
+
     for (const student of students) {
       const file = shuffledFiles[fileIndex];
 
@@ -1383,15 +1489,15 @@ export const distributeAssignmentsForTrack = async (
         ? file.name.substring(0, file.name.lastIndexOf('.'))
         : file.name;
 
-      // Create custom file name based on tier
+      // Create custom file name based on naming mode
       const studentName = (student.data.fullNameArabic || 'طالب').replace(/\s+/g, '_').replace(/[^\u0600-\u06FF\w.-]/g, '_');
 
       let customFileName: string;
-      if (serviceTier === '300') {
-        // 300 EGP: file title only (no student name)
+      if (isPlainNaming) {
+        // Plain: file title only (no student name)
         customFileName = file.name;
       } else {
-        // 500 EGP (or no tier specified - backward compatible): student name + file title
+        // Personalized: student name + file title
         customFileName = `${studentName}_-_${fileNameWithoutExt}${fileExtension}`;
       }
 
@@ -1420,8 +1526,19 @@ export const distributeAssignmentsForTrack = async (
         } as any);
       }
 
+      processedCount++;
+      if (onProgress) {
+        try {
+          onProgress(processedCount, totalCount, student.data.fullNameArabic || 'طالب');
+        } catch {
+          // ignore
+        }
+      }
+
       fileIndex = (fileIndex + 1) % shuffledFiles.length;
     }
+
+    return { total: totalCount, sent: processedCount };
   } catch (error: any) {
     logger.error('Error distributing assignments:', error);
     throw new Error(error.message || 'حدث خطأ أثناء توزيع ملفات التكاليف على الطلاب');
@@ -1717,7 +1834,11 @@ export const delete130UnifiedFiles = async (fileIds: string[]): Promise<void> =>
   }
 };
 
-export const distribute130UnifiedFiles = async (fileIds?: string[]): Promise<void> => {
+export const distribute130UnifiedFiles = async (
+  fileIds?: string[],
+  targetAssignmentOrId?: string | { assignmentId?: string; assignmentName?: string; price?: number },
+  onProgress?: (processed: number, total: number, currentStudentName?: string) => void
+): Promise<{ total: number; sent: number }> => {
   try {
     // 1) Get 130 unified files
     let files = await get130UnifiedFiles();
@@ -1729,10 +1850,24 @@ export const distribute130UnifiedFiles = async (fileIds?: string[]): Promise<voi
       throw new Error('لا توجد ملفات موحدة مرفوعة');
     }
 
-    // 2) Get all students who bought the 130 tier
-    const tierStudentIds = await getStudentIdsByTier(130);
+    // 2) Get all students who bought the unified tier or specified assignment
+    let queryTarget: any = 130;
+    let label = 'خدمة الملف الموحد / الـ 130';
+    if (typeof targetAssignmentOrId === 'string' && targetAssignmentOrId) {
+      queryTarget = { assignmentId: targetAssignmentOrId, legacyTier: '130' };
+    } else if (targetAssignmentOrId && typeof targetAssignmentOrId === 'object') {
+      queryTarget = {
+        assignmentId: targetAssignmentOrId.assignmentId,
+        assignmentName: targetAssignmentOrId.assignmentName,
+        tierPrice: targetAssignmentOrId.price,
+        legacyTier: '130'
+      };
+      if (targetAssignmentOrId.assignmentName) label = targetAssignmentOrId.assignmentName;
+    }
+
+    const tierStudentIds = await getStudentIdsByTier(queryTarget);
     if (tierStudentIds.size === 0) {
-      throw new Error('لا يوجد طلاب مشتركين في خدمة الـ 130 حالياً');
+      throw new Error(`لا يوجد طلاب مشتركين في ${label} حالياً`);
     }
 
     // 3) Get student data (only for the targeted tier students)
@@ -1740,10 +1875,13 @@ export const distribute130UnifiedFiles = async (fileIds?: string[]): Promise<voi
     const students: { id: string; data: StudentData }[] = Object.entries(studentsMap).map(([id, data]) => ({ id, data }));
 
     if (students.length === 0) {
-      throw new Error('لا يوجد طلاب مشتركين في خدمة الـ 130 حالياً');
+      throw new Error(`لا يوجد طلاب مشتركين في ${label} حالياً`);
     }
 
     // 4) Send ALL files to ALL students (same file for everyone)
+    let processedCount = 0;
+    const totalCount = students.length;
+
     for (const student of students) {
       const existingFiles = student.data.assignedFiles || [];
 
@@ -1759,7 +1897,7 @@ export const distribute130UnifiedFiles = async (fileIds?: string[]): Promise<voi
             name: file.name,
             customName: file.name, // Same file for everyone, no custom naming
             url: file.url,
-            track: 'track1' as any, // placeholder
+            track: 'unified130' as any,
             assignedAt: new Date().toISOString()
           };
           updatedFiles.push(assigned);
@@ -1773,7 +1911,18 @@ export const distribute130UnifiedFiles = async (fileIds?: string[]): Promise<voi
           assignedFile: updatedFiles[updatedFiles.length - 1]
         } as any);
       }
+
+      processedCount++;
+      if (onProgress) {
+        try {
+          onProgress(processedCount, totalCount, student.data.fullNameArabic || 'طالب');
+        } catch {
+          // ignore
+        }
+      }
     }
+
+    return { total: totalCount, sent: processedCount };
   } catch (error: any) {
     logger.error('Error distributing 130 unified files:', error);
     throw new Error(error.message || 'حدث خطأ أثناء توزيع الملفات الموحدة');
@@ -1886,6 +2035,491 @@ export const removeAssignedFilesFromAllStudents = async (fileIds: string[]): Pro
   } catch (error: any) {
     logger.error('Error removing assigned files from students:', error);
     throw new Error(error.message || 'حدث خطأ أثناء حذف الملفات من حسابات الطلاب');
+  }
+};
+
+// ============================================
+// سجل وسحب الملفات الموزعة على الطلاب (File Revocation)
+// ============================================
+
+export interface DistributedFileSummary {
+  fileId: string;
+  fileName: string;
+  customNameExample?: string;
+  track: string;
+  assignedAt: string; // ISO string
+  formattedDate: string; // e.g. "14 أكتوبر 2026"
+  formattedTime: string; // e.g. "05:18 م"
+  studentCount: number;
+  studentIds: string[];
+}
+
+/**
+ * جلب ملخص الملفات الموزعة حالياً على الطلاب لمسار معين (أو ملفات الـ 130)
+ * يعتمد على الاستعلام المباشر لمستندات الطلاب النشطة فقط لتفادي إجهاد قاعدة البيانات
+ */
+export const getDistributedFilesForTrack = async (
+  track: TrackKey | 'unified130'
+): Promise<DistributedFileSummary[]> => {
+  try {
+    const studentsRef = collection(db, 'students');
+    // جلب الطلاب الذين لديهم ملفات مسندة فقط دون تنزيل كافة الطلاب
+    const q = query(studentsRef, where('assignedFile', '!=', null));
+    const snap = await getDocs(q);
+
+    // إذا كان المسار هو 130، نجلب معرفات ملفات الـ 130 المرفوعة لضمان مطابقتها بدقة
+    let unified130IdSet = new Set<string>();
+    if (track === 'unified130') {
+      try {
+        const uFiles = await get130UnifiedFiles();
+        unified130IdSet = new Set(uFiles.map((f) => f.id));
+      } catch {
+        // fallback
+      }
+    }
+
+    const map = new Map<
+      string,
+      {
+        fileId: string;
+        fileName: string;
+        customNameExample?: string;
+        track: string;
+        assignedAt: string;
+        studentIds: Set<string>;
+      }
+    >();
+
+    snap.docs.forEach((docSnap) => {
+      const studentId = docSnap.id;
+      const data = docSnap.data();
+      const assignedFiles: AssignedFile[] = Array.isArray(data.assignedFiles) ? data.assignedFiles : [];
+      if (assignedFiles.length === 0 && data.assignedFile) {
+        assignedFiles.push(data.assignedFile);
+      }
+
+      const studentTrackKey = trackToKey(data.track || null);
+
+      assignedFiles.forEach((file) => {
+        if (!file || !file.id) return;
+
+        let belongsToThisTrack = false;
+        if (track === 'unified130') {
+          belongsToThisTrack = file.track === 'unified130' || (file as any).is130 === true || unified130IdSet.has(file.id);
+        } else {
+          belongsToThisTrack = file.track === track || (!file.track && studentTrackKey === track);
+        }
+
+        if (!belongsToThisTrack) return;
+
+        const groupKey = file.id;
+        if (!map.has(groupKey)) {
+          map.set(groupKey, {
+            fileId: file.id,
+            fileName: file.name || file.customName || 'ملف غير معنون',
+            customNameExample: file.customName,
+            track: file.track || track,
+            assignedAt: file.assignedAt || new Date().toISOString(),
+            studentIds: new Set<string>()
+          });
+        }
+
+        const entry = map.get(groupKey)!;
+        entry.studentIds.add(studentId);
+
+        if (file.assignedAt && (!entry.assignedAt || file.assignedAt > entry.assignedAt)) {
+          entry.assignedAt = file.assignedAt;
+        }
+      });
+    });
+
+    const result: DistributedFileSummary[] = Array.from(map.values()).map((entry) => {
+      let formattedDate = '';
+      let formattedTime = '';
+      try {
+        const d = new Date(entry.assignedAt);
+        if (!isNaN(d.getTime())) {
+          formattedDate = d.toLocaleDateString('ar-EG', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+          formattedTime = d.toLocaleTimeString('ar-EG', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+        }
+      } catch {
+        formattedDate = entry.assignedAt;
+      }
+
+      return {
+        fileId: entry.fileId,
+        fileName: entry.fileName,
+        customNameExample: entry.customNameExample,
+        track: entry.track,
+        assignedAt: entry.assignedAt,
+        formattedDate,
+        formattedTime,
+        studentCount: entry.studentIds.size,
+        studentIds: Array.from(entry.studentIds)
+      };
+    });
+
+    // ترتيب من الأحدث إرسالاً إلى الأقدم
+    result.sort((a, b) => {
+      const timeA = new Date(a.assignedAt).getTime() || 0;
+      const timeB = new Date(b.assignedAt).getTime() || 0;
+      return timeB - timeA;
+    });
+
+    return result;
+  } catch (error: any) {
+    logger.error('Error getting distributed files for track:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء فحص الملفات الموزعة');
+  }
+};
+
+/**
+ * سحب ملف محدد تم توزيعه من حسابات كافة الطلاب الذين استلموه
+ * يستخدم writeBatch المقسم على 450 عملية لتفادي حدود Firestore
+ */
+export const revokeDistributedFileFromStudents = async (
+  fileId: string,
+  targetStudentIds?: string[],
+  onProgress?: (revokedCount: number, total: number) => void
+): Promise<number> => {
+  try {
+    if (!fileId) return 0;
+
+    let studentDocs: any[] = [];
+    if (targetStudentIds && targetStudentIds.length > 0) {
+      // جلب مستندات الطلاب المحددين فقط لتوفير القراءات
+      const chunks: string[][] = [];
+      for (let i = 0; i < targetStudentIds.length; i += 30) {
+        chunks.push(targetStudentIds.slice(i, i + 30));
+      }
+      for (const chunk of chunks) {
+        const docsSnap = await Promise.all(chunk.map((id) => getDoc(doc(db, 'students', id))));
+        docsSnap.forEach((ds) => {
+          if (ds.exists()) studentDocs.push(ds);
+        });
+      }
+    } else {
+      const q = query(collection(db, 'students'), where('assignedFile', '!=', null));
+      const snap = await getDocs(q);
+      studentDocs = snap.docs;
+    }
+
+    let updatedCount = 0;
+    let batch = writeBatch(db);
+    let batchCount = 0;
+    const MAX_BATCH = 450;
+    const total = studentDocs.length;
+
+    for (let i = 0; i < studentDocs.length; i++) {
+      const sDoc = studentDocs[i];
+      const data = sDoc.data();
+      const assignedFiles: any[] = data.assignedFiles || [];
+
+      const filtered = assignedFiles.filter((f: any) => f.id !== fileId);
+      const wasInAssignedFile = data.assignedFile && data.assignedFile.id === fileId;
+
+      if (filtered.length !== assignedFiles.length || wasInAssignedFile) {
+        const updateData: any = {
+          assignedFiles: filtered,
+          updatedAt: serverTimestamp()
+        };
+        if (filtered.length > 0) {
+          updateData.assignedFile = filtered[filtered.length - 1];
+        } else {
+          updateData.assignedFile = null;
+        }
+
+        batch.update(sDoc.ref, updateData);
+        updatedCount++;
+        batchCount++;
+
+        if (batchCount >= MAX_BATCH) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+        }
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, total);
+      }
+    }
+
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+
+    logger.log(`Revoked file ${fileId} from ${updatedCount} students`);
+    return updatedCount;
+  } catch (error: any) {
+    logger.error('Error revoking distributed file from students:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء سحب الملف من الطلاب');
+  }
+};
+
+/**
+ * سحب كل الملفات الموزعة في مسار معين من كافة الطلاب
+ */
+export const revokeAllDistributedFilesForTrack = async (
+  track: TrackKey | 'unified130',
+  onProgress?: (processed: number, total: number) => void
+): Promise<{ updatedStudents: number; removedFilesCount: number }> => {
+  try {
+    const q = query(collection(db, 'students'), where('assignedFile', '!=', null));
+    const snap = await getDocs(q);
+
+    let unified130IdSet = new Set<string>();
+    if (track === 'unified130') {
+      try {
+        const uFiles = await get130UnifiedFiles();
+        unified130IdSet = new Set(uFiles.map((f) => f.id));
+      } catch {
+        // fallback
+      }
+    }
+
+    let updatedStudents = 0;
+    let removedFilesCount = 0;
+    let batch = writeBatch(db);
+    let batchCount = 0;
+    const MAX_BATCH = 450;
+    const total = snap.docs.length;
+
+    for (let i = 0; i < snap.docs.length; i++) {
+      const sDoc = snap.docs[i];
+      const data = sDoc.data();
+      const assignedFiles: any[] = data.assignedFiles || [];
+      const studentTrackKey = trackToKey(data.track || null);
+
+      if (assignedFiles.length === 0 && !data.assignedFile) continue;
+
+      const filtered = assignedFiles.filter((file: any) => {
+        let isThisTrack = false;
+        if (track === 'unified130') {
+          isThisTrack = file.track === 'unified130' || (file as any).is130 === true || unified130IdSet.has(file.id);
+        } else {
+          isThisTrack = file.track === track || (!file.track && studentTrackKey === track);
+        }
+        return !isThisTrack;
+      });
+
+      const removedCount = assignedFiles.length - filtered.length;
+      const lastAssignedIsThisTrack =
+        data.assignedFile &&
+        (track === 'unified130'
+          ? data.assignedFile.track === 'unified130' || (data.assignedFile as any).is130 === true || unified130IdSet.has(data.assignedFile.id)
+          : data.assignedFile.track === track || (!data.assignedFile.track && studentTrackKey === track));
+
+      if (removedCount > 0 || lastAssignedIsThisTrack) {
+        removedFilesCount += removedCount > 0 ? removedCount : 1;
+        const updateData: any = {
+          assignedFiles: filtered,
+          updatedAt: serverTimestamp()
+        };
+        if (filtered.length > 0) {
+          updateData.assignedFile = filtered[filtered.length - 1];
+        } else {
+          updateData.assignedFile = null;
+        }
+
+        batch.update(sDoc.ref, updateData);
+        updatedStudents++;
+        batchCount++;
+
+        if (batchCount >= MAX_BATCH) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+        }
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, total);
+      }
+    }
+
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+
+    logger.log(`Revoked all files for ${track} from ${updatedStudents} students (${removedFilesCount} files)`);
+    return { updatedStudents, removedFilesCount };
+  } catch (error: any) {
+    logger.error('Error revoking all distributed files for track:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء سحب ملفات المسار من الطلاب');
+  }
+};
+
+export interface StudentWithAssignedFiles {
+  id: string;
+  fullNameArabic: string;
+  phone?: string;
+  nationalID?: string;
+  track?: string;
+  assignedFiles: AssignedFile[];
+}
+
+/**
+ * جلب قائمة الطلاب الذين لديهم ملفات مسندة حالياً مع إمكانية التصفية حسب المسار
+ */
+export const getStudentsWithAssignedFiles = async (
+  trackFilter?: TrackKey | 'unified130'
+): Promise<StudentWithAssignedFiles[]> => {
+  try {
+    const studentsRef = collection(db, 'students');
+    const q = query(studentsRef, where('assignedFile', '!=', null));
+    const snap = await getDocs(q);
+
+    let unified130IdSet = new Set<string>();
+    if (trackFilter === 'unified130') {
+      try {
+        const uFiles = await get130UnifiedFiles();
+        unified130IdSet = new Set(uFiles.map((f) => f.id));
+      } catch {
+        // ignore
+      }
+    }
+
+    const students: StudentWithAssignedFiles[] = [];
+
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      let assignedFiles: AssignedFile[] = Array.isArray(data.assignedFiles) ? data.assignedFiles : [];
+      if (assignedFiles.length === 0 && data.assignedFile) {
+        assignedFiles.push(data.assignedFile);
+      }
+
+      if (assignedFiles.length === 0) return;
+
+      const studentTrackKey = trackToKey(data.track || null);
+
+      if (trackFilter) {
+        if (trackFilter === 'unified130') {
+          assignedFiles = assignedFiles.filter(
+            (f) => f.track === 'unified130' || (f as any).is130 === true || unified130IdSet.has(f.id)
+          );
+        } else {
+          assignedFiles = assignedFiles.filter(
+            (f) => f.track === trackFilter || (!f.track && studentTrackKey === trackFilter)
+          );
+        }
+      }
+
+      if (assignedFiles.length > 0) {
+        students.push({
+          id: docSnap.id,
+          fullNameArabic: data.fullNameArabic || 'طالب بدون اسم',
+          phone: data.phone,
+          nationalID: data.nationalID,
+          track: data.track,
+          assignedFiles
+        });
+      }
+    });
+
+    return students;
+  } catch (error: any) {
+    logger.error('Error getting students with assigned files:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء جلب بيانات الطلاب');
+  }
+};
+
+/**
+ * سحب ملف محدد من حساب طالب واحد بالاسم
+ */
+export const revokeSingleFileFromStudent = async (
+  studentId: string,
+  fileId: string
+): Promise<void> => {
+  try {
+    const studentRef = doc(db, 'students', studentId);
+    const snap = await getDoc(studentRef);
+    if (!snap.exists()) throw new Error('لم يتم العثور على حساب الطالب');
+
+    const data = snap.data();
+    const assignedFiles: AssignedFile[] = Array.isArray(data.assignedFiles) ? data.assignedFiles : [];
+    const filtered = assignedFiles.filter((f) => f.id !== fileId);
+
+    const updateData: any = {
+      assignedFiles: filtered,
+      updatedAt: new Date().toISOString()
+    };
+    if (filtered.length > 0) {
+      updateData.assignedFile = filtered[filtered.length - 1];
+    } else {
+      updateData.assignedFile = null;
+    }
+
+    await updateStudentData(studentId, updateData);
+  } catch (error: any) {
+    logger.error('Error revoking single file from student:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء سحب الملف من الطالب');
+  }
+};
+
+/**
+ * سحب كافة الملفات من حساب طالب واحد بالاسم
+ */
+export const revokeAllFilesFromStudent = async (
+  studentId: string,
+  trackFilter?: TrackKey | 'unified130'
+): Promise<number> => {
+  try {
+    const studentRef = doc(db, 'students', studentId);
+    const snap = await getDoc(studentRef);
+    if (!snap.exists()) throw new Error('لم يتم العثور على حساب الطالب');
+
+    const data = snap.data();
+    const assignedFiles: AssignedFile[] = Array.isArray(data.assignedFiles) ? data.assignedFiles : [];
+
+    let filtered: AssignedFile[] = [];
+    if (trackFilter) {
+      const studentTrackKey = trackToKey(data.track || null);
+      let unified130IdSet = new Set<string>();
+      if (trackFilter === 'unified130') {
+        try {
+          const uFiles = await get130UnifiedFiles();
+          unified130IdSet = new Set(uFiles.map((f) => f.id));
+        } catch {
+          // ignore
+        }
+      }
+
+      filtered = assignedFiles.filter((f) => {
+        if (trackFilter === 'unified130') {
+          return !(f.track === 'unified130' || (f as any).is130 === true || unified130IdSet.has(f.id));
+        } else {
+          return !(f.track === trackFilter || (!f.track && studentTrackKey === trackFilter));
+        }
+      });
+    }
+
+    const removedCount = assignedFiles.length - filtered.length;
+
+    const updateData: any = {
+      assignedFiles: filtered,
+      updatedAt: new Date().toISOString()
+    };
+    if (filtered.length > 0) {
+      updateData.assignedFile = filtered[filtered.length - 1];
+    } else {
+      updateData.assignedFile = null;
+    }
+
+    await updateStudentData(studentId, updateData);
+    return removedCount > 0 ? removedCount : assignedFiles.length;
+  } catch (error: any) {
+    logger.error('Error revoking all files from student:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء سحب كافة ملفات الطالب');
   }
 };
 

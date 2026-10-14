@@ -3,7 +3,7 @@ export interface AssignedFile {
   name: string; // اسم الملف الأصلي
   customName?: string; // الاسم المخصص من الأدمن
   url: string;
-  track: 'track1' | 'track2' | 'track3';
+  track?: 'track1' | 'track2' | 'track3' | 'unified130' | string;
   assignedAt?: string;
 }
 
@@ -133,10 +133,13 @@ export interface FeesServiceConfig {
   };
 }
 
+export type AssignmentDeliveryType = 'personalized' | 'plain' | 'unified';
+
 export interface AssignmentItem {
   id: string;
   name: string;
   price: number;
+  deliveryType?: AssignmentDeliveryType;
 }
 
 export interface AssignmentsServiceConfig {

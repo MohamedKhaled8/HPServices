@@ -12,6 +12,7 @@ import {
   getCurrentUser,
   TrackKey,
   ServiceTier,
+  DistributeTargetOptions,
   upload130UnifiedFile,
   get130UnifiedFiles,
   create130UnifiedFolder,
@@ -21,7 +22,15 @@ import {
   delete130UnifiedFiles,
   distribute130UnifiedFiles,
   removeAssignedFilesFromAllStudents,
-  AssignmentFolderMeta
+  AssignmentFolderMeta,
+  getDistributedFilesForTrack,
+  revokeDistributedFileFromStudents,
+  revokeAllDistributedFilesForTrack,
+  DistributedFileSummary,
+  getStudentsWithAssignedFiles,
+  revokeSingleFileFromStudent,
+  revokeAllFilesFromStudent,
+  StudentWithAssignedFiles
 } from '../services/firebaseService';
 import { AssignmentsServiceConfig, AssignmentItem } from '../types';
 import {
@@ -36,7 +45,16 @@ import {
   CheckCircle,
   Trash2,
   Edit2,
-  Check
+  Check,
+  RotateCcw,
+  Clock,
+  Calendar,
+  Users,
+  FileText,
+  AlertTriangle,
+  Search,
+  User,
+  UserX
 } from 'lucide-react';
 import '../styles/AssignmentsManagementPage.css';
 
@@ -111,6 +129,54 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const [unified130Folders, setUnified130Folders] = useState<AssignmentFolderMeta[]>([]);
   const [unified130CurrentPath, setUnified130CurrentPath] = useState('');
   const [newUnified130FolderName, setNewUnified130FolderName] = useState('');
+
+  // Persistent distribution progress state (survives tab switching and navigation)
+  const [distProgress, setDistProgress] = useState<{
+    active: boolean;
+    status: 'running' | 'completed' | 'error';
+    title: string;
+    current: number;
+    total: number;
+    percent: number;
+    studentName?: string;
+    updatedAt: number;
+    error?: string;
+  } | null>(() => {
+    try {
+      const raw = localStorage.getItem('hp_assignment_dist_progress_v1');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && Date.now() - (parsed.updatedAt || 0) < 15 * 60 * 1000) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  const updateProgress = (info: {
+    active: boolean;
+    status: 'running' | 'completed' | 'error';
+    title: string;
+    current: number;
+    total: number;
+    percent: number;
+    studentName?: string;
+    updatedAt: number;
+    error?: string;
+  } | null) => {
+    setDistProgress(info);
+    try {
+      if (info) {
+        localStorage.setItem('hp_assignment_dist_progress_v1', JSON.stringify(info));
+      } else {
+        localStorage.removeItem('hp_assignment_dist_progress_v1');
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const readCachedTrackFolders = (): Record<TrackKey, AssignmentFolderMeta[]> => {
     try {
@@ -197,6 +263,39 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     track?: TrackKey;
     folderPath: string;
   } | null>(null);
+
+  // File Recall Modal state (سحب الملفات الموزعة)
+  const [recallModal, setRecallModal] = useState<{
+    open: boolean;
+    track: TrackKey | 'unified130';
+    tab: 'by_file' | 'by_student';
+    loading: boolean;
+    files: DistributedFileSummary[];
+    students: StudentWithAssignedFiles[];
+    selectedStudent: StudentWithAssignedFiles | null;
+    studentSearchQuery: string;
+    revokingId: string | null;
+    isRevokingAll: boolean;
+    revokingStudentFileId: string | null;
+    isRevokingStudentAll: boolean;
+  }>({
+    open: false,
+    track: 'track1',
+    tab: 'by_file',
+    loading: false,
+    files: [],
+    students: [],
+    selectedStudent: null,
+    studentSearchQuery: '',
+    revokingId: null,
+    isRevokingAll: false,
+    revokingStudentFileId: null,
+    isRevokingStudentAll: false
+  });
+
+  const [confirmRevokeAllOpen, setConfirmRevokeAllOpen] = useState(false);
+  const [confirmRevokeSingle, setConfirmRevokeSingle] = useState<DistributedFileSummary | null>(null);
+  const [confirmRevokeStudentAllOpen, setConfirmRevokeStudentAllOpen] = useState(false);
 
   // Animation states
   const [showSnackbar, setShowSnackbar] = useState(false);
@@ -465,7 +564,22 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     }
   };
 
-  const handleDistribute = async (tier: ServiceTier) => {
+  const handleDistribute = async (tierOrTarget: ServiceTier | DistributeTargetOptions) => {
+    const targetTrack = openedTrack || activeTrackFolder;
+    const trackName = targetTrack === 'track1' ? 'المسار الأول' : targetTrack === 'track2' ? 'المسار الثاني' : 'المسار الثالث';
+
+    let tierLabel = 'الخدمة المختارة';
+    if (typeof tierOrTarget === 'string') {
+      tierLabel = tierOrTarget === '500' ? 'مشتركي الـ 500 (حل وتسليم)' : 'مشتركي الـ 300 (حل فقط)';
+    } else if (tierOrTarget.assignmentName) {
+      const modeStr = tierOrTarget.namingMode === 'plain' ? 'حل فقط' : 'حل وتسليم';
+      tierLabel = `"${tierOrTarget.assignmentName}" (${modeStr})`;
+    } else if (tierOrTarget.tier === '500') {
+      tierLabel = 'مشتركي الـ 500 (حل وتسليم)';
+    } else if (tierOrTarget.tier === '300') {
+      tierLabel = 'مشتركي الـ 300 (حل فقط)';
+    }
+
     try {
       setShowTierModal(false);
       setAssignmentsMessage(null);
@@ -475,17 +589,56 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       setShowPaperPlane(true);
       setTimeout(() => setShowPaperPlane(false), 1500);
 
-      const targetTrack = openedTrack || activeTrackFolder;
       const selectedIds = Array.from(selectedFileIds[targetTrack] || []);
       const visibleIds = getVisibleTrackFiles(targetTrack).map((f: any) => f.id);
       const ids = selectedIds.length > 0 ? selectedIds : visibleIds;
       if (ids.length === 0) {
         throw new Error('لا توجد ملفات داخل المجلد الحالي للإرسال');
       }
-      await distributeAssignmentsForTrack(targetTrack, ids, tier);
 
-      const tierLabel = tier === '500' ? 'مشتركي الـ 500 (حل وتسليم)' : 'مشتركي الـ 300 (حل فقط)';
-      showSnackbarNotification(`تم إرسال ${ids.length} ملف لـ ${tierLabel} بنجاح`, 'success');
+      // Initial progress banner
+      updateProgress({
+        active: true,
+        status: 'running',
+        title: `${tierLabel} — ${trackName}`,
+        current: 0,
+        total: 0,
+        percent: 0,
+        studentName: 'جاري فحص الطلبات...',
+        updatedAt: Date.now()
+      });
+
+      const result = await distributeAssignmentsForTrack(
+        targetTrack,
+        ids,
+        tierOrTarget,
+        (current, total, studentName) => {
+          const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+          updateProgress({
+            active: true,
+            status: 'running',
+            title: `${tierLabel} — ${trackName}`,
+            current,
+            total,
+            percent,
+            studentName: `جاري الإرسال لـ: ${studentName}`,
+            updatedAt: Date.now()
+          });
+        }
+      );
+
+      // Completed successfully
+      updateProgress({
+        active: true,
+        status: 'completed',
+        title: `${tierLabel} — ${trackName}`,
+        current: result.sent,
+        total: result.total,
+        percent: 100,
+        updatedAt: Date.now()
+      });
+
+      showSnackbarNotification(`تم إرسال ${ids.length} ملف لـ ${tierLabel} بنجاح (${result.sent} طالب)`, 'success');
 
       // Clear selection
       setSelectedFileIds(prev => ({
@@ -493,6 +646,16 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         [targetTrack]: new Set()
       }));
     } catch (error: any) {
+      updateProgress({
+        active: true,
+        status: 'error',
+        title: `${tierLabel} — ${trackName}`,
+        current: 0,
+        total: 0,
+        percent: 0,
+        error: error.message || 'حدث خطأ أثناء التوزيع',
+        updatedAt: Date.now()
+      });
       showSnackbarNotification(error.message || 'حدث خطأ أثناء توزيع الملفات', 'error');
     } finally {
       setIsDistributingAssignments(false);
@@ -516,6 +679,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   };
 
   const handle130Distribute = async () => {
+    const label = 'ملفات موحدة (التربية العملي)';
     try {
       setIsDistributing130(true);
       setShowPaperPlane(true);
@@ -527,10 +691,59 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       if (ids.length === 0) {
         throw new Error('لا توجد ملفات داخل المجلد الحالي للإرسال');
       }
-      await distribute130UnifiedFiles(ids.length > 0 ? ids : undefined);
-      showSnackbarNotification('تم إرسال الملفات الموحدة لمشتركي الـ 130 بنجاح', 'success');
+
+      updateProgress({
+        active: true,
+        status: 'running',
+        title: label,
+        current: 0,
+        total: 0,
+        percent: 0,
+        studentName: 'جاري فحص الطلبات...',
+        updatedAt: Date.now()
+      });
+
+      const result = await distribute130UnifiedFiles(
+        ids.length > 0 ? ids : undefined,
+        undefined,
+        (current, total, studentName) => {
+          const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+          updateProgress({
+            active: true,
+            status: 'running',
+            title: label,
+            current,
+            total,
+            percent,
+            studentName: `جاري الإرسال لـ: ${studentName}`,
+            updatedAt: Date.now()
+          });
+        }
+      );
+
+      updateProgress({
+        active: true,
+        status: 'completed',
+        title: label,
+        current: result.sent,
+        total: result.total,
+        percent: 100,
+        updatedAt: Date.now()
+      });
+
+      showSnackbarNotification(`تم إرسال الملفات الموحدة بنجاح (${result.sent} طالب)`, 'success');
       setSelected130FileIds(new Set());
     } catch (error: any) {
+      updateProgress({
+        active: true,
+        status: 'error',
+        title: label,
+        current: 0,
+        total: 0,
+        percent: 0,
+        error: error.message || 'حدث خطأ أثناء التوزيع',
+        updatedAt: Date.now()
+      });
       showSnackbarNotification(error.message || 'حدث خطأ أثناء التوزيع', 'error');
     } finally {
       setIsDistributing130(false);
@@ -558,6 +771,149 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     const ids = Array.from(selectedFileIds[track] || []);
     if (ids.length === 0) return;
     setDeleteConfirmModal({ open: true, fileIds: ids, source: 'track', track });
+  };
+
+  // ============================================
+  // سحب وإلغاء توزيع الملفات من الطلاب (Recall Handlers)
+  // ============================================
+
+  const handleOpenRecallModal = async (track: TrackKey | 'unified130') => {
+    setRecallModal({
+      open: true,
+      track,
+      tab: 'by_file',
+      loading: true,
+      files: [],
+      students: [],
+      selectedStudent: null,
+      studentSearchQuery: '',
+      revokingId: null,
+      isRevokingAll: false,
+      revokingStudentFileId: null,
+      isRevokingStudentAll: false
+    });
+
+    try {
+      const [distributed, students] = await Promise.all([
+        getDistributedFilesForTrack(track),
+        getStudentsWithAssignedFiles(track)
+      ]);
+      setRecallModal((prev) => ({
+        ...prev,
+        loading: false,
+        files: distributed,
+        students
+      }));
+    } catch (err: any) {
+      setRecallModal((prev) => ({ ...prev, loading: false }));
+      showSnackbarNotification(err.message || 'حدث خطأ أثناء فحص الملفات الموزعة', 'error');
+    }
+  };
+
+  const handleRevokeSingleFile = async (item: DistributedFileSummary) => {
+    try {
+      setConfirmRevokeSingle(null);
+      setRecallModal((prev) => ({ ...prev, revokingId: item.fileId }));
+
+      const count = await revokeDistributedFileFromStudents(item.fileId, item.studentIds);
+
+      setRecallModal((prev) => ({
+        ...prev,
+        revokingId: null,
+        files: prev.files.filter((f) => f.fileId !== item.fileId),
+        students: prev.students.map((s) => ({
+          ...s,
+          assignedFiles: s.assignedFiles.filter((f) => f.id !== item.fileId)
+        })).filter((s) => s.assignedFiles.length > 0)
+      }));
+
+      showSnackbarNotification(`تم سحب ملف "${item.fileName}" بنجاح من حسابات ${count} طالب`, 'success');
+    } catch (err: any) {
+      setRecallModal((prev) => ({ ...prev, revokingId: null }));
+      showSnackbarNotification(err.message || 'حدث خطأ أثناء سحب الملف', 'error');
+    }
+  };
+
+  const handleRevokeAllFiles = async () => {
+    try {
+      setConfirmRevokeAllOpen(false);
+      setRecallModal((prev) => ({ ...prev, isRevokingAll: true }));
+
+      const result = await revokeAllDistributedFilesForTrack(recallModal.track);
+
+      setRecallModal((prev) => ({
+        ...prev,
+        isRevokingAll: false,
+        files: [],
+        students: [],
+        selectedStudent: null
+      }));
+
+      showSnackbarNotification(`تم سحب كافة ملفات المسار بنجاح من ${result.updatedStudents} طالب`, 'success');
+    } catch (err: any) {
+      setRecallModal((prev) => ({ ...prev, isRevokingAll: false }));
+      showSnackbarNotification(err.message || 'حدث خطأ أثناء سحب جميع الملفات', 'error');
+    }
+  };
+
+  const handleRevokeSingleFileFromStudent = async (studentId: string, fileId: string, fileName: string) => {
+    try {
+      setRecallModal((prev) => ({ ...prev, revokingStudentFileId: fileId }));
+      await revokeSingleFileFromStudent(studentId, fileId);
+
+      setRecallModal((prev) => {
+        const updatedStudents = prev.students
+          .map((s) => {
+            if (s.id !== studentId) return s;
+            return {
+              ...s,
+              assignedFiles: s.assignedFiles.filter((f) => f.id !== fileId)
+            };
+          })
+          .filter((s) => s.assignedFiles.length > 0);
+
+        let updatedSelected = prev.selectedStudent;
+        if (updatedSelected && updatedSelected.id === studentId) {
+          const newFiles = updatedSelected.assignedFiles.filter((f) => f.id !== fileId);
+          updatedSelected = newFiles.length > 0 ? { ...updatedSelected, assignedFiles: newFiles } : null;
+        }
+
+        return {
+          ...prev,
+          revokingStudentFileId: null,
+          students: updatedStudents,
+          selectedStudent: updatedSelected
+        };
+      });
+
+      showSnackbarNotification(`تم سحب ملف "${fileName}" من الطالب بنجاح`, 'success');
+    } catch (err: any) {
+      setRecallModal((prev) => ({ ...prev, revokingStudentFileId: null }));
+      showSnackbarNotification(err.message || 'حدث خطأ أثناء سحب الملف من الطالب', 'error');
+    }
+  };
+
+  const handleRevokeAllFilesFromStudent = async (studentId: string, studentName: string) => {
+    try {
+      setConfirmRevokeStudentAllOpen(false);
+      setRecallModal((prev) => ({ ...prev, isRevokingStudentAll: true }));
+      const removedCount = await revokeAllFilesFromStudent(studentId, recallModal.track);
+
+      setRecallModal((prev) => {
+        const updatedStudents = prev.students.filter((s) => s.id !== studentId);
+        return {
+          ...prev,
+          isRevokingStudentAll: false,
+          students: updatedStudents,
+          selectedStudent: null
+        };
+      });
+
+      showSnackbarNotification(`تم سحب كافة ملفات الطالب (${studentName}) بنجاح (${removedCount} ملف)`, 'success');
+    } catch (err: any) {
+      setRecallModal((prev) => ({ ...prev, isRevokingStudentAll: false }));
+      showSnackbarNotification(err.message || 'حدث خطأ أثناء سحب ملفات الطالب', 'error');
+    }
   };
 
   // حذف ملف واحد من track مع modal
@@ -1313,6 +1669,16 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                         </>
                       )}
                     </button>
+
+                    <button
+                      type="button"
+                      className="revoke-button"
+                      onClick={() => handleOpenRecallModal(openedTrack)}
+                      title="سحب الملفات التي تم إرسالها للطلاب في هذا المسار"
+                    >
+                      <RotateCcw size={16} />
+                      سحب الملفات
+                    </button>
                   </div>
                 </div>
 
@@ -1591,6 +1957,15 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                     <><Trash2 size={16} /> مسح المحدد</>
                   )}
                 </button>
+                <button
+                  type="button"
+                  className="revoke-button"
+                  onClick={() => handleOpenRecallModal('unified130')}
+                  title="سحب الملفات الموحدة التي تم إرسالها للطلاب"
+                >
+                  <RotateCcw size={16} />
+                  سحب الملفات
+                </button>
               </div>
             </div>
             <div className="track-files-body">
@@ -1770,32 +2145,594 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       {showTierModal && (
         <div className="tier-modal-overlay" onClick={() => setShowTierModal(false)}>
           <div className="tier-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>اختر نوع الخدمة للتوزيع</h3>
-            <p style={{ color: '#64748B', fontSize: '14px', marginBottom: '20px' }}>
-              سيتم إرسال الملفات المحددة للطلاب المشتركين في الخدمة المختارة فقط
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <h3 style={{ margin: 0 }}>اختر باقة التوزيع لإرسال الملفات</h3>
+              <button
+                type="button"
+                onClick={() => setShowTierModal(false)}
+                style={{
+                  background: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '28px',
+                  height: '28px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#64748b'
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p style={{ color: '#64748B', fontSize: '13px', marginBottom: '14px', textAlign: 'right' }}>
+              اختر الخدمة المستهدفة وسيتم إسناد الملفات المحددة للطلاب المشتركين فيها تلقائياً.
             </p>
+
+            {/* الخيارات السريعة المعتادة (Side-by-Side Grid) */}
             <div className="tier-modal-buttons">
               <button
+                type="button"
                 className="tier-button tier-500"
                 onClick={() => handleDistribute('500')}
               >
-                <strong>500 جنيه — حل وتسليم</strong>
-                <span>الملف باسم الطالب + اسم الملف</span>
+                <strong>حل وتسليم (500 ج.م)</strong>
+                <span>باسم الطالب + اسم الملف</span>
               </button>
               <button
+                type="button"
                 className="tier-button tier-300"
                 onClick={() => handleDistribute('300')}
               >
-                <strong>300 جنيه — حل فقط</strong>
-                <span>الملف باسم الملف فقط</span>
+                <strong>حل فقط (300 ج.م)</strong>
+                <span>باسم الملف الأصلي</span>
               </button>
             </div>
+
+            {/* التكليفات المضافة حالياً في إعدادات الخدمة (ديناميكية لأي تكليف جديد) */}
+            {assignmentsConfig?.assignments && assignmentsConfig.assignments.length > 0 && (
+              <div className="tier-dynamic-section">
+                <div className="tier-dynamic-title">
+                  أو اختر من التكليفات المعرّفة حالياً في لوحة الإدارة:
+                </div>
+                <div className="tier-dynamic-list">
+                  {assignmentsConfig.assignments.map((assignment) => (
+                    <div key={assignment.id} className="tier-dynamic-item">
+                      <div className="tier-item-info">
+                        <span className="tier-item-name" title={assignment.name}>{assignment.name}</span>
+                        <span className="tier-item-price">{assignment.price} ج.م</span>
+                      </div>
+                      <div className="tier-item-actions">
+                        <button
+                          type="button"
+                          className="tier-action-btn personalized"
+                          onClick={() => handleDistribute({ assignmentId: assignment.id, assignmentName: assignment.name, price: assignment.price, namingMode: 'personalized' })}
+                          title="إرسال الملف مخصصاً باسم كل طالب"
+                        >
+                          حل وتسليم
+                        </button>
+                        <button
+                          type="button"
+                          className="tier-action-btn plain"
+                          onClick={() => handleDistribute({ assignmentId: assignment.id, assignmentName: assignment.name, price: assignment.price, namingMode: 'plain' })}
+                          title="إرسال الملف باسمه الأصلي فقط"
+                        >
+                          حل فقط (PDF)
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button className="tier-cancel" onClick={() => setShowTierModal(false)}>
-              إلغاء
+              إغلاق النافذة
             </button>
           </div>
         </div>
       )}
+
+      {/* نافذة سحب الملفات الموزعة على الطلاب */}
+      {recallModal.open && (
+        <div
+          className="recall-modal-overlay"
+          onClick={() => !recallModal.isRevokingAll && setRecallModal((prev) => ({ ...prev, open: false }))}
+        >
+          <div className="recall-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="recall-modal-header">
+              <div className="recall-modal-title-wrap">
+                <div className="recall-modal-icon-badge">
+                  <RotateCcw size={20} />
+                </div>
+                <div>
+                  <h3>
+                    سحب الملفات الموزعة —{' '}
+                    {recallModal.track === 'unified130'
+                      ? 'ملفات التربية العملي (130)'
+                      : recallModal.track === 'track1'
+                      ? 'المسار الأول'
+                      : recallModal.track === 'track2'
+                      ? 'المسار الثاني'
+                      : 'المسار الثالث'}
+                  </h3>
+                  <span>عرض تاريخ وساعة إرسال كل ملف وسحبه من حسابات الطلاب</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="recall-close-btn"
+                disabled={recallModal.isRevokingAll || recallModal.isRevokingStudentAll}
+                onClick={() => setRecallModal((prev) => ({ ...prev, open: false }))}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* التبويبات العلوية */}
+            <div className="recall-modal-tabs">
+              <button
+                type="button"
+                className={`recall-tab-btn ${recallModal.tab === 'by_file' ? 'active' : ''}`}
+                onClick={() => setRecallModal((prev) => ({ ...prev, tab: 'by_file' }))}
+              >
+                <Clock size={15} />
+                سحب حسب التكليفات الموزعة ({recallModal.files.length})
+              </button>
+              <button
+                type="button"
+                className={`recall-tab-btn ${recallModal.tab === 'by_student' ? 'active' : ''}`}
+                onClick={() => setRecallModal((prev) => ({ ...prev, tab: 'by_student' }))}
+              >
+                <Users size={15} />
+                سحب من طالب محدد ({recallModal.students.length})
+              </button>
+            </div>
+
+            {/* محتوى تبويب 1: سحب حسب التكليفات الموزعة (بالتاريخ والساعة) */}
+            {recallModal.tab === 'by_file' && (
+              <>
+                <div className="recall-top-bar">
+                  <div className="recall-stats-badge">
+                    <FileText size={15} />
+                    <span>الملفات المسندة حالياً: {recallModal.files.length}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="recall-all-btn"
+                    disabled={
+                      recallModal.loading ||
+                      recallModal.files.length === 0 ||
+                      recallModal.isRevokingAll ||
+                      Boolean(recallModal.revokingId)
+                    }
+                    onClick={() => setConfirmRevokeAllOpen(true)}
+                  >
+                    <Trash2 size={15} />
+                    سحب كل ملفات المسار
+                  </button>
+                </div>
+
+                <div className="recall-modal-body">
+                  {recallModal.loading ? (
+                    <div className="recall-loading-wrap">
+                      <Loader2 className="spinning-loader-large" size={36} color="#e11d48" />
+                      <p>جاري فحص الملفات الموزعة على الطلاب في هذا المسار...</p>
+                    </div>
+                  ) : recallModal.files.length === 0 ? (
+                    <div className="recall-empty-wrap">
+                      <CheckCircle size={44} color="#10b981" />
+                      <h4>لا توجد ملفات موزعة على طلاب هذا المسار حالياً</h4>
+                      <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
+                        عند إرسال تكليفات للطلاب ستظهر هنا مع تواريخ وساعات الإرسال مع إمكانية سحبها بأي وقت.
+                      </p>
+                    </div>
+                  ) : (
+                    recallModal.files.map((item) => (
+                      <div key={item.fileId} className="recall-file-card">
+                        <div className="recall-file-main">
+                          <div className="recall-file-icon">
+                            <FileText size={20} />
+                          </div>
+                          <div className="recall-file-details">
+                            <span className="recall-file-name" title={item.fileName}>
+                              {item.fileName}
+                            </span>
+                            <div className="recall-file-meta-badges">
+                              <span className="recall-badge time" title="تاريخ ووقت الإرسال">
+                                <Clock size={12} />
+                                {item.formattedDate} — الساعة {item.formattedTime}
+                              </span>
+                              <span className="recall-badge students" title="عدد الطلاب المستلمين">
+                                <Users size={12} />
+                                {item.studentCount} طالب
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="recall-single-btn"
+                          disabled={Boolean(recallModal.revokingId) || recallModal.isRevokingAll}
+                          onClick={() => setConfirmRevokeSingle(item)}
+                        >
+                          {recallModal.revokingId === item.fileId ? (
+                            <>
+                              <Loader2 size={14} className="spinning-loader-small" />
+                              جاري السحب...
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw size={14} />
+                              سحب الملف
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* محتوى تبويب 2: سحب من طالب محدد (بحث بالاسم) */}
+            {recallModal.tab === 'by_student' && (
+              <div className="recall-modal-body" style={{ paddingTop: '16px' }}>
+                {/* شريط البحث بالاسم أو الهاتف */}
+                <div className="recall-student-search-box">
+                  <Search size={18} color="#94a3b8" />
+                  <input
+                    type="text"
+                    placeholder="اكتب اسم الطالب أو رقم الهاتف أو الرقم القومي للبحث..."
+                    value={recallModal.studentSearchQuery}
+                    onChange={(e) =>
+                      setRecallModal((prev) => ({
+                        ...prev,
+                        studentSearchQuery: e.target.value,
+                        selectedStudent: null
+                      }))
+                    }
+                  />
+                  {recallModal.studentSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRecallModal((prev) => ({ ...prev, studentSearchQuery: '', selectedStudent: null }))
+                      }
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8' }}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {recallModal.loading ? (
+                  <div className="recall-loading-wrap">
+                    <Loader2 className="spinning-loader-large" size={36} color="#e11d48" />
+                    <p>جاري تحميل قائمة الطلاب وتكليفاتهم...</p>
+                  </div>
+                ) : recallModal.selectedStudent ? (
+                  /* عرض تفاصيل الطالب المحدد وملفاته */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div className="recall-selected-student-header">
+                      <div>
+                        <button
+                          type="button"
+                          className="recall-back-link"
+                          onClick={() => setRecallModal((prev) => ({ ...prev, selectedStudent: null }))}
+                        >
+                          <ArrowRight size={14} />
+                          رجوع لقائمة الطلاب
+                        </button>
+                        <h4 style={{ margin: '4px 0 2px', fontSize: '15px', color: '#0f172a' }}>
+                          {recallModal.selectedStudent.fullNameArabic}
+                        </h4>
+                        <span style={{ fontSize: '12px', color: '#64748b' }}>
+                          {recallModal.selectedStudent.phone && `هاتف: ${recallModal.selectedStudent.phone} • `}
+                          إجمالي الملفات: {recallModal.selectedStudent.assignedFiles.length}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="recall-all-btn"
+                        disabled={
+                          recallModal.isRevokingStudentAll ||
+                          Boolean(recallModal.revokingStudentFileId) ||
+                          recallModal.selectedStudent.assignedFiles.length === 0
+                        }
+                        onClick={() => setConfirmRevokeStudentAllOpen(true)}
+                      >
+                        <UserX size={15} />
+                        سحب كافة ملفات الطالب
+                      </button>
+                    </div>
+
+                    {recallModal.selectedStudent.assignedFiles.length === 0 ? (
+                      <div className="recall-empty-wrap">
+                        <CheckCircle size={36} color="#10b981" />
+                        <p style={{ margin: 0, fontSize: '14px' }}>تم سحب كافة الملفات من هذا الطالب بنجاح.</p>
+                      </div>
+                    ) : (
+                      recallModal.selectedStudent.assignedFiles.map((f, idx) => {
+                        let dateStr = '';
+                        let timeStr = '';
+                        try {
+                          if (f.assignedAt) {
+                            const d = new Date(f.assignedAt);
+                            dateStr = d.toLocaleDateString('ar-EG', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            });
+                            timeStr = d.toLocaleTimeString('ar-EG', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            });
+                          }
+                        } catch {
+                          // ignore
+                        }
+
+                        return (
+                          <div key={f.id || idx} className="recall-file-card">
+                            <div className="recall-file-main">
+                              <div className="recall-file-icon">
+                                <FileText size={20} />
+                              </div>
+                              <div className="recall-file-details">
+                                <span className="recall-file-name" title={f.customName || f.name}>
+                                  {f.customName || f.name}
+                                </span>
+                                {f.customName && f.name && f.customName !== f.name && (
+                                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                    الملف الأصلي: {f.name}
+                                  </span>
+                                )}
+                                {f.assignedAt && (
+                                  <div className="recall-file-meta-badges">
+                                    <span className="recall-badge time">
+                                      <Clock size={12} />
+                                      {dateStr} {timeStr ? `— ${timeStr}` : ''}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="recall-single-btn"
+                              disabled={
+                                recallModal.isRevokingStudentAll ||
+                                recallModal.revokingStudentFileId === f.id
+                              }
+                              onClick={() =>
+                                handleRevokeSingleFileFromStudent(
+                                  recallModal.selectedStudent!.id,
+                                  f.id,
+                                  f.customName || f.name
+                                )
+                              }
+                            >
+                              {recallModal.revokingStudentFileId === f.id ? (
+                                <>
+                                  <Loader2 size={14} className="spinning-loader-small" />
+                                  جاري السحب...
+                                </>
+                              ) : (
+                                <>
+                                  <RotateCcw size={14} />
+                                  سحب الملف
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : (
+                  /* عرض قائمة الطلاب مع التصفية */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {(() => {
+                      const queryText = recallModal.studentSearchQuery.trim().toLowerCase();
+                      const filtered = recallModal.students.filter((s) => {
+                        if (!queryText) return true;
+                        return (
+                          s.fullNameArabic.toLowerCase().includes(queryText) ||
+                          (s.phone && s.phone.includes(queryText)) ||
+                          (s.nationalID && s.nationalID.includes(queryText))
+                        );
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="recall-empty-wrap">
+                            <Search size={36} color="#94a3b8" />
+                            <h4>لا يوجد طلاب مطابقين للبحث</h4>
+                            <p style={{ fontSize: '13px', margin: 0 }}>
+                              {queryText
+                                ? `لم نجد طالباً يحمل الاسم "${recallModal.studentSearchQuery}" ولديه ملفات مسندة.`
+                                : 'لا يوجد طلاب لديهم ملفات مسندة في هذا المسار حالياً.'}
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return filtered.map((s) => (
+                        <div
+                          key={s.id}
+                          className="recall-student-item"
+                          onClick={() => setRecallModal((prev) => ({ ...prev, selectedStudent: s }))}
+                        >
+                          <div className="recall-student-info-main">
+                            <div className="recall-student-avatar">
+                              <User size={18} />
+                            </div>
+                            <div className="recall-student-names">
+                              <span className="recall-student-name">{s.fullNameArabic}</span>
+                              <span className="recall-student-meta">
+                                {s.phone && `📱 ${s.phone} `}
+                                {s.nationalID && `• بطاقة: ${s.nationalID}`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span className="recall-badge students">
+                              {s.assignedFiles.length} ملف
+                            </span>
+                            <span style={{ fontSize: '12px', color: '#e11d48', fontWeight: 700 }}>
+                              عرض الملفات ←
+                            </span>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* تأكيد سحب ملف واحد */}
+      {confirmRevokeSingle && (
+        <div className="recall-modal-overlay" onClick={() => setConfirmRevokeSingle(null)}>
+          <div className="delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-confirm-icon" style={{ background: '#fee2e2', color: '#ef4444' }}>
+              <AlertTriangle size={32} />
+            </div>
+            <h3 style={{ margin: '0 0 10px', fontSize: '18px', fontWeight: 800 }}>تأكيد سحب الملف</h3>
+            <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#475569', lineHeight: 1.6 }}>
+              هل تريد بالتأكيد سحب ملف <strong>"{confirmRevokeSingle.fileName}"</strong> من حسابات{' '}
+              <strong>{confirmRevokeSingle.studentCount} طالب</strong>؟
+              <br />
+              لن يتمكن الطلاب من رؤية هذا التكليف أو تحميله بعد الآن.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="recall-all-btn"
+                style={{ padding: '10px 24px', fontSize: '14px' }}
+                onClick={() => handleRevokeSingleFile(confirmRevokeSingle)}
+              >
+                تأكيد سحب الملف
+              </button>
+              <button
+                type="button"
+                className="tier-cancel"
+                style={{ margin: 0 }}
+                onClick={() => setConfirmRevokeSingle(null)}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* تأكيد سحب كافة الملفات للمسار */}
+      {confirmRevokeAllOpen && (
+        <div className="recall-modal-overlay" onClick={() => setConfirmRevokeAllOpen(false)}>
+          <div className="delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-confirm-icon" style={{ background: '#fee2e2', color: '#b91c1c' }}>
+              <Trash2 size={32} />
+            </div>
+            <h3 style={{ margin: '0 0 10px', fontSize: '18px', fontWeight: 800, color: '#991b1b' }}>
+              تأكيد سحب جميع ملفات المسار
+            </h3>
+            <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#475569', lineHeight: 1.6 }}>
+              هل أنت متأكد تماماً من رغبتك في سحب <strong>كافة الملفات الموزعة</strong> (
+              {recallModal.files.length} ملف) في هذا المسار من جميع الطلاب؟
+              <br />
+              <span style={{ color: '#dc2626', fontWeight: 700 }}>
+                هذا الإجراء سيقوم بحذف كافة التكليفات الموزعة في هذا المسار من عند جميع الطلاب دفعة واحدة.
+              </span>
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="recall-all-btn"
+                style={{ background: '#991b1b', padding: '10px 24px', fontSize: '14px' }}
+                onClick={handleRevokeAllFiles}
+              >
+                نعم، اسحب كل الملفات الآن
+              </button>
+              <button
+                type="button"
+                className="tier-cancel"
+                style={{ margin: 0 }}
+                onClick={() => setConfirmRevokeAllOpen(false)}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* تأكيد سحب كافة ملفات طالب واحد */}
+      {confirmRevokeStudentAllOpen && recallModal.selectedStudent && (
+        <div className="recall-modal-overlay" onClick={() => setConfirmRevokeStudentAllOpen(false)}>
+          <div className="delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-confirm-icon" style={{ background: '#fee2e2', color: '#b91c1c' }}>
+              <UserX size={32} />
+            </div>
+            <h3 style={{ margin: '0 0 10px', fontSize: '18px', fontWeight: 800, color: '#991b1b' }}>
+              سحب كافة ملفات الطالب
+            </h3>
+            <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#475569', lineHeight: 1.6 }}>
+              هل تريد بالتأكيد سحب <strong>جميع الملفات المسندة</strong> (
+              {recallModal.selectedStudent.assignedFiles.length} ملف) من حساب الطالب{' '}
+              <strong>"{recallModal.selectedStudent.fullNameArabic}"</strong>؟
+              <br />
+              <span style={{ color: '#dc2626', fontWeight: 700 }}>
+                لن يتمكن الطالب من رؤية أو تحميل أي من هذه الملفات بعد الآن.
+              </span>
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="recall-all-btn"
+                style={{ background: '#991b1b', padding: '10px 24px', fontSize: '14px' }}
+                onClick={() =>
+                  handleRevokeAllFilesFromStudent(
+                    recallModal.selectedStudent!.id,
+                    recallModal.selectedStudent!.fullNameArabic
+                  )
+                }
+              >
+                تأكيد سحب كافة الملفات
+              </button>
+              <button
+                type="button"
+                className="tier-cancel"
+                style={{ margin: 0 }}
+                onClick={() => setConfirmRevokeStudentAllOpen(false)}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* شاشة تحميل أثناء السحب الشامل */}
+      {recallModal.isRevokingAll && (
+        <div className="removing-users-overlay">
+          <div className="removing-users-content">
+            <Loader2 size={40} className="spinning-loader-large" color="#e11d48" />
+            <p>جاري سحب كافة الملفات من حسابات الطلاب في المسار...</p>
+            <span>يتم التحديث بكفاءة دون إجهاد قاعدة البيانات، يرجى الانتظار</span>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {deleteConfirmModal.open && (
         <div className="delete-confirm-overlay" onClick={() => setDeleteConfirmModal(prev => ({ ...prev, open: false }))}>
@@ -1869,6 +2806,95 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
               {folderDeleteLoading.scope === 'track' ? ' وكل محتوياته من المسار...' : ' وكل محتوياته من الـ 130...'}
             </p>
             <span>يرجى الانتظار — قد يستغرق ذلك بضع ثوانٍ</span>
+          </div>
+        </div>
+      )}
+
+      {/* Floating live progress bar for assignments distribution */}
+      {distProgress && distProgress.active && (
+        <div className="distribution-progress-toast" role="status" aria-live="polite">
+          <div className="dist-prog-header">
+            <div className="dist-prog-title-wrap">
+              {distProgress.status === 'running' && <span className="dist-prog-spinner" />}
+              {distProgress.status === 'completed' && <CheckCircle size={16} color="#34d399" />}
+              {distProgress.status === 'error' && <AlertCircle size={16} color="#f87171" />}
+              <span className="dist-prog-title" title={distProgress.title}>
+                {distProgress.status === 'running'
+                  ? `جاري الإرسال: ${distProgress.title}`
+                  : distProgress.status === 'completed'
+                  ? `اكتمل الإرسال: ${distProgress.title}`
+                  : `تعذر الإرسال: ${distProgress.title}`}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="dist-prog-pct">{distProgress.percent}%</span>
+              <button
+                type="button"
+                className="dist-prog-close-btn"
+                onClick={() => updateProgress(null)}
+                title="إغلاق التنبيه"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className="dist-prog-bar-track">
+            <div
+              className="dist-prog-bar-fill"
+              style={{
+                width: `${Math.min(100, Math.max(0, distProgress.percent))}%`,
+                background:
+                  distProgress.status === 'error'
+                    ? '#ef4444'
+                    : distProgress.status === 'completed'
+                    ? '#10b981'
+                    : undefined
+              }}
+            />
+          </div>
+
+          <div className={`dist-prog-subtext ${distProgress.status}`}>
+            {distProgress.status === 'running' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>
+                    تم إرسال {distProgress.current} من أصل {distProgress.total} طالب
+                  </span>
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>يعمل ومحفوظ بالمتصفح</span>
+                </div>
+                {distProgress.studentName && (
+                  <span className="dist-prog-curr-student">{distProgress.studentName}</span>
+                )}
+              </>
+            )}
+
+            {distProgress.status === 'completed' && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <span>تم إرسال كافة الملفات بنجاح ({distProgress.current} طالب)</span>
+                <button
+                  type="button"
+                  className="dist-prog-dismiss-link"
+                  onClick={() => updateProgress(null)}
+                >
+                  تم
+                </button>
+              </div>
+            )}
+
+            {distProgress.status === 'error' && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <span>{distProgress.error || 'حدث خطأ أثناء الإرسال'}</span>
+                <button
+                  type="button"
+                  className="dist-prog-dismiss-link"
+                  style={{ background: '#ef4444' }}
+                  onClick={() => updateProgress(null)}
+                >
+                  إغلاق
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
