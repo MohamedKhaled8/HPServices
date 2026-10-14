@@ -178,19 +178,24 @@ const ApprovedRequestsPage: React.FC<ApprovedRequestsPageProps> = ({ onBack }) =
                                                     {amount.toLocaleString()} ج.م
                                                 </span>
                                                 {(() => {
+                                                    const directFawry = req.data?.fawryCode || req.data?.serialNumber || req.data?.fawry_code;
                                                     const dtCode = dtCodes.find(c => c.requestId === req.id && (c.fawryCode || c.serialNumber)) || dtCodes.find(c => c.requestId === req.id);
-                                                    const epCode = epCodes.find(c => c.requestId === req.id && c.orderNumber) || epCodes.find(c => c.requestId === req.id);
+                                                    const fawryVal = directFawry || dtCode?.fawryCode || dtCode?.serialNumber;
+
+                                                    const directEp = req.data?.orderNumber || req.data?.referenceNumber;
+                                                    const epCode = epCodes.find(c => c.requestId === req.id && (c.referenceNumber || c.orderNumber)) || epCodes.find(c => c.requestId === req.id);
+                                                    const epVal = directEp || epCode?.referenceNumber || epCode?.orderNumber;
 
                                                     return (
                                                         <>
-                                                            {dtCode && (
+                                                            {fawryVal && (
                                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                                                    كود فوري: {dtCode.fawryCode || dtCode.serialNumber || 'لا يوجد'}
+                                                                    كود فوري: {fawryVal}
                                                                 </span>
                                                             )}
-                                                            {epCode && (
+                                                            {epVal && (
                                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '6px', fontWeight: '900', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                                                    الرقم المرجعي: {epCode.referenceNumber || epCode.orderNumber || 'لا يوجد'}
+                                                                    الرقم المرجعي: {epVal}
                                                                 </span>
                                                             )}
                                                         </>

@@ -179,35 +179,50 @@ function adminCodeCreatedAtMs(v: any): number {
 /** فهارس لآخر كود DT/EP لكل طالب أو رقم قومي/هاتف — يستبدل filter+sort على كل صف في الجدول */
 function buildAdminCodesLookup(dtCodes: any[], epCodes: any[]) {
   const dtLatestByStudent = new Map<string, any>();
+  const dtLatestByNational = new Map<string, any>();
+  const dtLatestByPhone = new Map<string, any>();
   for (const c of dtCodes) {
+    const ts = adminCodeCreatedAtMs(c.createdAt || c.updatedAt);
     const sid = c.studentId;
-    if (!sid) continue;
-    const prev = dtLatestByStudent.get(sid);
-    if (!prev || adminCodeCreatedAtMs(c.createdAt) > adminCodeCreatedAtMs(prev.createdAt)) dtLatestByStudent.set(sid, c);
+    if (sid) {
+      const prev = dtLatestByStudent.get(sid);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt || prev.updatedAt)) dtLatestByStudent.set(sid, c);
+    }
+    const nat = String(c.nationalID || c.national_id || '').replace(/\D/g, '');
+    if (nat.length >= 6) {
+      const prev = dtLatestByNational.get(nat);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt || prev.updatedAt)) dtLatestByNational.set(nat, c);
+    }
+    const ph = String(c.mobile || c.phone || c.whatsapp || '').replace(/\D/g, '');
+    const ph10 = ph.length >= 10 ? ph.slice(-10) : ph;
+    if (ph10.length >= 10) {
+      const prev = dtLatestByPhone.get(ph10);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt || prev.updatedAt)) dtLatestByPhone.set(ph10, c);
+    }
   }
   const epLatestByStudent = new Map<string, any>();
   const epLatestByNational = new Map<string, any>();
   const epLatestByPhone = new Map<string, any>();
   for (const c of epCodes) {
-    const ts = adminCodeCreatedAtMs(c.createdAt);
+    const ts = adminCodeCreatedAtMs(c.createdAt || c.updatedAt);
     const sid = c.studentId;
     if (sid) {
       const prev = epLatestByStudent.get(sid);
-      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt)) epLatestByStudent.set(sid, c);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt || prev.updatedAt)) epLatestByStudent.set(sid, c);
     }
-    const nat = String(c.nationalID || '').replace(/\D/g, '');
+    const nat = String(c.nationalID || c.national_id || '').replace(/\D/g, '');
     if (nat.length >= 6) {
       const prev = epLatestByNational.get(nat);
-      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt)) epLatestByNational.set(nat, c);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt || prev.updatedAt)) epLatestByNational.set(nat, c);
     }
     const ph = String(c.mobile || c.whatsapp || '').replace(/\D/g, '');
     const ph10 = ph.length >= 10 ? ph.slice(-10) : ph;
     if (ph10.length >= 10) {
       const prev = epLatestByPhone.get(ph10);
-      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt)) epLatestByPhone.set(ph10, c);
+      if (!prev || ts > adminCodeCreatedAtMs(prev.createdAt || prev.updatedAt)) epLatestByPhone.set(ph10, c);
     }
   }
-  return { dtLatestByStudent, epLatestByStudent, epLatestByNational, epLatestByPhone };
+  return { dtLatestByStudent, dtLatestByNational, dtLatestByPhone, epLatestByStudent, epLatestByNational, epLatestByPhone };
 }
 
 /** مفاتيح حقول data الشائعة — Set لاستبعاد O(n) لكل مفتاح داخل الحلقات */
@@ -1685,11 +1700,10 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     };
     loadLatestNews();
 
-    // معطل مؤقتاً لتوفير استعلامات قاعدة البيانات وتقليل الضغط (الكود محفوظ بالكامل للرجوع إليه)
-    // const unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
-    //   logger.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
-    //   setDtCodes(codes);
-    // });
+    const unsubscribeDtCodes = subscribeToDigitalTransformationCodes((codes) => {
+      logger.log('Real-time update: Digital Transformation Codes loaded:', codes.length);
+      setDtCodes(codes);
+    });
     const unsubscribeEpCodes = subscribeToElectronicPaymentCodes((codes) => {
       logger.log('Real-time update: Electronic Payment Codes loaded:', codes.length);
       setEpCodes(codes);
@@ -1704,7 +1718,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       unsubscribeFinalReview();
       unsubscribeGraduation();
       unsubscribeStatement();
-      // unsubscribeDtCodes();
+      unsubscribeDtCodes();
       unsubscribeEpCodes();
     };
   }, [dataReady, isLoading]);
@@ -4316,9 +4330,32 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                       id: 'dt_fawry_code',
                       label: 'رقم فوري',
                       getValue: (r: any) => {
+                        const direct = r.data?.fawryCode || r.data?.serialNumber || r.data?.fawry_code || r.data?.fawry_number;
+                        if (direct && String(direct).trim() !== '' && String(direct).trim() !== '-') return String(direct).trim();
+
                         let code = r.id ? dtCodesIndex[String(r.id)] : undefined;
-                        if (!code && r.studentId) code = adminCodesLookup.dtLatestByStudent.get(r.studentId);
-                        return code?.fawryCode || code?.serialNumber || '-';
+                        if (code?.fawryCode || code?.serialNumber) return code.fawryCode || code.serialNumber;
+
+                        if (r.studentId) {
+                          code = adminCodesLookup.dtLatestByStudent?.get(r.studentId);
+                          if (code?.fawryCode || code?.serialNumber) return code.fawryCode || code.serialNumber;
+                        }
+
+                        const studentData = students[r.studentId];
+                        const nat = String(r.data?.national_id || r.data?.nationalID || studentData?.nationalID || '').replace(/\D/g, '');
+                        if (nat.length >= 6) {
+                          code = adminCodesLookup.dtLatestByNational?.get(nat);
+                          if (code?.fawryCode || code?.serialNumber) return code.fawryCode || code.serialNumber;
+                        }
+
+                        const phone = String(r.data?.whatsapp_number || r.data?.phone_whatsapp || studentData?.whatsappNumber || '').replace(/\D/g, '');
+                        const ph10 = phone.length >= 10 ? phone.slice(-10) : phone;
+                        if (ph10.length >= 10) {
+                          code = adminCodesLookup.dtLatestByPhone?.get(ph10);
+                          if (code?.fawryCode || code?.serialNumber) return code.fawryCode || code.serialNumber;
+                        }
+
+                        return '-';
                       }
                     };
                     const colEpOrderNumber = {
@@ -5129,9 +5166,31 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                                 const colGroupLinkVal = request.data.group_link ? <a href={request.data.group_link} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>الرابط</a> : '-';
                                 const colLeaderWhatsappVal = request.data.leader_whatsapp || colWhatsappVal || '-';
                                 const colDtFawryCodeVal = (() => {
+                                  const direct = request.data?.fawryCode || request.data?.serialNumber || request.data?.fawry_code || request.data?.fawry_number;
+                                  if (direct && String(direct).trim() !== '' && String(direct).trim() !== '-') return String(direct).trim();
+
                                   let code = request.id ? dtCodesIndex[String(request.id)] : undefined;
-                                  if (!code && request.studentId) code = adminCodesLookup.dtLatestByStudent.get(request.studentId);
-                                  return code?.fawryCode || code?.serialNumber || '-';
+                                  if (code?.fawryCode || code?.serialNumber) return code.fawryCode || code.serialNumber;
+
+                                  if (request.studentId) {
+                                    code = adminCodesLookup.dtLatestByStudent?.get(request.studentId);
+                                    if (code?.fawryCode || code?.serialNumber) return code.fawryCode || code.serialNumber;
+                                  }
+
+                                  const nat = String(colNationalIdVal || '').replace(/\D/g, '');
+                                  if (nat.length >= 6) {
+                                    code = adminCodesLookup.dtLatestByNational?.get(nat);
+                                    if (code?.fawryCode || code?.serialNumber) return code.fawryCode || code.serialNumber;
+                                  }
+
+                                  const phone = String(colWhatsappVal || '').replace(/\D/g, '');
+                                  const ph10 = phone.length >= 10 ? phone.slice(-10) : phone;
+                                  if (ph10.length >= 10) {
+                                    code = adminCodesLookup.dtLatestByPhone?.get(ph10);
+                                    if (code?.fawryCode || code?.serialNumber) return code.fawryCode || code.serialNumber;
+                                  }
+
+                                  return '-';
                                 })();
                                 const colEpOrderNumberVal = (() => {
                                   let code = request.id ? epCodesIndex[String(request.id)] : undefined;

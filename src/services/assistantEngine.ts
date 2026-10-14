@@ -295,8 +295,8 @@ export function buildRequestCard(
     codes:
       options?.includeCodes !== false
         ? {
-            fawry: dt?.fawryCode || dt?.serialNumber || undefined,
-            orderNumber: ep?.orderNumber || undefined,
+            fawry: request.data?.fawryCode || request.data?.serialNumber || dt?.fawryCode || dt?.serialNumber || undefined,
+            orderNumber: request.data?.orderNumber || request.data?.referenceNumber || ep?.orderNumber || undefined,
           }
         : undefined,
     note,
@@ -1066,7 +1066,7 @@ function promptOrShowFawry(
   backChip: AssistantChip
 ): { reply: AssistantReply; pending: PendingSensitiveAction } {
   const dt = findDtCodeForRequest(dtCodes, request.id);
-  const code = dt?.fawryCode || dt?.serialNumber;
+  const code = request.data?.fawryCode || request.data?.serialNumber || request.data?.fawry_code || dt?.fawryCode || dt?.serialNumber;
   const profileId = student?.nationalID || '';
   if (code && profileId && nationalIdMatchesStudentOrRequest(student, request, profileId)) {
     return {
@@ -1173,7 +1173,7 @@ export function handleNationalIdInput(
 
   if (pending.intent === 'fawry') {
     const dt = findDtCodeForRequest(ctx.dtCodes, request.id);
-    const code = dt?.fawryCode || dt?.serialNumber;
+    const code = request.data?.fawryCode || request.data?.serialNumber || request.data?.fawry_code || dt?.fawryCode || dt?.serialNumber;
     if (!code) {
       return {
         reply: {
