@@ -29,10 +29,10 @@ import {
   DistributedFileSummary,
   getStudentsWithAssignedFiles,
   revokeSingleFileFromStudent,
-  revokeAllFilesFromStudent,
   StudentWithAssignedFiles
 } from '../services/firebaseService';
 import { AssignmentsServiceConfig, AssignmentItem } from '../types';
+import { classifyAssignment, AssignmentCategory } from '../utils/assignmentClassifier';
 import {
   ArrowRight,
   Folder,
@@ -414,10 +414,14 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       setAssignmentsMessage('يرجى إدخال سعر صحيح');
       return;
     }
+    const cleanName = newAssignmentName.trim();
+    const inferredType = classifyAssignment({ name: cleanName, price });
+
     const newAssignment: AssignmentItem = {
       id: `assignment_${Date.now()}`,
-      name: newAssignmentName.trim(),
-      price: price
+      name: cleanName,
+      price: price,
+      deliveryType: inferredType
     };
     const updatedConfig: AssignmentsServiceConfig = {
       ...assignmentsConfig,
@@ -488,9 +492,12 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       return;
     }
 
+    const cleanName = editAssignmentName.trim();
+    const inferredType = classifyAssignment({ name: cleanName, price });
+
     const updatedAssignments = assignmentsConfig.assignments.map(a =>
       a.id === editingAssignmentId
-        ? { ...a, name: editAssignmentName.trim(), price: price }
+        ? { ...a, name: cleanName, price: price, deliveryType: inferredType }
         : a
     );
     const updatedConfig: AssignmentsServiceConfig = {
@@ -570,14 +577,24 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
     let tierLabel = 'الخدمة المختارة';
     if (typeof tierOrTarget === 'string') {
-      tierLabel = tierOrTarget === '500' ? 'مشتركي الـ 500 (حل وتسليم)' : 'مشتركي الـ 300 (حل فقط)';
+      if (tierOrTarget === 'personalized' || tierOrTarget === '500') {
+        tierLabel = 'مشتركي باقة حل وتسليم التكليفات';
+      } else if (tierOrTarget === 'plain' || tierOrTarget === '300') {
+        tierLabel = 'مشتركي باقة حل PDF فقط';
+      } else if (tierOrTarget === 'unified' || tierOrTarget === '130') {
+        tierLabel = 'مشتركي التربية العملي (الملف الموحد)';
+      } else {
+        tierLabel = `مشتركي (${tierOrTarget})`;
+      }
     } else if (tierOrTarget.assignmentName) {
-      const modeStr = tierOrTarget.namingMode === 'plain' ? 'حل فقط' : 'حل وتسليم';
+      const modeStr = tierOrTarget.namingMode === 'plain' ? 'حل PDF (بدون اسم)' : 'حل وتسليم (بالاسم)';
       tierLabel = `"${tierOrTarget.assignmentName}" (${modeStr})`;
-    } else if (tierOrTarget.tier === '500') {
-      tierLabel = 'مشتركي الـ 500 (حل وتسليم)';
-    } else if (tierOrTarget.tier === '300') {
-      tierLabel = 'مشتركي الـ 300 (حل فقط)';
+    } else if (tierOrTarget.category === 'personalized' || tierOrTarget.tier === '500') {
+      tierLabel = 'مشتركي باقة حل وتسليم التكليفات';
+    } else if (tierOrTarget.category === 'plain' || tierOrTarget.tier === '300') {
+      tierLabel = 'مشتركي باقة حل PDF فقط';
+    } else if (tierOrTarget.category === 'unified' || tierOrTarget.tier === '130') {
+      tierLabel = 'مشتركي التربية العملي (الملف الموحد)';
     }
 
     try {
@@ -2170,59 +2187,111 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
               اختر الخدمة المستهدفة وسيتم إسناد الملفات المحددة للطلاب المشتركين فيها تلقائياً.
             </p>
 
-            {/* الخيارات السريعة المعتادة (Side-by-Side Grid) */}
-            <div className="tier-modal-buttons">
-              <button
-                type="button"
-                className="tier-button tier-500"
-                onClick={() => handleDistribute('500')}
-              >
-                <strong>حل وتسليم (500 ج.م)</strong>
-                <span>باسم الطالب + اسم الملف</span>
-              </button>
-              <button
-                type="button"
-                className="tier-button tier-300"
-                onClick={() => handleDistribute('300')}
-              >
-                <strong>حل فقط (300 ج.م)</strong>
-                <span>باسم الملف الأصلي</span>
-              </button>
-            </div>
+            {/* الخيارات السريعة المفصولة تماماً لمنع أي خلط بين الفئات */}
+            {(() => {
+              const personalizedItem = assignmentsConfig?.assignments?.find(a => classifyAssignment(a) === 'personalized');
+              const plainItem = assignmentsConfig?.assignments?.find(a => classifyAssignment(a) === 'plain');
+              const personalizedPrice = personalizedItem ? `${personalizedItem.price} ج.م` : '300 ج.م';
+              const plainPrice = plainItem ? `${plainItem.price} ج.م` : '200 ج.م';
+
+              return (
+                <div className="tier-modal-buttons">
+                  <button
+                    type="button"
+                    className="tier-button tier-personalized"
+                    onClick={() => handleDistribute({ category: 'personalized', namingMode: 'personalized' })}
+                  >
+                    <span className="tier-btn-badge personalized">👤 بالاسم والبيانات</span>
+                    <strong>حل وتسليم التكليفات ({personalizedPrice})</strong>
+                    <span>يُرسل حصراً للطلاب المشتركين في باقة الحل والتسليم (باسم وبيانات الطالب)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="tier-button tier-plain"
+                    onClick={() => handleDistribute({ category: 'plain', namingMode: 'plain' })}
+                  >
+                    <span className="tier-btn-badge plain">📄 باسم الملف فقط</span>
+                    <strong>حل PDF فقط ({plainPrice})</strong>
+                    <span>يُرسل حصراً للطلاب المشتركين في باقة PDF (باسم الملف الأصلي بدون اسم الطالب)</span>
+                  </button>
+                </div>
+              );
+            })()}
 
             {/* التكليفات المضافة حالياً في إعدادات الخدمة (ديناميكية لأي تكليف جديد) */}
             {assignmentsConfig?.assignments && assignmentsConfig.assignments.length > 0 && (
               <div className="tier-dynamic-section">
                 <div className="tier-dynamic-title">
-                  أو اختر من التكليفات المعرّفة حالياً في لوحة الإدارة:
+                  أو حدد تكليفاً معيناً لإرسال الملفات لمشتركيه فقط:
                 </div>
                 <div className="tier-dynamic-list">
-                  {assignmentsConfig.assignments.map((assignment) => (
-                    <div key={assignment.id} className="tier-dynamic-item">
-                      <div className="tier-item-info">
-                        <span className="tier-item-name" title={assignment.name}>{assignment.name}</span>
-                        <span className="tier-item-price">{assignment.price} ج.م</span>
+                  {assignmentsConfig.assignments.map((assignment) => {
+                    const cat = classifyAssignment(assignment);
+                    const isPersonalized = cat === 'personalized';
+                    const isPlain = cat === 'plain';
+
+                    return (
+                      <div key={assignment.id} className="tier-dynamic-item">
+                        <div className="tier-item-info">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="tier-item-name" title={assignment.name}>{assignment.name}</span>
+                            <span className={`tier-badge-pill ${cat}`}>
+                              {isPersonalized ? 'حل وتسليم' : isPlain ? 'حل PDF' : 'عملي'}
+                            </span>
+                          </div>
+                          <span className="tier-item-price">{assignment.price} ج.م</span>
+                        </div>
+                        <div className="tier-item-actions">
+                          {isPersonalized ? (
+                            <button
+                              type="button"
+                              className="tier-action-btn personalized"
+                              onClick={() => handleDistribute({
+                                assignmentId: assignment.id,
+                                assignmentName: assignment.name,
+                                price: assignment.price,
+                                category: 'personalized',
+                                namingMode: 'personalized'
+                              })}
+                              title="إرسال مخصصاً بالاسم والبيانات لمشتركي هذا التكليف فقط"
+                            >
+                              إرسال بالاسم والبيانات
+                            </button>
+                          ) : isPlain ? (
+                            <button
+                              type="button"
+                              className="tier-action-btn plain"
+                              onClick={() => handleDistribute({
+                                assignmentId: assignment.id,
+                                assignmentName: assignment.name,
+                                price: assignment.price,
+                                category: 'plain',
+                                namingMode: 'plain'
+                              })}
+                              title="إرسال باسم الملف الأصلي (بدون اسم) لمشتركي هذا التكليف فقط"
+                            >
+                              إرسال كـ PDF (بدون اسم)
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="tier-action-btn unified"
+                              onClick={() => handleDistribute({
+                                assignmentId: assignment.id,
+                                assignmentName: assignment.name,
+                                price: assignment.price,
+                                category: 'unified',
+                                namingMode: 'plain'
+                              })}
+                              title="إرسال موحد لمشتركي هذا التكليف"
+                            >
+                              إرسال موحد
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="tier-item-actions">
-                        <button
-                          type="button"
-                          className="tier-action-btn personalized"
-                          onClick={() => handleDistribute({ assignmentId: assignment.id, assignmentName: assignment.name, price: assignment.price, namingMode: 'personalized' })}
-                          title="إرسال الملف مخصصاً باسم كل طالب"
-                        >
-                          حل وتسليم
-                        </button>
-                        <button
-                          type="button"
-                          className="tier-action-btn plain"
-                          onClick={() => handleDistribute({ assignmentId: assignment.id, assignmentName: assignment.name, price: assignment.price, namingMode: 'plain' })}
-                          title="إرسال الملف باسمه الأصلي فقط"
-                        >
-                          حل فقط (PDF)
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

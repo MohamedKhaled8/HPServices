@@ -9,7 +9,7 @@ import { calculateTrack, getAvailableTracks, normalizeTrackName } from '../utils
 import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, FileText, Trash2, Plus, UploadCloud } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import { logger } from '../utils/logger';
-import { getServicePaymentNumber } from '../utils/servicePaymentNumber';
+import { areAssignmentsMutuallyExclusive } from '../utils/assignmentClassifier';
 import '../styles/ServiceDetailsPage.css';
 
 /** واتساب متابعة الطلب بعد التقديم — الرقم: +20 10 50889596 */
@@ -949,23 +949,12 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                                                     setMissingFieldNames(prev => [...prev.filter(name => name !== 'assignments'), 'assignments']);
                                                 }
                                             } else {
-                                                // Implement mutual exclusivity for 500 and 300 EGP assignments
-                                                const selectedPrice = Number(assignment.price);
-                                                let newSelections = [...selectedAssignments];
-
-                                                if (selectedPrice === 500) {
-                                                    // Filter out any 300 EGP assignments
-                                                    newSelections = newSelections.filter(id => {
-                                                        const a = assignmentsConfig.assignments.find(item => item.id === id);
-                                                        return a && Number(a.price) !== 300;
-                                                    });
-                                                } else if (selectedPrice === 300) {
-                                                    // Filter out any 500 EGP assignments
-                                                    newSelections = newSelections.filter(id => {
-                                                        const a = assignmentsConfig.assignments.find(item => item.id === id);
-                                                        return a && Number(a.price) !== 500;
-                                                    });
-                                                }
+                                                // منع اختيار باقة حل وتسليم مع باقة حل PDF في نفس الوقت (العملي متاح مع أي منهما)
+                                                let newSelections = selectedAssignments.filter(id => {
+                                                    const existing = assignmentsConfig.assignments.find(item => item.id === id);
+                                                    if (!existing) return true;
+                                                    return !areAssignmentsMutuallyExclusive(assignment, existing);
+                                                });
 
                                                 setSelectedAssignments([...newSelections, assignment.id]);
                                                 setMissingFieldNames(prev => prev.filter(name => name !== 'assignments'));

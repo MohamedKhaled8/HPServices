@@ -44,6 +44,7 @@ import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
+import { classifyAssignment, AssignmentCategory } from '../utils/assignmentClassifier';
 
 const MAX_FILE_SIZE_MB = 10; // Max 10MB per file
 const MAX_DOC_SIZE_KB = 1024; // 1MB Firestore doc limit warning
@@ -1289,10 +1290,11 @@ export const getAssignmentFilesForTrack = async (track: TrackKey): Promise<Assig
   }
 };
 
-export type ServiceTier = '500' | '300' | string;
+export type ServiceTier = '500' | '300' | 'personalized' | 'plain' | 'unified' | string;
 
 export interface DistributeTargetOptions {
   tier?: ServiceTier;
+  category?: AssignmentCategory;
   assignmentId?: string;
   assignmentName?: string;
   price?: number;
@@ -1301,12 +1303,22 @@ export interface DistributeTargetOptions {
 
 // Helper: Get student IDs who bought a specific assignment tier/service with accepted requests
 export const getStudentIdsByTier = async (
-  tierOrTarget: number | string | { assignmentId?: string; assignmentName?: string; tierPrice?: number; legacyTier?: string }
+  tierOrTarget:
+    | number
+    | string
+    | {
+        category?: AssignmentCategory;
+        assignmentId?: string;
+        assignmentName?: string;
+        tierPrice?: number;
+        legacyTier?: string;
+      }
 ): Promise<Set<string>> => {
   const collectionName = `serviceRequests_5`; // Service 5 = assignments
   const requestsSnap = await getDocs(collection(db, collectionName));
   const studentIds = new Set<string>();
 
+  let targetCategory: AssignmentCategory | undefined;
   let targetId: string | undefined;
   let targetName: string | undefined;
   let targetPrice: number | undefined;
@@ -1316,25 +1328,41 @@ export const getStudentIdsByTier = async (
     targetPrice = tierOrTarget;
     legacyTier = String(tierOrTarget);
   } else if (typeof tierOrTarget === 'string') {
-    if (tierOrTarget === '500' || tierOrTarget === '300' || tierOrTarget === '130') {
-      targetPrice = Number(tierOrTarget);
-      legacyTier = tierOrTarget;
+    if (tierOrTarget === 'personalized' || tierOrTarget === 'plain' || tierOrTarget === 'unified') {
+      targetCategory = tierOrTarget;
+    } else if (tierOrTarget === '500') {
+      targetCategory = 'personalized';
+      legacyTier = '500';
+    } else if (tierOrTarget === '300') {
+      // Could be legacy 300 or specific price
+      targetPrice = 300;
+      legacyTier = '300';
+    } else if (tierOrTarget === '130') {
+      targetCategory = 'unified';
+      legacyTier = '130';
     } else {
       targetId = tierOrTarget;
     }
   } else if (tierOrTarget && typeof tierOrTarget === 'object') {
+    targetCategory = tierOrTarget.category;
     targetId = tierOrTarget.assignmentId;
     targetName = tierOrTarget.assignmentName;
     targetPrice = tierOrTarget.tierPrice;
     legacyTier = tierOrTarget.legacyTier;
+
+    if (!targetCategory && legacyTier) {
+      if (legacyTier === 'personalized' || legacyTier === '500') targetCategory = 'personalized';
+      else if (legacyTier === 'plain') targetCategory = 'plain';
+      else if (legacyTier === 'unified' || legacyTier === '130') targetCategory = 'unified';
+    }
   }
 
   const targetNameNorm = targetName ? targetName.trim().toLowerCase() : '';
 
   requestsSnap.forEach((docSnap) => {
     const data = docSnap.data();
-    // Only include completed/accepted requests
-    if (data.status !== 'completed') return;
+    // Only include confirmed/approved requests
+    if (data.status !== 'completed' && data.status !== 'receipt_sent') return;
 
     const reqData = data.data || {};
     const selectedAssignments: string[] = Array.isArray(reqData.selectedAssignments) ? reqData.selectedAssignments : [];
@@ -1343,52 +1371,78 @@ export const getStudentIdsByTier = async (
 
     let matched = false;
 
-    // 1. Direct match by assignmentId
-    if (targetId && (selectedAssignments.includes(targetId) || selectedData.some((a: any) => a.id === targetId))) {
-      matched = true;
+    // 1. Direct match by specific assignment ID (highest precision)
+    if (targetId) {
+      if (selectedAssignments.includes(targetId) || selectedData.some((a: any) => a.id === targetId)) {
+        matched = true;
+      }
     }
 
-    // 2. Direct match by assignmentName
+    // 2. Direct match by specific assignment Name
     if (!matched && targetNameNorm) {
       if (selectedData.some((a: any) => String(a.name || '').trim().toLowerCase() === targetNameNorm)) {
         matched = true;
       }
     }
 
-    // 3. Match by price
-    if (!matched && targetPrice && targetPrice > 0) {
-      if (selectedData.some((a: any) => Number(a.price) === targetPrice) || totalPrice === targetPrice) {
+    // 3. Category match (Personalized "حل وتسليم" vs Plain "حل PDF فقط" vs Unified "تربية عملي")
+    // This enforces 100% strict isolation so students never receive both tiers accidentally
+    if (!matched && targetCategory) {
+      if (targetCategory === 'personalized') {
+        const hasPersonalized = selectedData.some((a: any) => classifyAssignment(a) === 'personalized');
+        // Legacy fallback for orders saved before selectedAssignmentsData existed
+        const legacyPersonalized =
+          selectedData.length === 0 &&
+          (totalPrice === 500 ||
+            (totalPrice === 300 && !String(reqData.assignmentType || '').includes('pdf')));
+        if (hasPersonalized || legacyPersonalized) {
+          matched = true;
+        }
+      } else if (targetCategory === 'plain') {
+        const hasPlain = selectedData.some((a: any) => classifyAssignment(a) === 'plain');
+        // Legacy fallback for orders saved before selectedAssignmentsData existed
+        const legacyPlain =
+          selectedData.length === 0 &&
+          (totalPrice === 200 ||
+            (totalPrice === 300 && String(reqData.assignmentType || '').includes('pdf')));
+        if (hasPlain || legacyPlain) {
+          matched = true;
+        }
+      } else if (targetCategory === 'unified') {
+        const hasUnified = selectedData.some((a: any) => classifyAssignment(a) === 'unified');
+        const legacyUnified =
+          selectedData.length === 0 && (totalPrice === 130 || totalPrice === 100);
+        if (hasUnified || legacyUnified) {
+          matched = true;
+        }
+      }
+    }
+
+    // 4. Fallback price matching only if no category was specified
+    if (!matched && !targetCategory && targetPrice && targetPrice > 0) {
+      if (selectedData.some((a: any) => Number(a.price) === targetPrice)) {
         matched = true;
       }
     }
 
-    // 4. Legacy fallback matching for 500, 300, 130
-    if (!matched && legacyTier) {
+    // 5. Fallback legacy tier matching if category didn't trigger
+    if (!matched && !targetCategory && legacyTier) {
       if (legacyTier === '500') {
-        if (
-          selectedData.some((a: any) => Number(a.price) === 500 || String(a.name || '').includes('تسليم') || String(a.name || '').includes('500')) ||
-          totalPrice === 500
-        ) {
+        if (selectedData.some((a: any) => classifyAssignment(a) === 'personalized') || totalPrice === 500) {
           matched = true;
         }
       } else if (legacyTier === '300') {
-        if (
-          selectedData.some((a: any) => Number(a.price) === 300 || String(a.name || '').toLowerCase().includes('pdf') || String(a.name || '').includes('فقط') || String(a.name || '').includes('300')) ||
-          totalPrice === 300
-        ) {
+        if (selectedData.some((a: any) => classifyAssignment(a) === 'plain') || totalPrice === 200) {
           matched = true;
         }
       } else if (legacyTier === '130') {
-        if (
-          selectedData.some((a: any) => Number(a.price) === 130 || String(a.name || '').includes('تربية') || String(a.name || '').includes('عملي') || String(a.name || '').includes('130') || String(a.name || '').includes('موحد')) ||
-          totalPrice === 130
-        ) {
+        if (selectedData.some((a: any) => classifyAssignment(a) === 'unified') || totalPrice === 130) {
           matched = true;
         }
       }
     }
 
-    if (matched) {
+    if (matched && data.studentId) {
       studentIds.add(data.studentId);
     }
   });
@@ -1406,11 +1460,24 @@ export const distributeAssignmentsForTrack = async (
     // 1) Parse options & target
     let targetOptions: DistributeTargetOptions = {};
     if (typeof serviceTierOrOptions === 'string') {
-      targetOptions = {
-        tier: serviceTierOrOptions,
-        price: serviceTierOrOptions === '500' ? 500 : serviceTierOrOptions === '300' ? 300 : undefined,
-        namingMode: serviceTierOrOptions === '300' ? 'plain' : 'personalized'
-      };
+      if (serviceTierOrOptions === 'personalized' || serviceTierOrOptions === '500') {
+        targetOptions = {
+          category: 'personalized',
+          tier: serviceTierOrOptions,
+          namingMode: 'personalized'
+        };
+      } else if (serviceTierOrOptions === 'plain' || serviceTierOrOptions === '300') {
+        targetOptions = {
+          category: 'plain',
+          tier: serviceTierOrOptions,
+          namingMode: 'plain'
+        };
+      } else {
+        targetOptions = {
+          tier: serviceTierOrOptions,
+          namingMode: 'personalized'
+        };
+      }
     } else if (serviceTierOrOptions && typeof serviceTierOrOptions === 'object') {
       targetOptions = serviceTierOrOptions;
     }
@@ -1428,13 +1495,20 @@ export const distributeAssignmentsForTrack = async (
     // 3) Get targeted students by tier/target and/or track without scanning full collection
     let targetStudentsMap: Record<string, StudentData> = {};
 
-    const hasTargetFilter = Boolean(targetOptions.tier || targetOptions.assignmentId || targetOptions.assignmentName || targetOptions.price);
+    const hasTargetFilter = Boolean(
+      targetOptions.category ||
+        targetOptions.tier ||
+        targetOptions.assignmentId ||
+        targetOptions.assignmentName ||
+        targetOptions.price
+    );
 
     if (hasTargetFilter) {
       const tierStudentIds = await getStudentIdsByTier({
+        category: targetOptions.category,
         assignmentId: targetOptions.assignmentId,
         assignmentName: targetOptions.assignmentName,
-        tierPrice: targetOptions.price || (targetOptions.tier === '500' ? 500 : targetOptions.tier === '300' ? 300 : undefined),
+        tierPrice: targetOptions.price,
         legacyTier: targetOptions.tier
       });
       if (tierStudentIds.size > 0) {
@@ -1465,7 +1539,13 @@ export const distributeAssignmentsForTrack = async (
     let students = allStudentsInTrack;
 
     if (students.length === 0) {
-      const tierLabel = targetOptions.assignmentName || (targetOptions.tier === '500' ? 'خدمة الـ 500' : targetOptions.tier === '300' ? 'خدمة الـ 300' : 'هذا المسار');
+      const tierLabel =
+        targetOptions.assignmentName ||
+        (targetOptions.category === 'personalized' || targetOptions.tier === '500'
+          ? 'باقة حل وتسليم التكليفات'
+          : targetOptions.category === 'plain' || targetOptions.tier === '300'
+          ? 'باقة حل PDF فقط'
+          : 'هذه الخدمة');
       throw new Error(`لا يوجد طلاب مشتركين في ${tierLabel} في هذا المسار حالياً`);
     }
 
@@ -1474,7 +1554,10 @@ export const distributeAssignmentsForTrack = async (
 
     // 5) Assign one file per student (allow reuse if files < students)
     let fileIndex = 0;
-    const isPlainNaming = targetOptions.namingMode === 'plain' || (!targetOptions.namingMode && targetOptions.tier === '300');
+    const isPlainNaming =
+      targetOptions.namingMode === 'plain' ||
+      targetOptions.category === 'plain' ||
+      (!targetOptions.namingMode && (targetOptions.tier === 'plain' || targetOptions.tier === '300'));
     let processedCount = 0;
     const totalCount = students.length;
 
@@ -1853,15 +1936,16 @@ export const distribute130UnifiedFiles = async (
     }
 
     // 2) Get all students who bought the unified tier or specified assignment
-    let queryTarget: any = 130;
-    let label = 'خدمة الملف الموحد / الـ 130';
+    let queryTarget: any = { category: 'unified', legacyTier: '130' };
+    let label = 'خدمة التربية العملي (الملف الموحد)';
     if (typeof targetAssignmentOrId === 'string' && targetAssignmentOrId) {
-      queryTarget = { assignmentId: targetAssignmentOrId, legacyTier: '130' };
+      queryTarget = { assignmentId: targetAssignmentOrId, category: 'unified', legacyTier: '130' };
     } else if (targetAssignmentOrId && typeof targetAssignmentOrId === 'object') {
       queryTarget = {
         assignmentId: targetAssignmentOrId.assignmentId,
         assignmentName: targetAssignmentOrId.assignmentName,
         tierPrice: targetAssignmentOrId.price,
+        category: 'unified',
         legacyTier: '130'
       };
       if (targetAssignmentOrId.assignmentName) label = targetAssignmentOrId.assignmentName;

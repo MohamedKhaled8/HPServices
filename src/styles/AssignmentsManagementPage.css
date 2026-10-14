@@ -1308,26 +1308,62 @@ button {
   opacity: 0.9;
 }
 
-.tier-button.tier-500 {
+.tier-button.tier-500,
+.tier-button.tier-personalized {
   background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
   color: white;
   box-shadow: 0 4px 14px rgba(79, 70, 229, 0.25);
 }
 
-.tier-button.tier-500:hover {
+.tier-button.tier-500:hover,
+.tier-button.tier-personalized:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
 }
 
-.tier-button.tier-300 {
+.tier-button.tier-300,
+.tier-button.tier-plain {
   background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
   color: white;
   box-shadow: 0 4px 14px rgba(5, 150, 105, 0.25);
 }
 
-.tier-button.tier-300:hover {
+.tier-button.tier-300:hover,
+.tier-button.tier-plain:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4);
+}
+
+.tier-btn-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.2);
+  margin-bottom: 2px;
+}
+
+.tier-badge-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.tier-badge-pill.personalized {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.tier-badge-pill.plain {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.tier-badge-pill.unified {
+  background: #fef3c7;
+  color: #b45309;
 }
 
 /* التكليفات الحالية - تصميم متجاوب وأنيق */
