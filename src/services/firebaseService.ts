@@ -1549,6 +1549,25 @@ export const distributeAssignmentsForTrack = async (
       throw new Error(`لا يوجد طلاب مشتركين في ${tierLabel} في هذا المسار حالياً`);
     }
 
+    // استبعاد الطلاب الذين سبق إسناد ملف لهم من نفس هذا التكليف / المجلد (حتى لا يتم تكرار الإرسال للطلاب القدامى)
+    const targetFileIdSet = new Set(files.map((f) => f.id));
+    const unassignedStudents = students.filter((student) => {
+      const existing = student.data.assignedFiles || [];
+      const hasAnyFromThisBatch = existing.some((f) => targetFileIdSet.has(f.id));
+      const hasInLastAssigned = student.data.assignedFile && targetFileIdSet.has(student.data.assignedFile.id);
+      return !hasAnyFromThisBatch && !hasInLastAssigned;
+    });
+
+    const alreadyAssignedCount = students.length - unassignedStudents.length;
+
+    if (unassignedStudents.length === 0) {
+      throw new Error(
+        `كافة الطلاب المشتركين في هذه الباقة بهذا المسار (${students.length} طالب) استلموا ملفاتهم من هذا التكليف/المجلد مسبقاً.`
+      );
+    }
+
+    students = unassignedStudents;
+
     // 4) Shuffle files randomly
     const shuffledFiles = [...files].sort(() => Math.random() - 0.5);
 
@@ -2349,6 +2368,96 @@ export const revokeDistributedFileFromStudents = async (
   } catch (error: any) {
     logger.error('Error revoking distributed file from students:', error);
     throw new Error(error.message || 'حدث خطأ أثناء سحب الملف من الطلاب');
+  }
+};
+
+/**
+ * سحب عدة ملفات محددة تم توزيعها من حسابات كافة الطلاب الذين استلموها
+ * يدعم التحديد المتعدد والسحب بدفعة واحدة مع writeBatch
+ */
+export const revokeMultipleDistributedFilesFromStudents = async (
+  fileIds: string[],
+  targetStudentIds?: string[],
+  onProgress?: (revokedCount: number, total: number) => void
+): Promise<{ updatedStudentsCount: number; removedFilesCount: number }> => {
+  try {
+    if (!fileIds || fileIds.length === 0) {
+      return { updatedStudentsCount: 0, removedFilesCount: 0 };
+    }
+    const fileIdSet = new Set(fileIds);
+
+    let studentDocs: any[] = [];
+    if (targetStudentIds && targetStudentIds.length > 0) {
+      const uniqueStudentIds = Array.from(new Set(targetStudentIds));
+      const chunks: string[][] = [];
+      for (let i = 0; i < uniqueStudentIds.length; i += 30) {
+        chunks.push(uniqueStudentIds.slice(i, i + 30));
+      }
+      for (const chunk of chunks) {
+        const docsSnap = await Promise.all(chunk.map((id) => getDoc(doc(db, 'students', id))));
+        docsSnap.forEach((ds) => {
+          if (ds.exists()) studentDocs.push(ds);
+        });
+      }
+    } else {
+      const q = query(collection(db, 'students'), where('assignedFile', '!=', null));
+      const snap = await getDocs(q);
+      studentDocs = snap.docs;
+    }
+
+    let updatedStudentsCount = 0;
+    let totalRemovedFiles = 0;
+    let batch = writeBatch(db);
+    let batchCount = 0;
+    const MAX_BATCH = 450;
+    const total = studentDocs.length;
+
+    for (let i = 0; i < studentDocs.length; i++) {
+      const sDoc = studentDocs[i];
+      const data = sDoc.data();
+      const assignedFiles: any[] = data.assignedFiles || [];
+
+      const filtered = assignedFiles.filter((f: any) => !fileIdSet.has(f.id));
+      const wasInAssignedFile = data.assignedFile && fileIdSet.has(data.assignedFile.id);
+      const diffCount = assignedFiles.length - filtered.length;
+
+      if (diffCount > 0 || wasInAssignedFile) {
+        totalRemovedFiles += diffCount > 0 ? diffCount : 1;
+        const updateData: any = {
+          assignedFiles: filtered,
+          updatedAt: serverTimestamp()
+        };
+        if (filtered.length > 0) {
+          updateData.assignedFile = filtered[filtered.length - 1];
+        } else {
+          updateData.assignedFile = null;
+        }
+
+        batch.update(sDoc.ref, updateData);
+        updatedStudentsCount++;
+        batchCount++;
+
+        if (batchCount >= MAX_BATCH) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+        }
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, total);
+      }
+    }
+
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+
+    logger.log(`Revoked ${fileIds.length} files from ${updatedStudentsCount} students (removed ${totalRemovedFiles} assignments)`);
+    return { updatedStudentsCount, removedFilesCount: totalRemovedFiles };
+  } catch (error: any) {
+    logger.error('Error revoking multiple distributed files from students:', error);
+    throw new Error(error.message || 'حدث خطأ أثناء سحب الملفات المحددة من الطلاب');
   }
 };
 

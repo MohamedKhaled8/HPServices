@@ -2129,15 +2129,127 @@ button {
   gap: 14px;
   padding: 14px 16px;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
+  border: 1.5px solid #e2e8f0;
   border-radius: 12px;
   transition: all 0.2s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
 }
 
 .recall-file-card:hover {
+  border-color: #f43f5e;
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.08);
+}
+
+.recall-file-card.selected {
+  background: #fff5f7;
+  border-color: #fb7185;
+  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.12);
+}
+
+.recall-checkbox-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  margin-left: 2px;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.recall-checkbox-label input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.recall-checkbox-label .checkbox-custom {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  display: inline-block;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.recall-checkbox-label:hover .checkbox-custom {
+  border-color: #e11d48;
+}
+
+.recall-checkbox-label input:checked ~ .checkbox-custom {
+  background: #e11d48;
+  border-color: #e11d48;
+}
+
+.recall-checkbox-label input:checked ~ .checkbox-custom:after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.recall-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.recall-quick-btn:hover {
+  background: #f8fafc;
   border-color: #cbd5e1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  color: #0f172a;
+}
+
+.recall-quick-btn.active {
+  background: #ffe4e6;
+  border-color: #f43f5e;
+  color: #be123c;
+}
+
+.recall-selected-batch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #e11d48;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.25);
+}
+
+.recall-selected-batch-btn:hover:not(:disabled) {
+  background: #be123c;
+  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.4);
+  transform: translateY(-1px);
+}
+
+.recall-selected-batch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .recall-file-main {

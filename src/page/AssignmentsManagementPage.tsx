@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 import {
   uploadAssignmentFilesForTrack,
@@ -25,6 +25,7 @@ import {
   AssignmentFolderMeta,
   getDistributedFilesForTrack,
   revokeDistributedFileFromStudents,
+  revokeMultipleDistributedFilesFromStudents,
   revokeAllDistributedFilesForTrack,
   DistributedFileSummary,
   getStudentsWithAssignedFiles,
@@ -297,6 +298,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const [confirmRevokeAllOpen, setConfirmRevokeAllOpen] = useState(false);
   const [confirmRevokeSingle, setConfirmRevokeSingle] = useState<DistributedFileSummary | null>(null);
   const [confirmRevokeStudentAllOpen, setConfirmRevokeStudentAllOpen] = useState(false);
+  const [selectedRecallFileIds, setSelectedRecallFileIds] = useState<Set<string>>(new Set());
+  const [confirmRevokeSelectedOpen, setConfirmRevokeSelectedOpen] = useState(false);
+  const [isRevokingSelected, setIsRevokingSelected] = useState(false);
 
   // Animation states
   const [showSnackbar, setShowSnackbar] = useState(false);
@@ -796,6 +800,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   // ============================================
 
   const handleOpenRecallModal = async (track: TrackKey | 'unified130') => {
+    setSelectedRecallFileIds(new Set());
     setRecallModal({
       open: true,
       track,
@@ -835,6 +840,12 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
       const count = await revokeDistributedFileFromStudents(item.fileId, item.studentIds);
 
+      setSelectedRecallFileIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.fileId);
+        return next;
+      });
+
       setRecallModal((prev) => ({
         ...prev,
         revokingId: null,
@@ -859,6 +870,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
       const result = await revokeAllDistributedFilesForTrack(recallModal.track);
 
+      setSelectedRecallFileIds(new Set());
       setRecallModal((prev) => ({
         ...prev,
         isRevokingAll: false,
@@ -871,6 +883,108 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     } catch (err: any) {
       setRecallModal((prev) => ({ ...prev, isRevokingAll: false }));
       showSnackbarNotification(err.message || 'حدث خطأ أثناء سحب جميع الملفات', 'error');
+    }
+  };
+
+  // أحدث دفعة تم إرسالها (أي ملفات أُرسلت في نافذة 10 دقائق من أحدث ملف)
+  const latestBatchFiles = useMemo(() => {
+    if (!recallModal.files || recallModal.files.length === 0) return [];
+    const firstTime = new Date(recallModal.files[0].assignedAt).getTime();
+    if (isNaN(firstTime)) return [recallModal.files[0]];
+    const WINDOW_MS = 10 * 60 * 1000;
+    return recallModal.files.filter((f) => {
+      const t = new Date(f.assignedAt).getTime();
+      return !isNaN(t) && firstTime - t <= WINDOW_MS;
+    });
+  }, [recallModal.files]);
+
+  const isLatestBatchSelected = useMemo(() => {
+    if (latestBatchFiles.length === 0) return false;
+    return latestBatchFiles.every((f) => selectedRecallFileIds.has(f.fileId));
+  }, [latestBatchFiles, selectedRecallFileIds]);
+
+  const isAllFilesSelected = useMemo(() => {
+    if (recallModal.files.length === 0) return false;
+    return recallModal.files.every((f) => selectedRecallFileIds.has(f.fileId));
+  }, [recallModal.files, selectedRecallFileIds]);
+
+  const handleToggleSelectFile = (fileId: string) => {
+    setSelectedRecallFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllFiles = () => {
+    if (isAllFilesSelected) {
+      setSelectedRecallFileIds(new Set());
+    } else {
+      setSelectedRecallFileIds(new Set(recallModal.files.map((f) => f.fileId)));
+    }
+  };
+
+  const handleToggleSelectLatestBatch = () => {
+    if (isLatestBatchSelected) {
+      setSelectedRecallFileIds((prev) => {
+        const next = new Set(prev);
+        latestBatchFiles.forEach((f) => next.delete(f.fileId));
+        return next;
+      });
+    } else {
+      setSelectedRecallFileIds((prev) => {
+        const next = new Set(prev);
+        latestBatchFiles.forEach((f) => next.add(f.fileId));
+        return next;
+      });
+    }
+  };
+
+  const handleRevokeSelectedFiles = async () => {
+    try {
+      const fileIdsToRevoke = Array.from(selectedRecallFileIds);
+      if (fileIdsToRevoke.length === 0) return;
+
+      setConfirmRevokeSelectedOpen(false);
+      setIsRevokingSelected(true);
+
+      const targetStudentIdSet = new Set<string>();
+      recallModal.files
+        .filter((f) => selectedRecallFileIds.has(f.fileId))
+        .forEach((f) => f.studentIds.forEach((id) => targetStudentIdSet.add(id)));
+
+      const result = await revokeMultipleDistributedFilesFromStudents(
+        fileIdsToRevoke,
+        Array.from(targetStudentIdSet)
+      );
+
+      const revokedSet = new Set(fileIdsToRevoke);
+
+      setRecallModal((prev) => ({
+        ...prev,
+        files: prev.files.filter((f) => !revokedSet.has(f.fileId)),
+        students: prev.students
+          .map((s) => ({
+            ...s,
+            assignedFiles: s.assignedFiles.filter((f) => !revokedSet.has(f.id))
+          }))
+          .filter((s) => s.assignedFiles.length > 0)
+      }));
+
+      setSelectedRecallFileIds(new Set());
+      setIsRevokingSelected(false);
+
+      showSnackbarNotification(
+        `تم سحب ${fileIdsToRevoke.length} ملف بنجاح من حسابات ${result.updatedStudentsCount} طالب`,
+        'success'
+      );
+    } catch (err: any) {
+      setIsRevokingSelected(false);
+      showSnackbarNotification(err.message || 'حدث خطأ أثناء سحب الملفات المحددة', 'error');
     }
   };
 
@@ -2364,24 +2478,79 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
             {recallModal.tab === 'by_file' && (
               <>
                 <div className="recall-top-bar">
-                  <div className="recall-stats-badge">
-                    <FileText size={15} />
-                    <span>الملفات المسندة حالياً: {recallModal.files.length}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <div className="recall-stats-badge">
+                      <FileText size={15} />
+                      <span>الملفات المسندة حالياً: {recallModal.files.length}</span>
+                    </div>
+
+                    {recallModal.files.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          className={`recall-quick-btn ${isAllFilesSelected ? 'active' : ''}`}
+                          onClick={handleToggleSelectAllFiles}
+                          title="تحديد كل الملفات المعروضة"
+                        >
+                          <Check size={14} />
+                          {isAllFilesSelected ? 'إلغاء تحديد الكل' : `تحديد الكل (${recallModal.files.length})`}
+                        </button>
+
+                        {latestBatchFiles.length > 0 && latestBatchFiles.length < recallModal.files.length && (
+                          <button
+                            type="button"
+                            className={`recall-quick-btn ${isLatestBatchSelected ? 'active' : ''}`}
+                            onClick={handleToggleSelectLatestBatch}
+                            title="تحديد الملفات التي تم إرسالها في آخر عملية توزيع"
+                          >
+                            <Clock size={14} />
+                            {isLatestBatchSelected
+                              ? 'إلغاء تحديد آخر دفعة'
+                              : `تحديد آخر دفعة أُرسلت (${latestBatchFiles.length} ملف)`}
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    className="recall-all-btn"
-                    disabled={
-                      recallModal.loading ||
-                      recallModal.files.length === 0 ||
-                      recallModal.isRevokingAll ||
-                      Boolean(recallModal.revokingId)
-                    }
-                    onClick={() => setConfirmRevokeAllOpen(true)}
-                  >
-                    <Trash2 size={15} />
-                    سحب كل ملفات المسار
-                  </button>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {selectedRecallFileIds.size > 0 && (
+                      <button
+                        type="button"
+                        className="recall-selected-batch-btn"
+                        disabled={recallModal.loading || isRevokingSelected || Boolean(recallModal.revokingId)}
+                        onClick={() => setConfirmRevokeSelectedOpen(true)}
+                      >
+                        {isRevokingSelected ? (
+                          <>
+                            <Loader2 size={15} className="spinning-loader-small" />
+                            جاري السحب...
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw size={15} />
+                            سحب الملفات المحددة ({selectedRecallFileIds.size})
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      className="recall-all-btn"
+                      disabled={
+                        recallModal.loading ||
+                        recallModal.files.length === 0 ||
+                        recallModal.isRevokingAll ||
+                        Boolean(recallModal.revokingId) ||
+                        isRevokingSelected
+                      }
+                      onClick={() => setConfirmRevokeAllOpen(true)}
+                    >
+                      <Trash2 size={15} />
+                      سحب كل ملفات المسار
+                    </button>
+                  </div>
                 </div>
 
                 <div className="recall-modal-body">
@@ -2399,49 +2568,71 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                       </p>
                     </div>
                   ) : (
-                    recallModal.files.map((item) => (
-                      <div key={item.fileId} className="recall-file-card">
-                        <div className="recall-file-main">
-                          <div className="recall-file-icon">
-                            <FileText size={20} />
-                          </div>
-                          <div className="recall-file-details">
-                            <span className="recall-file-name" title={item.fileName}>
-                              {item.fileName}
-                            </span>
-                            <div className="recall-file-meta-badges">
-                              <span className="recall-badge time" title="تاريخ ووقت الإرسال">
-                                <Clock size={12} />
-                                {item.formattedDate} — الساعة {item.formattedTime}
+                    recallModal.files.map((item) => {
+                      const isSelected = selectedRecallFileIds.has(item.fileId);
+                      return (
+                        <div
+                          key={item.fileId}
+                          className={`recall-file-card ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleToggleSelectFile(item.fileId)}
+                        >
+                          <div className="recall-file-main">
+                            <label
+                              className="recall-checkbox-label"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectFile(item.fileId)}
+                              />
+                              <span className="checkbox-custom" />
+                            </label>
+
+                            <div className="recall-file-icon">
+                              <FileText size={20} />
+                            </div>
+                            <div className="recall-file-details">
+                              <span className="recall-file-name" title={item.fileName}>
+                                {item.fileName}
                               </span>
-                              <span className="recall-badge students" title="عدد الطلاب المستلمين">
-                                <Users size={12} />
-                                {item.studentCount} طالب
-                              </span>
+                              <div className="recall-file-meta-badges">
+                                <span className="recall-badge time" title="تاريخ ووقت الإرسال">
+                                  <Clock size={12} />
+                                  {item.formattedDate} — الساعة {item.formattedTime}
+                                </span>
+                                <span className="recall-badge students" title="عدد الطلاب المستلمين">
+                                  <Users size={12} />
+                                  {item.studentCount} طالب
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <button
-                          type="button"
-                          className="recall-single-btn"
-                          disabled={Boolean(recallModal.revokingId) || recallModal.isRevokingAll}
-                          onClick={() => setConfirmRevokeSingle(item)}
-                        >
-                          {recallModal.revokingId === item.fileId ? (
-                            <>
-                              <Loader2 size={14} className="spinning-loader-small" />
-                              جاري السحب...
-                            </>
-                          ) : (
-                            <>
-                              <RotateCcw size={14} />
-                              سحب الملف
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    ))
+                          <button
+                            type="button"
+                            className="recall-single-btn"
+                            disabled={Boolean(recallModal.revokingId) || recallModal.isRevokingAll || isRevokingSelected}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmRevokeSingle(item);
+                            }}
+                          >
+                            {recallModal.revokingId === item.fileId ? (
+                              <>
+                                <Loader2 size={14} className="spinning-loader-small" />
+                                جاري السحب...
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw size={14} />
+                                سحب الملف
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </>
@@ -2698,6 +2889,54 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
                 className="tier-cancel"
                 style={{ margin: 0 }}
                 onClick={() => setConfirmRevokeSingle(null)}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* تأكيد سحب الملفات المحددة */}
+      {confirmRevokeSelectedOpen && selectedRecallFileIds.size > 0 && (
+        <div className="recall-modal-overlay" onClick={() => !isRevokingSelected && setConfirmRevokeSelectedOpen(false)}>
+          <div className="delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-confirm-icon" style={{ background: '#fee2e2', color: '#e11d48' }}>
+              <RotateCcw size={32} />
+            </div>
+            <h3 style={{ margin: '0 0 10px', fontSize: '18px', fontWeight: 800, color: '#be123c' }}>
+              تأكيد سحب الملفات المحددة ({selectedRecallFileIds.size} ملف)
+            </h3>
+            <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#475569', lineHeight: 1.6 }}>
+              هل تريد بالتأكيد سحب <strong>{selectedRecallFileIds.size} ملف محدد</strong> من حسابات كافة الطلاب الذين استلموها؟
+              <br />
+              <span style={{ color: '#059669', fontWeight: 700 }}>
+                ✓ لن يتم المساس بباقي الملفات أو الطلاب السابقين إطلاقاً.
+              </span>
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="recall-all-btn"
+                style={{ padding: '10px 24px', fontSize: '14px' }}
+                disabled={isRevokingSelected}
+                onClick={handleRevokeSelectedFiles}
+              >
+                {isRevokingSelected ? (
+                  <>
+                    <Loader2 size={16} className="spinning-loader-small" />
+                    جاري سحب الملفات المحددة...
+                  </>
+                ) : (
+                  'تأكيد سحب الملفات المحددة'
+                )}
+              </button>
+              <button
+                type="button"
+                className="tier-cancel"
+                style={{ margin: 0 }}
+                disabled={isRevokingSelected}
+                onClick={() => setConfirmRevokeSelectedOpen(false)}
               >
                 إلغاء
               </button>
