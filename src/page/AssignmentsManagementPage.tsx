@@ -29,6 +29,7 @@ import {
   DistributedFileSummary,
   getStudentsWithAssignedFiles,
   revokeSingleFileFromStudent,
+  revokeAllFilesFromStudent,
   StudentWithAssignedFiles
 } from '../services/firebaseService';
 import { AssignmentsServiceConfig, AssignmentItem } from '../types';

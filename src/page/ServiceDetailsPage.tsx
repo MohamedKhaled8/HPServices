@@ -10,6 +10,7 @@ import { ArrowRight, Edit2, AlertCircle, Pencil, Loader2, Award, CheckCircle, Fi
 import FileUpload from '../components/FileUpload';
 import { logger } from '../utils/logger';
 import { areAssignmentsMutuallyExclusive } from '../utils/assignmentClassifier';
+import { getServicePaymentNumber } from '../utils/servicePaymentNumber';
 import '../styles/ServiceDetailsPage.css';
 
 /** واتساب متابعة الطلب بعد التقديم — الرقم: +20 10 50889596 */
