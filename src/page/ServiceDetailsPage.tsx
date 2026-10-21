@@ -2187,7 +2187,7 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                                     key={serviceId}
                                     onFilesSelected={setReceiptFiles}
                                     maxFileSize={5 * 1024 * 1024}
-                                    acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF']}
+                                    acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF']}
                                     buttonLabel={service.id === '10' ? 'رفع الأوراق والمستندات (شهادة ميلاد - صورة شخصية - شهادة التخرج - شهادة التحول الرقمي - صورة تحويل المبلغ)' : 'حمل اسكرين تحويل المبلغ'}
                                 />
                             )}
@@ -2204,7 +2204,7 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                                     setIdCardFiles(files);
                                 }}
                                 maxFileSize={5 * 1024 * 1024}
-                                acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF', 'PDF']}
+                                acceptedFormats={['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF']}
                                 buttonLabel="رفع Screenshot التحويل + صورة البطاقة"
                             />
                         </section>

@@ -46,14 +46,36 @@ const FileUpload: React.FC<FileUploadProps> = ({
   };
 
   const isValidFile = (file: File): { valid: boolean; error?: string } => {
-    const fileType = getFileType(file.name);
-    const acceptedFormatsLower = acceptedFormats.map(f => f.toLowerCase());
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    const mime = (file.type || '').toLowerCase();
 
-    // Security: Validate file type
+    // منع ملفات PDF وملفات Excel وأي ملفات غير الصور نهائياً
+    const forbiddenExtensions = ['pdf', 'xlsx', 'xls', 'xlsm', 'xlsb', 'csv', 'xltx', 'xltm'];
+    const forbiddenMimes = [
+      'application/pdf',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv'
+    ];
+
+    if (forbiddenExtensions.includes(ext) || forbiddenMimes.some(m => mime.includes(m))) {
+      return {
+        valid: false,
+        error: 'عذراً، غير مسموح برفع ملفات PDF أو Excel نهائياً. يُرجى رفع صور فقط (مثل JPG, PNG, WEBP).'
+      };
+    }
+
+    const fileType = getFileType(file.name);
+    const sanitizedAccepted = acceptedFormats
+      .filter(f => !['PDF', 'XLSX', 'XLS', 'CSV'].includes(f.toUpperCase()));
+    const acceptedFormatsLower = (sanitizedAccepted.length > 0 ? sanitizedAccepted : ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF'])
+      .map(f => f.toLowerCase());
+
+    // Security: Validate file type (images only)
     if (!acceptedFormatsLower.includes(fileType.toLowerCase())) {
       return {
         valid: false,
-        error: `صيغة الملف غير مدعومة. الصيغ المقبولة: ${acceptedFormats.join(', ')}`
+        error: `صيغة الملف غير مدعومة. مسموح برفع الصور فقط: (JPG, PNG, WEBP, إلخ)`
       };
     }
 
@@ -65,21 +87,12 @@ const FileUpload: React.FC<FileUploadProps> = ({
       };
     }
 
-
-    // Note: MIME type validation removed for mobile compatibility
-    // Mobile browsers (especially iOS) often send incorrect or empty MIME types
-    // We rely on file extension validation above for security
-
     return { valid: true };
   };
 
   // فحص ما إذا كانت الصورة سوداء بالكامل (مظلمة) أو بيضاء تماماً (فارغة)
   const checkImageBlankness = (file: File): Promise<{ isBlank: boolean; reason?: string }> => {
     return new Promise((resolve) => {
-      const ext = file.name.split('.').pop()?.toLowerCase() || '';
-      if (ext === 'pdf' || file.type === 'application/pdf') {
-        return resolve({ isBlank: false });
-      }
 
       const img = new Image();
       const url = URL.createObjectURL(file);
@@ -259,11 +272,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         ref={fileInputRef}
         type="file"
         multiple
-        accept={
-          acceptedFormats.some(f => ['JPEG', 'JPG', 'PNG'].includes(f))
-            ? "image/*" + (acceptedFormats.includes('PDF') ? ",.pdf" : "")
-            : acceptedFormats.map(f => `.${f.toLowerCase()}`).join(',')
-        }
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/bmp,image/gif,image/*"
         onChange={(e) => handleFileSelect(e.target.files)}
         style={{ display: 'none' }}
         disabled={isProcessing}
@@ -308,7 +317,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
             <div key={file.id} className="file-item-simple">
               <div className="file-info-simple">
                 <div className="file-icon-simple">
-                  {file.type === 'PDF' ? 'PDF' : 'IMG'}
+                  IMG
                 </div>
                 <div className="file-details-simple">
                   <span className="file-name-simple">{file.name}</span>

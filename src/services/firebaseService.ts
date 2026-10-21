@@ -3029,7 +3029,7 @@ export const searchStudent = async (searchTerm: string, cachedStudents?: Student
 
 // Validate file type (images only for security)
 const isValidImageType = (fileType: string): boolean => {
-  const allowedTypes = ['JPEG', 'JPG', 'PNG', 'PDF', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF'];
+  const allowedTypes = ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF'];
   return allowedTypes.includes(fileType.toUpperCase());
 };
 
@@ -3166,7 +3166,7 @@ export const uploadFileToCloudinary = async (file: UploadedFile, studentId: stri
   try {
     // Security: Validate file type
     if (!isValidImageType(file.type)) {
-      throw new Error(`نوع الملف غير مدعوم. الصيغ المقبولة: JPEG, PNG, PDF`);
+      throw new Error(`نوع الملف غير مدعوم. مسموح برفع الصور فقط (JPG, PNG, WEBP, إلخ)`);
     }
 
     // Security: Validate file size
