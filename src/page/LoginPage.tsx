@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStudent } from '../context';
 import { loginOrRegisterUser, checkIsAdmin, getStudentPasswordHint, sendResetPasswordEmail } from '../services/firebaseService';
+import { checkLoginLockout, recordLoginFailure, recordLoginSuccess, checkForgotPasswordLimit } from '../utils/security';
 import { StudentData } from '../types';
 import {
   AlertCircle,
@@ -97,6 +98,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
       return;
     }
 
+    const forgotRateLimit = checkForgotPasswordLimit(query);
+    if (!forgotRateLimit.allowed) {
+      setForgotResult({
+        hint: '',
+        found: false,
+        message: forgotRateLimit.message || 'تجاوزت الحد المسموح به لمحاولات استعادة كلمة المرور.',
+      });
+      return;
+    }
+
     const queryLower = query.toLowerCase();
     if (queryLower === 'admin@example.com' || queryLower.startsWith('admin@') || queryLower.includes('admin')) {
       setForgotResult({
@@ -187,9 +198,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
       return;
     }
 
+    // Check brute-force lockout before sending request
+    const lockout = checkLoginLockout(formData.email);
+    if (lockout.isLocked) {
+      setError(lockout.message || 'تم حظر محاولات الدخول مؤقتاً لحماية الحساب لكثرة المحاولات الخاطئة.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const { user, studentData } = await loginOrRegisterUser(formData.email, formData.password);
       const isAdmin = await checkIsAdmin(user.uid);
+
+      // Reset login failure counter on success
+      recordLoginSuccess(formData.email);
 
       if (isAdmin) {
         const adminStudentData: StudentData = {
@@ -214,7 +236,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
       setStudent(studentData);
       onLoginSuccess();
     } catch (err: any) {
-      setError(err.message || 'بيانات الدخول غير صحيحة، يرجى التأكد من البريد وكلمة المرور');
+      const failure = recordLoginFailure(formData.email);
+      if (failure.isLocked) {
+        setError(failure.message || 'تم حظر محاولات الدخول مؤقتاً لحماية الحساب لكثرة المحاولات الخاطئة.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('تم حظر المحاولات مؤقتاً من قِبل نظام الأمان لكثرة المحاولات الخاطئة. يرجى الانتظار بضع دقائق والمحاولة لاحقاً.');
+      } else {
+        const remainingHint = failure.attemptsLeft > 0 && failure.attemptsLeft <= 3
+          ? ` (متبقي ${failure.attemptsLeft} محاولات قبل الحظر المؤقت)`
+          : '';
+        setError((err.message || 'بيانات الدخول غير صحيحة، يرجى التأكد من البريد وكلمة المرور') + remainingHint);
+      }
     } finally {
       setIsSubmitting(false);
     }
