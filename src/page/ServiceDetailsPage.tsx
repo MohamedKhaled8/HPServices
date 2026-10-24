@@ -1872,31 +1872,35 @@ ${transferLine}تم التقديم علي خدمه ( ${serviceTitle} )
                         </section>
                     )}
 
-                    {service.id === '7' && digitalTransformationConfig && (
+                    {service.id === '7' && (
                         <section className="form-section">
                             <h2>نوع التدريب</h2>
                             <div className="exam-language-section">
-                                {digitalTransformationConfig.examLanguage && digitalTransformationConfig.examLanguage.length > 0 ? (
-                                    <div className={`field-wrapper ${(formAttempted && missingFieldNames.includes('exam_language')) ? 'error-group' : ''}`}>
-                                        <label htmlFor="exam_language" className="field-label-clean">
-                                            اختر نوع التدريب <span className="field-required">*</span>
-                                        </label>
-                                        <select
-                                            id="exam_language"
-                                            value={serviceData['exam_language'] || ''}
-                                            onChange={(e) => handleServiceDataChange('exam_language', e.target.value)}
-                                            required
-                                            className={`field-select-clean ${(formAttempted && missingFieldNames.includes('exam_language')) ? 'error-border' : ''}`}
-                                        >
-                                            <option value="">اختر نوع التدريب...</option>
-                                            {digitalTransformationConfig.examLanguage.map((language, index) => (
-                                                <option key={index} value={language}>{language}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                ) : (
-                                    <p>لا توجد أنواع محددة</p>
-                                )}
+                                {(() => {
+                                    const availableLanguages = (digitalTransformationConfig?.examLanguage && digitalTransformationConfig.examLanguage.length > 0)
+                                        ? digitalTransformationConfig.examLanguage
+                                        : ['إختبار فقط', 'إختبار فقط (بالغة الإنجليزية)'];
+
+                                    return (
+                                        <div className={`field-wrapper ${(formAttempted && missingFieldNames.includes('exam_language')) ? 'error-group' : ''}`}>
+                                            <label htmlFor="exam_language" className="field-label-clean">
+                                                اختر نوع التدريب <span className="field-required">*</span>
+                                            </label>
+                                            <select
+                                                id="exam_language"
+                                                value={serviceData['exam_language'] || ''}
+                                                onChange={(e) => handleServiceDataChange('exam_language', e.target.value)}
+                                                required
+                                                className={`field-select-clean ${(formAttempted && missingFieldNames.includes('exam_language')) ? 'error-border' : ''}`}
+                                            >
+                                                <option value="">اختر نوع التدريب...</option>
+                                                {availableLanguages.map((language, index) => (
+                                                    <option key={index} value={language}>{language}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </section>
                     )}

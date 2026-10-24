@@ -1625,7 +1625,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         };
         setCertificatesConfig(defaultConfig);
-        updateCertificatesServiceConfig(defaultConfig).catch(e => logger.error('Error saving default certificates config:', e));
+        // تم إلغاء الحفظ التلقائي لحماية قاعدة البيانات من المسح عند انقطاع الاتصال أو تجاوز الكوتا
       }
     });
 
@@ -1634,12 +1634,14 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
         setDigitalTransformationConfig(config);
       } else {
         const defaultConfig: DigitalTransformationConfig = {
-          transformationTypes: [],
-          examLanguage: ['اللغة العربية'],
-          paymentMethods: { instaPay: '', cashWallet: '01050889591' }
+          transformationTypes: [
+            { id: '1769264857959', name: 'السادات امتحانات فقط', price: 1050 }
+          ],
+          examLanguage: ['إختبار فقط', 'إختبار فقط (بالغة الإنجليزية)'],
+          paymentMethods: { instaPay: '01017180923 احمد ع م ش', cashWallet: '01050889591' }
         };
         setDigitalTransformationConfig(defaultConfig);
-        updateDigitalTransformationConfig(defaultConfig).catch(e => logger.error('Error saving default digital transformation config:', e));
+        // تم إلغاء الحفظ التلقائي لحماية قاعدة البيانات من المسح عند انقطاع الاتصال أو تجاوز الكوتا
       }
     });
 
@@ -1653,7 +1655,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         };
         setFinalReviewConfig(defaultConfig);
-        updateFinalReviewConfig(defaultConfig).catch(e => logger.error('Error saving default final review config:', e));
+        // تم إلغاء الحفظ التلقائي لحماية قاعدة البيانات
       }
     });
 
@@ -1668,7 +1670,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           paymentMethods: { instaPay: '', cashWallet: '01050889591' }
         };
         setGraduationProjectConfig(defaultConfig);
-        updateGraduationProjectConfig(defaultConfig).catch(e => logger.error('Error saving default graduation project config:', e));
+        // تم إلغاء الحفظ التلقائي لحماية قاعدة البيانات
       }
     });
 
@@ -1682,7 +1684,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           paymentMethods: { instaPay: 'raoufpk97@instapay', cashWallet: '01050889591' }
         };
         setStatementEnrollmentConfig(defaultConfig);
-        updateStatementEnrollmentConfig(defaultConfig).catch(() => {/* ignore */});
+        // تم إلغاء الحفظ التلقائي لحماية قاعدة البيانات
       }
     });
     // ======= End Realtime subscriptions =======

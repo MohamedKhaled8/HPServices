@@ -4038,7 +4038,7 @@ export const updateDigitalTransformationConfig = async (config: DigitalTransform
         ...cleanConfig,
         updatedAt: serverTimestamp()
       },
-      { merge: false }
+      { merge: true }
     );
 
     logger.log('Digital transformation config saved to Firebase successfully');
