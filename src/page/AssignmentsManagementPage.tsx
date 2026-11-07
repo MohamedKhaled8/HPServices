@@ -62,6 +62,12 @@ import '../styles/AssignmentsManagementPage.css';
 
 import { AssignmentsManagementPageProps } from './assignments/types/assignments.types';
 import { TRACK_FOLDERS_CACHE_KEY, UNIFIED130_FOLDERS_CACHE_KEY } from './assignments/constants/assignments.constants';
+import {
+  mergeFoldersByPath,
+  getPathParts,
+  getParentPath,
+  getPathLastName
+} from './assignments/utils/folderUtils';
 
 const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ onBack }) => {
 
@@ -219,14 +225,6 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     }
   };
 
-  const mergeFoldersByPath = (a: AssignmentFolderMeta[], b: AssignmentFolderMeta[]) => {
-    const map = new Map<string, AssignmentFolderMeta>();
-    [...a, ...b].forEach((f) => {
-      if (!f?.path) return;
-      map.set(f.path, f);
-    });
-    return Array.from(map.values());
-  };
   const [isUploading130, setIsUploading130] = useState(false);
   const [isDistributing130, setIsDistributing130] = useState(false);
   const [selected130FileIds, setSelected130FileIds] = useState<Set<string>>(new Set());
@@ -1153,16 +1151,6 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     onBack();
   };
 
-  const getPathParts = (path: string): string[] => String(path || '').split('/').filter(Boolean);
-  const getParentPath = (path: string): string => {
-    const parts = getPathParts(path);
-    parts.pop();
-    return parts.join('/');
-  };
-  const getPathLastName = (path: string): string => {
-    const parts = getPathParts(path);
-    return parts[parts.length - 1] || '';
-  };
 
   const getVisibleTrackFiles = (track: TrackKey) => {
     const current = trackCurrentPath[track] || '';
