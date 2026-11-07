@@ -76,6 +76,7 @@ import {
 } from './assignments/storage/assignmentsCache';
 import { DistributionProgressToast } from './assignments/components/common/DistributionProgressToast';
 import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
+import { RevokeAllLoadingOverlay } from './assignments/components/common/RevokeAllLoadingOverlay';
 
 const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ onBack }) => {
 
@@ -2984,6 +2985,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       )}
 
 
+      {/* شاشة تحميل أثناء السحب الشامل */}
+      <RevokeAllLoadingOverlay isRevokingAll={recallModal.isRevokingAll} />
+
       {/* Delete Confirmation Modal */}
       {deleteConfirmModal.open && (
         <div className="delete-confirm-overlay" onClick={() => setDeleteConfirmModal(prev => ({ ...prev, open: false }))}>
@@ -3036,8 +3040,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         </div>
       )}
 
+      {/* Removing from users and folder delete overlays */}
       <FullscreenLoadingOverlays
-        isRevokingAll={recallModal.isRevokingAll}
         isRemovingFromUsers={isRemovingFromUsers}
         folderDeleteLoading={folderDeleteLoading}
       />
