@@ -61,10 +61,9 @@ import {
 import '../styles/AssignmentsManagementPage.css';
 
 import { AssignmentsManagementPageProps } from './assignments/types/assignments.types';
+import { TRACK_FOLDERS_CACHE_KEY, UNIFIED130_FOLDERS_CACHE_KEY } from './assignments/constants/assignments.constants';
 
 const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ onBack }) => {
-  const TRACK_FOLDERS_CACHE_KEY = 'assignments_track_folders_cache_v1';
-  const UNIFIED130_FOLDERS_CACHE_KEY = 'assignments_unified130_folders_cache_v1';
 
 
   // Tabs: إدارة التكليفات / إدارة تكاليف المسارات
