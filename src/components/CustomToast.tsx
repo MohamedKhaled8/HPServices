@@ -1,10 +1,10 @@
 import React, { useEffect, useRef } from 'react';
-import { CheckCircle, X, Loader2 } from 'lucide-react';
+import { CheckCircle, X, Loader2, Info } from 'lucide-react';
 import '../styles/CustomToast.css';
 
 interface CustomToastProps {
     message: string;
-    type: 'loading' | 'success' | 'error';
+    type: 'loading' | 'success' | 'error' | 'info';
     onClose: () => void;
     autoClose?: boolean;
     duration?: number;
@@ -41,6 +41,7 @@ const CustomToast: React.FC<CustomToastProps> = ({
                     {type === 'loading' && <Loader2 size={24} className="spinner" />}
                     {type === 'success' && <CheckCircle size={24} />}
                     {type === 'error' && <X size={24} />}
+                    {type === 'info' && <Info size={24} />}
                 </div>
                 <div className="custom-toast-message">{message}</div>
             </div>
