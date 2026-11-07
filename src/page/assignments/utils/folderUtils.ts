@@ -1,5 +1,5 @@
 // Pure folder and path helper functions extracted from src/page/AssignmentsManagementPage.tsx
-import { AssignmentFolderMeta } from '../../services/firebaseService';
+import { AssignmentFolderMeta } from '../../../services/firebaseService';
 
 export const mergeFoldersByPath = (a: AssignmentFolderMeta[], b: AssignmentFolderMeta[]) => {
   const map = new Map<string, AssignmentFolderMeta>();

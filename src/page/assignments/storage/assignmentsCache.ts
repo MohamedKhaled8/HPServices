@@ -1,5 +1,5 @@
 // LocalStorage cache helpers extracted from src/page/AssignmentsManagementPage.tsx
-import { TrackKey, AssignmentFolderMeta } from '../../services/firebaseService';
+import { TrackKey, AssignmentFolderMeta } from '../../../services/firebaseService';
 import { TRACK_FOLDERS_CACHE_KEY, UNIFIED130_FOLDERS_CACHE_KEY } from '../constants/assignments.constants';
 
 export const readCachedTrackFolders = (): Record<TrackKey, AssignmentFolderMeta[]> => {
