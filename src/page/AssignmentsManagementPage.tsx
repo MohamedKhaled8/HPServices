@@ -75,6 +75,7 @@ import {
   writeCachedUnified130Folders
 } from './assignments/storage/assignmentsCache';
 import { DistributionProgressToast } from './assignments/components/common/DistributionProgressToast';
+import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
 
 const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ onBack }) => {
 
@@ -2982,16 +2983,6 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         </div>
       )}
 
-      {/* شاشة تحميل أثناء السحب الشامل */}
-      {recallModal.isRevokingAll && (
-        <div className="removing-users-overlay">
-          <div className="removing-users-content">
-            <Loader2 size={40} className="spinning-loader-large" color="#e11d48" />
-            <p>جاري سحب كافة الملفات من حسابات الطلاب في المسار...</p>
-            <span>يتم التحديث بكفاءة دون إجهاد قاعدة البيانات، يرجى الانتظار</span>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmModal.open && (
@@ -3045,30 +3036,11 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         </div>
       )}
 
-      {/* Removing from users loading overlay */}
-      {isRemovingFromUsers && (
-        <div className="removing-users-overlay">
-          <div className="removing-users-content">
-            <Loader2 size={40} className="spinning-loader-large" />
-            <p>جاري حذف الملفات من حسابات الطلاب...</p>
-            <span>يرجى الانتظار وعدم إغلاق الصفحة</span>
-          </div>
-        </div>
-      )}
-
-      {folderDeleteLoading && (
-        <div className="removing-users-overlay">
-          <div className="removing-users-content">
-            <Loader2 size={40} className="spinning-loader-large" />
-            <p>
-              جاري حذف المجلد{' '}
-              <strong dir="ltr">{getPathLastName(folderDeleteLoading.folderPath) || folderDeleteLoading.folderPath}</strong>
-              {folderDeleteLoading.scope === 'track' ? ' وكل محتوياته من المسار...' : ' وكل محتوياته من الـ 130...'}
-            </p>
-            <span>يرجى الانتظار — قد يستغرق ذلك بضع ثوانٍ</span>
-          </div>
-        </div>
-      )}
+      <FullscreenLoadingOverlays
+        isRevokingAll={recallModal.isRevokingAll}
+        isRemovingFromUsers={isRemovingFromUsers}
+        folderDeleteLoading={folderDeleteLoading}
+      />
 
       {/* Floating live progress bar for assignments distribution */}
       <DistributionProgressToast distProgress={distProgress} updateProgress={updateProgress} />
