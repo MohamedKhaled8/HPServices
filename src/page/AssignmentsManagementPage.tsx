@@ -60,9 +60,7 @@ import {
 } from 'lucide-react';
 import '../styles/AssignmentsManagementPage.css';
 
-interface AssignmentsManagementPageProps {
-  onBack: () => void;
-}
+import { AssignmentsManagementPageProps } from './assignments/types/assignments.types';
 
 const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ onBack }) => {
   const TRACK_FOLDERS_CACHE_KEY = 'assignments_track_folders_cache_v1';
