@@ -77,6 +77,7 @@ import {
 import { DistributionProgressToast } from './assignments/components/common/DistributionProgressToast';
 import { AssignmentsSnackbar } from './assignments/components/common/AssignmentsSnackbar';
 import { PaperPlaneAnimation } from './assignments/components/common/PaperPlaneAnimation';
+import { useAssignmentsNotifications } from './assignments/hooks/useAssignmentsNotifications';
 import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
 import { RevokeAllLoadingOverlay } from './assignments/components/common/RevokeAllLoadingOverlay';
 import { AssignmentsHeader } from './assignments/components/layout/AssignmentsHeader';
@@ -136,7 +137,14 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   });
 
   const [isDistributingAssignments, setIsDistributingAssignments] = useState(false);
-  const [assignmentsMessage, setAssignmentsMessage] = useState<string | null>(null);
+  const {
+    assignmentsMessage,
+    setAssignmentsMessage,
+    showSnackbar,
+    snackbarMessage,
+    snackbarType,
+    showSnackbarNotification,
+  } = useAssignmentsNotifications();
   const [trackFolders, setTrackFolders] = useState<Record<TrackKey, AssignmentFolderMeta[]>>({
     track1: [],
     track2: [],
@@ -280,9 +288,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const [isRevokingSelected, setIsRevokingSelected] = useState(false);
 
   // Animation states
-  const [showSnackbar, setShowSnackbar] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarType, setSnackbarType] = useState<'success' | 'error'>('success');
+
   const [showPaperPlane, setShowPaperPlane] = useState(false);
 
   // Load assignments config
@@ -755,16 +761,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     setDeleteConfirmModal({ open: true, fileIds: ids, source: 'unified130' });
   };
 
-  // Helper function to show snackbar
-  const showSnackbarNotification = (message: string, type: 'success' | 'error' = 'success') => {
-    setSnackbarMessage(message);
-    setSnackbarType(type);
-    setShowSnackbar(true);
 
-    setTimeout(() => {
-      setShowSnackbar(false);
-    }, 3000);
-  };
 
   const handleDeleteSelected = (track: TrackKey) => {
     const ids = Array.from(selectedFileIds[track] || []);
