@@ -1,78 +1,21 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 
 import {
-  uploadAssignmentFilesForTrack,
   getAssignmentFilesForTrack,
-  createAssignmentFolderForTrack,
   getAssignmentFoldersForTrack,
-  distributeAssignmentsForTrack,
-  deleteAssignmentFilesForTrack,
-  getAssignmentsServiceConfig,
-  updateAssignmentsServiceConfig,
-  getCurrentUser,
-  TrackKey,
-  ServiceTier,
-  DistributeTargetOptions,
-  upload130UnifiedFile,
   get130UnifiedFiles,
-  create130UnifiedFolder,
   get130UnifiedFolders,
-  deleteAssignmentFolderForTrack,
-  delete130UnifiedFolder,
-  delete130UnifiedFiles,
-  distribute130UnifiedFiles,
-  removeAssignedFilesFromAllStudents,
-  AssignmentFolderMeta,
-  getDistributedFilesForTrack,
-  revokeDistributedFileFromStudents,
-  revokeMultipleDistributedFilesFromStudents,
-  revokeAllDistributedFilesForTrack,
-  DistributedFileSummary,
-  getStudentsWithAssignedFiles,
-  revokeSingleFileFromStudent,
-  revokeAllFilesFromStudent,
-  StudentWithAssignedFiles
+  TrackKey,
 } from '../services/firebaseService';
-import { AssignmentsServiceConfig, AssignmentItem } from '../types';
-import { classifyAssignment, AssignmentCategory } from '../utils/assignmentClassifier';
-import {
-  ArrowRight,
-  Folder,
-  Send,
-  Loader2,
-  Save,
-  X,
-  Upload,
-  AlertCircle,
-  CheckCircle,
-  Trash2,
-  Edit2,
-  Check,
-  RotateCcw,
-  Clock,
-  Calendar,
-  Users,
-  FileText,
-  AlertTriangle,
-  Search,
-  User,
-  UserX
-} from 'lucide-react';
 import '../styles/AssignmentsManagementPage.css';
 
 import { AssignmentsManagementPageProps } from './assignments/types/assignments.types';
-import { TRACK_FOLDERS_CACHE_KEY, UNIFIED130_FOLDERS_CACHE_KEY } from './assignments/constants/assignments.constants';
-import {
-  mergeFoldersByPath,
-  getPathParts,
-  getParentPath,
-  getPathLastName
-} from './assignments/utils/folderUtils';
+import { mergeFoldersByPath } from './assignments/utils/folderUtils';
 import {
   readCachedTrackFolders,
   writeCachedTrackFolders,
   readCachedUnified130Folders,
-  writeCachedUnified130Folders
+  writeCachedUnified130Folders,
 } from './assignments/storage/assignmentsCache';
 import { DistributionProgressToast } from './assignments/components/common/DistributionProgressToast';
 import { AssignmentsSnackbar } from './assignments/components/common/AssignmentsSnackbar';
