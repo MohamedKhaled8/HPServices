@@ -80,6 +80,7 @@ import { PaperPlaneAnimation } from './assignments/components/common/PaperPlaneA
 import { useAssignmentsNotifications } from './assignments/hooks/useAssignmentsNotifications';
 import { useAssignmentsConfig } from './assignments/hooks/useAssignmentsConfig';
 import { useUnified130Folders } from './assignments/hooks/useUnified130Folders';
+import { useTrackFolders } from './assignments/hooks/useTrackFolders';
 import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
 import { RevokeAllLoadingOverlay } from './assignments/components/common/RevokeAllLoadingOverlay';
 import { AssignmentsHeader } from './assignments/components/layout/AssignmentsHeader';
@@ -102,7 +103,6 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const [activeTab, setActiveTab] = useState<'assignments' | 'tracks' | 'unified130'>('assignments');
 
   // Tracks view state
-  const [activeTrackFolder, setActiveTrackFolder] = useState<TrackKey>('track1');
   const [trackView, setTrackView] = useState<'overview' | 'details'>('overview');
   const [openedTrack, setOpenedTrack] = useState<TrackKey | null>(null);
   const [trackFiles, setTrackFiles] = useState<Record<TrackKey, any[]>>({
@@ -170,17 +170,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     handleSaveEditAssignment,
   } = useAssignmentsConfig({ setAssignmentsMessage });
 
-  const [trackFolders, setTrackFolders] = useState<Record<TrackKey, AssignmentFolderMeta[]>>({
-    track1: [],
-    track2: [],
-    track3: []
-  });
-  const [trackCurrentPath, setTrackCurrentPath] = useState<Record<TrackKey, string>>({
-    track1: '',
-    track2: '',
-    track3: ''
-  });
-  const [newTrackFolderName, setNewTrackFolderName] = useState('');
+
 
   // Tier selection modal state
   const [showTierModal, setShowTierModal] = useState(false);
@@ -275,6 +265,26 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     unified130Files,
     setUnified130Files,
     setSelected130FileIds,
+    setFolderDeleteLoading,
+    showSnackbarNotification,
+  });
+
+  const {
+    activeTrackFolder,
+    setActiveTrackFolder,
+    trackFolders,
+    setTrackFolders,
+    trackCurrentPath,
+    setTrackCurrentPath,
+    newTrackFolderName,
+    setNewTrackFolderName,
+    getVisibleTrackFolders,
+    handleCreateTrackFolder,
+    handleDeleteTrackFolder,
+  } = useTrackFolders({
+    trackFiles,
+    setTrackFiles,
+    setSelectedFileIds,
     setFolderDeleteLoading,
     showSnackbarNotification,
   });
@@ -1023,10 +1033,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     return (trackFiles[track] || []).filter((f) => (f.folderPath || '') === current);
   };
 
-  const getVisibleTrackFolders = (track: TrackKey) => {
-    const current = trackCurrentPath[track] || '';
-    return (trackFolders[track] || []).filter((f) => f.parentPath === current);
-  };
+
 
   const getVisibleUnified130Files = () => {
     const current = unified130CurrentPath || '';
@@ -1034,88 +1041,6 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   };
 
 
-
-  const handleCreateTrackFolder = async (track: TrackKey) => {
-    const folderName = newTrackFolderName.trim();
-    if (!folderName) return;
-    try {
-      const created = await createAssignmentFolderForTrack(track, folderName, trackCurrentPath[track] || '');
-      setTrackFolders((prev) => {
-        const next = { ...prev, [track]: mergeFoldersByPath(prev[track] || [], [created]) };
-        writeCachedTrackFolders(next);
-        return next;
-      });
-      setNewTrackFolderName('');
-      showSnackbarNotification('تم إنشاء المجلد بنجاح', 'success');
-    } catch (error: any) {
-      // fallback local-only folder حتى لا يختفي عند إعادة فتح الصفحة
-      const fallback: AssignmentFolderMeta = {
-        id: `local_${Date.now()}`,
-        name: folderName.replace(/[\\/:*?"<>|]/g, '_').trim(),
-        path: (trackCurrentPath[track] ? `${trackCurrentPath[track]}/` : '') + folderName.replace(/[\\/:*?"<>|]/g, '_').trim(),
-        parentPath: trackCurrentPath[track] || ''
-      };
-      setTrackFolders((prev) => {
-        const next = { ...prev, [track]: mergeFoldersByPath(prev[track] || [], [fallback]) };
-        writeCachedTrackFolders(next);
-        return next;
-      });
-      setNewTrackFolderName('');
-      showSnackbarNotification(error.message ? `${error.message} — تم حفظ المجلد محلياً.` : 'تم حفظ المجلد محلياً.', 'error');
-    }
-  };
-
-  const handleDeleteTrackFolder = async (track: TrackKey, folderPath: string) => {
-    const folderName = getPathLastName(folderPath) || folderPath;
-    const ok = window.confirm(`سيتم حذف المجلد "${folderName}" وكل ما بداخله. هل أنت متأكد؟`);
-    if (!ok) return;
-    setFolderDeleteLoading({ scope: 'track', track, folderPath });
-    try {
-      const result = await deleteAssignmentFolderForTrack(track, folderPath);
-
-      const nextFolders = {
-        ...trackFolders,
-        [track]: (trackFolders[track] || []).filter((f) => !(f.path === folderPath || f.path.startsWith(`${folderPath}/`)))
-      };
-      const nextFiles = {
-        ...trackFiles,
-        [track]: (trackFiles[track] || []).filter((f: any) => {
-          const fp = String(f.folderPath || '');
-          return !(fp === folderPath || fp.startsWith(`${folderPath}/`));
-        })
-      };
-      setTrackFolders(nextFolders);
-      setTrackFiles(nextFiles);
-      writeCachedTrackFolders(nextFolders);
-
-      const cur = trackCurrentPath[track] || '';
-      if (cur === folderPath || cur.startsWith(`${folderPath}/`)) {
-        setTrackCurrentPath((p) => ({ ...p, [track]: getParentPath(folderPath) }));
-      }
-
-      const removedIds = new Set(result.deletedFiles);
-      if (removedIds.size > 0) {
-        setSelectedFileIds((prev) => {
-          const s = new Set(prev[track] || []);
-          removedIds.forEach((id) => s.delete(id));
-          return { ...prev, [track]: s };
-        });
-      }
-
-      if (result.deletedFiles.length > 0) {
-        try {
-          await removeAssignedFilesFromAllStudents(result.deletedFiles);
-        } catch {
-          // ignore secondary cleanup failure
-        }
-      }
-      showSnackbarNotification('تم حذف المجلد وكل محتوياته', 'success');
-    } catch (error: any) {
-      showSnackbarNotification(error.message || 'فشل حذف المجلد', 'error');
-    } finally {
-      setFolderDeleteLoading(null);
-    }
-  };
 
   return (
     <div className="assignments-management-page">
