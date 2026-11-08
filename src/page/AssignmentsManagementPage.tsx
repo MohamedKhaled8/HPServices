@@ -75,6 +75,7 @@ import {
   writeCachedUnified130Folders
 } from './assignments/storage/assignmentsCache';
 import { DistributionProgressToast } from './assignments/components/common/DistributionProgressToast';
+import { AssignmentsSnackbar } from './assignments/components/common/AssignmentsSnackbar';
 import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
 import { RevokeAllLoadingOverlay } from './assignments/components/common/RevokeAllLoadingOverlay';
 import { AssignmentsHeader } from './assignments/components/layout/AssignmentsHeader';
@@ -1409,12 +1410,11 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       </div>
 
       {/* Snackbar Notification */}
-      {showSnackbar && (
-        <div className={`snackbar ${snackbarType}`}>
-          {snackbarType === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
-          <span>{snackbarMessage}</span>
-        </div>
-      )}
+      <AssignmentsSnackbar
+        showSnackbar={showSnackbar}
+        snackbarMessage={snackbarMessage}
+        snackbarType={snackbarType}
+      />
 
       {/* Paper Plane Animation */}
       {showPaperPlane && (
