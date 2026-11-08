@@ -76,6 +76,7 @@ import {
 } from './assignments/storage/assignmentsCache';
 import { DistributionProgressToast } from './assignments/components/common/DistributionProgressToast';
 import { AssignmentsSnackbar } from './assignments/components/common/AssignmentsSnackbar';
+import { PaperPlaneAnimation } from './assignments/components/common/PaperPlaneAnimation';
 import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
 import { RevokeAllLoadingOverlay } from './assignments/components/common/RevokeAllLoadingOverlay';
 import { AssignmentsHeader } from './assignments/components/layout/AssignmentsHeader';
@@ -1417,11 +1418,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       />
 
       {/* Paper Plane Animation */}
-      {showPaperPlane && (
-        <div className="paper-plane-container">
-          <div className="paper-plane">✈️</div>
-        </div>
-      )}
+      <PaperPlaneAnimation showPaperPlane={showPaperPlane} />
 
       {/* Tier Selection Modal */}
       <TierSelectionModal
