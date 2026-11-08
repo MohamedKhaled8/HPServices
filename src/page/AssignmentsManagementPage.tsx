@@ -77,6 +77,7 @@ import {
 import { DistributionProgressToast } from './assignments/components/common/DistributionProgressToast';
 import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
 import { RevokeAllLoadingOverlay } from './assignments/components/common/RevokeAllLoadingOverlay';
+import { AssignmentsHeader } from './assignments/components/layout/AssignmentsHeader';
 import { TierSelectionModal } from './assignments/components/modals/TierSelectionModal';
 import { DeleteConfirmationModal } from './assignments/components/modals/DeleteConfirmationModal';
 import { ConfirmRevokeSingleModal } from './assignments/components/modals/recall/ConfirmRevokeSingleModal';
@@ -1305,30 +1306,10 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
   return (
     <div className="assignments-management-page">
-      <div className="title-header">
-        <h1>إعدادات خدمة التكليفات</h1>
-      </div>
-
-      <div className="assignments-header">
-        <button onClick={handleBack} className="back-button">
-          <ArrowRight size={20} />
-          رجوع
-        </button>
-      </div>
-
-      {assignmentsMessage && (
-        <div
-          className={`assignments-message ${assignmentsMessage.includes('نجاح') ? 'success' : 'error'
-            }`}
-        >
-          {assignmentsMessage.includes('نجاح') ? (
-            <CheckCircle size={18} />
-          ) : (
-            <AlertCircle size={18} />
-          )}
-          <span>{assignmentsMessage}</span>
-        </div>
-      )}
+      <AssignmentsHeader
+        handleBack={handleBack}
+        assignmentsMessage={assignmentsMessage}
+      />
 
       {/* Secondary tabs inside assignments page (same style as admin tabs) */}
       <div className="assignments-inner-tabs">
