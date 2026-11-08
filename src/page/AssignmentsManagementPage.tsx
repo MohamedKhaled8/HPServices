@@ -78,6 +78,7 @@ import { DistributionProgressToast } from './assignments/components/common/Distr
 import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
 import { RevokeAllLoadingOverlay } from './assignments/components/common/RevokeAllLoadingOverlay';
 import { AssignmentsHeader } from './assignments/components/layout/AssignmentsHeader';
+import { AssignmentsNavigationTabs } from './assignments/components/layout/AssignmentsNavigationTabs';
 import { TierSelectionModal } from './assignments/components/modals/TierSelectionModal';
 import { DeleteConfirmationModal } from './assignments/components/modals/DeleteConfirmationModal';
 import { ConfirmRevokeSingleModal } from './assignments/components/modals/recall/ConfirmRevokeSingleModal';
@@ -1312,41 +1313,12 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       />
 
       {/* Secondary tabs inside assignments page (same style as admin tabs) */}
-      <div className="assignments-inner-tabs">
-        <button
-          type="button"
-          className={`tab-button inner-tab ${activeTab === 'assignments' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('assignments');
-            setTrackView('overview');
-            setOpenedTrack(null);
-          }}
-        >
-          إدارة التكليفات
-        </button>
-        <button
-          type="button"
-          className={`tab-button inner-tab ${activeTab === 'unified130' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('unified130');
-            setTrackView('overview');
-            setOpenedTrack(null);
-          }}
-        >
-          ملفات الـ 130 (موحد)
-        </button>
-        <button
-          type="button"
-          className={`tab-button inner-tab ${activeTab === 'tracks' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('tracks');
-            setTrackView('overview');
-            setOpenedTrack(null);
-          }}
-        >
-          إدارة تكاليف المسارات الدراسية
-        </button>
-      </div>
+      <AssignmentsNavigationTabs
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        setTrackView={setTrackView}
+        setOpenedTrack={setOpenedTrack}
+      />
 
       <div className="assignments-content">
         {/* TAB: إدارة التكليفات */}
