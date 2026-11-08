@@ -83,8 +83,7 @@ import { ConfirmRevokeSingleModal } from './assignments/components/modals/recall
 import { ConfirmRevokeSelectedModal } from './assignments/components/modals/recall/ConfirmRevokeSelectedModal';
 import { ConfirmRevokeAllModal } from './assignments/components/modals/recall/ConfirmRevokeAllModal';
 import { ConfirmRevokeStudentAllModal } from './assignments/components/modals/recall/ConfirmRevokeStudentAllModal';
-import { RecallByFileTab } from './assignments/components/modals/recall/RecallByFileTab';
-import { RecallByStudentTab } from './assignments/components/modals/recall/RecallByStudentTab';
+import { RecallModal } from './assignments/components/modals/recall/RecallModal';
 
 const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ onBack }) => {
 
@@ -2243,91 +2242,24 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       />
 
       {/* نافذة سحب الملفات الموزعة على الطلاب */}
-      {recallModal.open && (
-        <div
-          className="recall-modal-overlay"
-          onClick={() => !recallModal.isRevokingAll && setRecallModal((prev) => ({ ...prev, open: false }))}
-        >
-          <div className="recall-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="recall-modal-header">
-              <div className="recall-modal-title-wrap">
-                <div className="recall-modal-icon-badge">
-                  <RotateCcw size={20} />
-                </div>
-                <div>
-                  <h3>
-                    سحب الملفات الموزعة —{' '}
-                    {recallModal.track === 'unified130'
-                      ? 'ملفات التربية العملي (130)'
-                      : recallModal.track === 'track1'
-                      ? 'المسار الأول'
-                      : recallModal.track === 'track2'
-                      ? 'المسار الثاني'
-                      : 'المسار الثالث'}
-                  </h3>
-                  <span>عرض تاريخ وساعة إرسال كل ملف وسحبه من حسابات الطلاب</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="recall-close-btn"
-                disabled={recallModal.isRevokingAll || recallModal.isRevokingStudentAll}
-                onClick={() => setRecallModal((prev) => ({ ...prev, open: false }))}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* التبويبات العلوية */}
-            <div className="recall-modal-tabs">
-              <button
-                type="button"
-                className={`recall-tab-btn ${recallModal.tab === 'by_file' ? 'active' : ''}`}
-                onClick={() => setRecallModal((prev) => ({ ...prev, tab: 'by_file' }))}
-              >
-                <Clock size={15} />
-                سحب حسب التكليفات الموزعة ({recallModal.files.length})
-              </button>
-              <button
-                type="button"
-                className={`recall-tab-btn ${recallModal.tab === 'by_student' ? 'active' : ''}`}
-                onClick={() => setRecallModal((prev) => ({ ...prev, tab: 'by_student' }))}
-              >
-                <Users size={15} />
-                سحب من طالب محدد ({recallModal.students.length})
-              </button>
-            </div>
-
-            {/* محتوى تبويب 1: سحب حسب التكليفات الموزعة (بالتاريخ والساعة) */}
-            {recallModal.tab === 'by_file' && (
-              <RecallByFileTab
-                recallModal={recallModal}
-                selectedRecallFileIds={selectedRecallFileIds}
-                isAllFilesSelected={isAllFilesSelected}
-                isLatestBatchSelected={isLatestBatchSelected}
-                latestBatchFiles={latestBatchFiles}
-                isRevokingSelected={isRevokingSelected}
-                setConfirmRevokeSelectedOpen={setConfirmRevokeSelectedOpen}
-                setConfirmRevokeAllOpen={setConfirmRevokeAllOpen}
-                setConfirmRevokeSingle={setConfirmRevokeSingle}
-                handleToggleSelectAllFiles={handleToggleSelectAllFiles}
-                handleToggleSelectLatestBatch={handleToggleSelectLatestBatch}
-                handleToggleSelectFile={handleToggleSelectFile}
-              />
-            )}
-
-            {/* محتوى تبويب 2: سحب من طالب محدد (بحث بالاسم) */}
-            {recallModal.tab === 'by_student' && (
-              <RecallByStudentTab
-                recallModal={recallModal}
-                setRecallModal={setRecallModal}
-                setConfirmRevokeStudentAllOpen={setConfirmRevokeStudentAllOpen}
-                handleRevokeSingleFileFromStudent={handleRevokeSingleFileFromStudent}
-              />
-            )}
-          </div>
-        </div>
-      )}
+      {/* نافذة سحب الملفات الموزعة على الطلاب */}
+      <RecallModal
+        recallModal={recallModal}
+        setRecallModal={setRecallModal}
+        selectedRecallFileIds={selectedRecallFileIds}
+        isAllFilesSelected={isAllFilesSelected}
+        isLatestBatchSelected={isLatestBatchSelected}
+        latestBatchFiles={latestBatchFiles}
+        isRevokingSelected={isRevokingSelected}
+        setConfirmRevokeSelectedOpen={setConfirmRevokeSelectedOpen}
+        setConfirmRevokeAllOpen={setConfirmRevokeAllOpen}
+        setConfirmRevokeSingle={setConfirmRevokeSingle}
+        handleToggleSelectAllFiles={handleToggleSelectAllFiles}
+        handleToggleSelectLatestBatch={handleToggleSelectLatestBatch}
+        handleToggleSelectFile={handleToggleSelectFile}
+        setConfirmRevokeStudentAllOpen={setConfirmRevokeStudentAllOpen}
+        handleRevokeSingleFileFromStudent={handleRevokeSingleFileFromStudent}
+      />
 
       {/* تأكيد سحب ملف واحد */}
       <ConfirmRevokeSingleModal
