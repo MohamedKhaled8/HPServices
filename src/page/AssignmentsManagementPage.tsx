@@ -84,6 +84,8 @@ import { useTrackFolders } from './assignments/hooks/useTrackFolders';
 import { useAssignmentsDistribution } from './assignments/hooks/useAssignmentsDistribution';
 import { useAssignmentsDeletion } from './assignments/hooks/useAssignmentsDeletion';
 import { useAssignmentsRecall } from './assignments/hooks/useAssignmentsRecall';
+import { useTrackFiles } from './assignments/hooks/useTrackFiles';
+import { useUnified130Files } from './assignments/hooks/useUnified130Files';
 import { FullscreenLoadingOverlays } from './assignments/components/common/FullscreenLoadingOverlays';
 import { RevokeAllLoadingOverlay } from './assignments/components/common/RevokeAllLoadingOverlay';
 import { AssignmentsHeader } from './assignments/components/layout/AssignmentsHeader';
@@ -268,6 +270,26 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     handleRevokeAllFilesFromStudent,
   } = useAssignmentsRecall({ showSnackbarNotification });
 
+  const { handleFileUpload, getVisibleTrackFiles } = useTrackFiles({
+    trackFiles,
+    setTrackFiles,
+    uploadProgress,
+    setUploadProgress,
+    isUploadingAssignments,
+    setIsUploadingAssignments,
+    trackCurrentPath,
+    setAssignmentsMessage,
+  });
+
+  const { handle130FileUpload, getVisibleUnified130Files } = useUnified130Files({
+    unified130Files,
+    setUnified130Files,
+    isUploading130,
+    setIsUploading130,
+    unified130CurrentPath,
+    showSnackbarNotification,
+  });
+
   // Animation states
 
 
@@ -327,93 +349,6 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     load130Files();
   }, []);
 
-  // Prevent closing tab/browser while uploading
-  useEffect(() => {
-    const isUploading = Object.values(isUploadingAssignments).some(uploading => uploading);
-
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isUploading) {
-        e.preventDefault();
-        e.returnValue = 'هناك ملفات قيد الرفع. هل تريد المغادرة؟';
-        return e.returnValue;
-      }
-    };
-
-    if (isUploading) {
-      window.addEventListener('beforeunload', handleBeforeUnload);
-    }
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [isUploadingAssignments]);
-
-  const handleFileUpload = async (track: TrackKey, files: File[]) => {
-    const user = getCurrentUser();
-    // التحقق من وجود مستخدم (أدمن) وليس طالب
-    if (!user || files.length === 0) {
-      console.error('No user found or no files selected');
-      return;
-    }
-
-    try {
-      setIsUploadingAssignments(prev => ({ ...prev, [track]: true }));
-      setAssignmentsMessage(null);
-
-      // تهيئة العداد قبل البدء
-      setUploadProgress(prev => ({
-        ...prev,
-        [track]: { current: 0, total: files.length }
-      }));
-
-      // الرفع المباشر وتحديث الواجهة فورياً
-      const uploadedFiles = await uploadAssignmentFilesForTrack(
-        track,
-        files,
-        user.uid,
-        trackCurrentPath[track] || '',
-        (current, total) => {
-          setUploadProgress(prev => ({
-            ...prev,
-            [track]: { current, total }
-          }));
-        }
-      );
-
-      // تحديث الحالة محلياً وفورياً (Optimistic UI Update)
-      setTrackFiles(prev => ({
-        ...prev,
-        [track]: [...(prev[track] || []), ...uploadedFiles]
-      }));
-
-      setAssignmentsMessage(
-        `تم رفع الملفات بنجاح للمسار ${track === 'track1' ? 'الأول' : track === 'track2' ? 'الثاني' : 'الثالث'
-        }`
-      );
-      setTimeout(() => setAssignmentsMessage(null), 3000);
-    } catch (error: any) {
-      setAssignmentsMessage(error.message || 'حدث خطأ أثناء رفع الملفات');
-    } finally {
-      setIsUploadingAssignments(prev => ({ ...prev, [track]: false }));
-    }
-  };
-
-  // 130 Unified File Handlers
-  const handle130FileUpload = async (file: File) => {
-    const user = getCurrentUser();
-    if (!user) return;
-    try {
-      setIsUploading130(true);
-      const uploaded = await upload130UnifiedFile(file, user.uid, unified130CurrentPath || '');
-      setUnified130Files(prev => [...prev, uploaded]);
-      showSnackbarNotification('تم رفع الملف الموحد بنجاح', 'success');
-    } catch (error: any) {
-      showSnackbarNotification(error.message || 'حدث خطأ أثناء رفع الملف', 'error');
-    } finally {
-      setIsUploading130(false);
-    }
-  };
-
   // ============================================
   // سحب وإلغاء توزيع الملفات من الطلاب (Recall Handlers)
   // ============================================
@@ -434,18 +369,6 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     onBack();
   };
 
-
-  const getVisibleTrackFiles = (track: TrackKey) => {
-    const current = trackCurrentPath[track] || '';
-    return (trackFiles[track] || []).filter((f) => (f.folderPath || '') === current);
-  };
-
-
-
-  const getVisibleUnified130Files = () => {
-    const current = unified130CurrentPath || '';
-    return (unified130Files || []).filter((f) => (f.folderPath || '') === current);
-  };
 
   const {
     showTierModal,
