@@ -5,7 +5,10 @@ import LoadingDots from '../components/common/LoadingDots';
 import { doc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
-  subscribeToAllServiceRequests,
+  getAllServicesCountsSummary,
+  subscribeToServiceRequestsPageLimited,
+  fetchAllServiceRequestsForService,
+  fetchAllServicesRequestsOnce,
   updateServiceRequestStatus,
   updateServiceRequestData,
   deleteServiceRequest,
@@ -430,9 +433,15 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
 
   const [requestVisibleLimits, setRequestVisibleLimits] = useState<Record<string, number>>({});
   const [serviceTotalCounts, setServiceTotalCounts] = useState<Record<string, number>>({});
+  const [servicePendingCounts, setServicePendingCounts] = useState<Record<string, number>>({});
   const [serviceLastSnapshots, setServiceLastSnapshots] = useState<Record<string, any>>({});
+  const serviceLastSnapshotsRef = useRef<Record<string, any>>({});
   const [serviceHasMore, setServiceHasMore] = useState<Record<string, boolean>>({});
   const [isLoadingMoreServiceRequests, setIsLoadingMoreServiceRequests] = useState<boolean>(false);
+  const [allLoadedByService, setAllLoadedByService] = useState<Record<string, boolean>>({});
+  const [isLoadingFullServiceRequests, setIsLoadingFullServiceRequests] = useState<boolean>(false);
+  const [allServicesRequestsLoaded, setAllServicesRequestsLoaded] = useState<boolean>(false);
+  const [isLoadingAllServicesRequests, setIsLoadingAllServicesRequests] = useState<boolean>(false);
   const [isCleaningOldRequests, setIsCleaningOldRequests] = useState<boolean>(false);
   const [cleanPasswordInput, setCleanPasswordInput] = useState<string>('');
   const [cleanPasswordError, setCleanPasswordError] = useState<string>('');
@@ -440,8 +449,77 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   const CLEAN_PASSWORD = 'Mm9002432@#';
   const RESTORE_TOOLS_PASSWORD = CLEAN_PASSWORD;
   const [restoreToolsUnlocked, setRestoreToolsUnlocked] = useState(false);
+  const restoreToolsUnlockedRef = useRef(false);
+  useEffect(() => {
+    restoreToolsUnlockedRef.current = restoreToolsUnlocked;
+  }, [restoreToolsUnlocked]);
   const [restorePasswordInput, setRestorePasswordInput] = useState('');
   const [restorePasswordError, setRestorePasswordError] = useState('');
+
+  const refreshServiceCountsSummary = useCallback(async () => {
+    try {
+      const summary = await getAllServicesCountsSummary();
+      const totals: Record<string, number> = {};
+      const pendings: Record<string, number> = {};
+      Object.entries(summary).forEach(([sid, counts]) => {
+        totals[sid] = counts.total;
+        pendings[sid] = counts.pending;
+      });
+      setServiceTotalCounts(totals);
+      setServicePendingCounts(pendings);
+    } catch (e) {
+      logger.warn('refreshServiceCountsSummary failed (non-fatal)', e);
+    }
+  }, []);
+
+  const fetchMissingStudentsForRequests = useCallback(async (reqs: ServiceRequest[]) => {
+    const uniqueStudentIds = [...new Set(reqs.map((r) => r.studentId).filter(Boolean))] as string[];
+    const prev = studentsRef.current;
+    const missingIds = uniqueStudentIds.filter(
+      (id) => id && !prev[id] && !studentIdsInFlightRef.current.has(id)
+    );
+    if (missingIds.length === 0) return;
+    missingIds.forEach((id) => studentIdsInFlightRef.current.add(id));
+    try {
+      const fetched = await getStudentsByIds(missingIds);
+      missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+      if (Object.keys(fetched).length === 0) return;
+      setStudents((current) => ({ ...current, ...fetched }));
+
+      if (!restoreToolsUnlockedRef.current) return;
+
+      const enrichWrites: Promise<void>[] = [];
+      for (const req of reqs) {
+        if (!req.studentId || !fetched[req.studentId]) continue;
+        if (!orderNeedsAutoFix(req)) continue;
+        const student = fetched[req.studentId] as unknown as Record<string, unknown>;
+        const serviceId = String(req.serviceId || '');
+        if (!serviceId) continue;
+        const merged = mergeEnrichedRequestData(
+          (req.data || {}) as Record<string, unknown>,
+          buildRestoredRequestData(student, serviceId)
+        );
+        enrichWrites.push(
+          setDoc(
+            doc(db, `serviceRequests_${serviceId}`, req.id!),
+            { data: merged, updatedAt: serverTimestamp() },
+            { merge: true }
+          )
+        );
+      }
+      for (let i = 0; i < enrichWrites.length; i += 15) {
+        await Promise.all(enrichWrites.slice(i, i + 15));
+      }
+      for (const req of reqs) {
+        if (!req.id || !req.studentId || !fetched[req.studentId]) continue;
+        if (!isPlaceholderOrderData(req.data as Record<string, unknown>)) {
+          fixedRequestIdsRef.current.add(req.id);
+        }
+      }
+    } catch {
+      missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedServiceId) return;
@@ -467,7 +545,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     if (isLoadingMoreServiceRequests) return;
     setIsLoadingMoreServiceRequests(true);
     try {
-      const lastSnap = serviceLastSnapshots[serviceId] || null;
+      const lastSnap = serviceLastSnapshotsRef.current[serviceId] ?? serviceLastSnapshots[serviceId] ?? null;
       const res = await fetchServiceRequestsPage(serviceId, 50, lastSnap);
       
       if (res.requests.length > 0) {
@@ -476,7 +554,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
           const newRequests = res.requests.filter(r => !existingIds.has(r.id));
           return [...prev, ...newRequests];
         });
+        serviceLastSnapshotsRef.current[serviceId] = res.lastSnapshot;
         setServiceLastSnapshots(prev => ({ ...prev, [serviceId]: res.lastSnapshot }));
+        void fetchMissingStudentsForRequests(res.requests);
       }
       setServiceHasMore(prev => ({ ...prev, [serviceId]: res.hasMore }));
       setRequestVisibleLimits(prev => ({
@@ -487,6 +567,49 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       logger.error('Error fetching more service requests:', e);
     } finally {
       setIsLoadingMoreServiceRequests(false);
+    }
+  };
+
+  const handleLoadFullServiceRequests = async (serviceId: string) => {
+    if (isLoadingFullServiceRequests) return;
+    setIsLoadingFullServiceRequests(true);
+    try {
+      const allForService = await fetchAllServiceRequestsForService(serviceId);
+      setServiceRequests((prev) => {
+        const otherServices = prev.filter((r) => String(r.serviceId) !== String(serviceId));
+        return [...otherServices, ...allForService];
+      });
+      setAllLoadedByService((prev) => ({ ...prev, [serviceId]: true }));
+      setServiceHasMore((prev) => ({ ...prev, [serviceId]: false }));
+      setRequestVisibleLimits((prev) => ({
+        ...prev,
+        [serviceId]: Math.max(prev[serviceId] || 50, allForService.length || 50)
+      }));
+      void fetchMissingStudentsForRequests(allForService);
+    } catch (e: any) {
+      logger.error('Error loading all requests for service:', e);
+    } finally {
+      setIsLoadingFullServiceRequests(false);
+    }
+  };
+
+  const handleLoadAllServicesRequests = async () => {
+    if (isLoadingAllServicesRequests) return;
+    setIsLoadingAllServicesRequests(true);
+    try {
+      const allReqs = await fetchAllServicesRequestsOnce();
+      setServiceRequests(allReqs);
+      setAllServicesRequestsLoaded(true);
+      const loadedFlags: Record<string, boolean> = {};
+      ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'].forEach((id) => {
+        loadedFlags[id] = true;
+      });
+      setAllLoadedByService(loadedFlags);
+      void fetchMissingStudentsForRequests(allReqs);
+    } catch (e: any) {
+      logger.error('Error loading all services requests:', e);
+    } finally {
+      setIsLoadingAllServicesRequests(false);
     }
   };
 
@@ -696,18 +819,36 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     return current;
   };
 
-  /** بطاقات الخدمات: حساب واحد O(n) بدل 11× filter على كل رسم */
+  /** بطاقات الخدمات: دمج عدادات السيرفر الدقيقة مع الطلبات المحمّلة */
   const requestStatsByServiceId = useMemo(() => {
     const m: Record<string, { pending: number; total: number }> = {};
+    const loadedCounts: Record<string, { pending: number; total: number }> = {};
     for (const r of serviceRequests) {
       const sid = String(r.serviceId ?? '');
       if (!sid) continue;
-      if (!m[sid]) m[sid] = { pending: 0, total: 0 };
-      m[sid].total += 1;
-      if (normalizeWorkflowStatus(r.status) === 'pending') m[sid].pending += 1;
+      if (!loadedCounts[sid]) loadedCounts[sid] = { pending: 0, total: 0 };
+      loadedCounts[sid].total += 1;
+      if (normalizeWorkflowStatus(r.status) === 'pending') loadedCounts[sid].pending += 1;
     }
+
+    const allIds = new Set([
+      ...Object.keys(serviceTotalCounts),
+      ...Object.keys(servicePendingCounts),
+      ...Object.keys(loadedCounts)
+    ]);
+
+    allIds.forEach((sid) => {
+      if (allLoadedByService[sid] && loadedCounts[sid]) {
+        m[sid] = loadedCounts[sid];
+      } else {
+        m[sid] = {
+          total: serviceTotalCounts[sid] ?? loadedCounts[sid]?.total ?? 0,
+          pending: servicePendingCounts[sid] ?? loadedCounts[sid]?.pending ?? 0
+        };
+      }
+    });
     return m;
-  }, [serviceRequests]);
+  }, [serviceRequests, serviceTotalCounts, servicePendingCounts, allLoadedByService]);
 
   /** عدد طلبات كل طالب — O(عدد الطلبات) مرة واحدة بدل فلترة لكل صف مستخدم */
   const requestCountByStudentId = useMemo(() => {
@@ -1384,88 +1525,86 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
   }, [student, onBack]);
 
   useEffect(() => {
-
     if (isLoading) return;
-
     let cancelled = false;
-    let studentFetchTimer: number | undefined;
-    let unsubscribe: (() => void) | undefined;
 
-    // الاعتماد على onSnapshot فقط — تجنّب getDocs المكرر على الـ 11 مجموعة (كان يضاعف القراءات ويبطئ التحميل دقيقة+)
-    unsubscribe = subscribeToAllServiceRequests((requests) => {
-      if (!dataReadyRef.current) {
-        setServiceRequests(requests);
+    void refreshServiceCountsSummary().finally(() => {
+      if (!cancelled) {
         setDataReady(true);
-      } else {
-        startTransition(() => {
-          setServiceRequests(requests);
-        });
       }
-
-      latestServiceRequestsRef.current = requests;
-      if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
-      studentFetchTimer = window.setTimeout(() => {
-        if (cancelled) return;
-        const reqs = latestServiceRequestsRef.current;
-        const uniqueStudentIds = [...new Set(reqs.map((r) => r.studentId).filter(Boolean))] as string[];
-        const prev = studentsRef.current;
-        const missingIds = uniqueStudentIds.filter(
-          (id) => id && !prev[id] && !studentIdsInFlightRef.current.has(id)
-        );
-        if (missingIds.length === 0) return;
-        missingIds.forEach((id) => studentIdsInFlightRef.current.add(id));
-        void getStudentsByIds(missingIds)
-          .then(async (fetched) => {
-            if (cancelled) return;
-            missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
-            if (Object.keys(fetched).length === 0) return;
-            setStudents((current) => ({ ...current, ...fetched }));
-
-            if (!restoreToolsUnlocked) return;
-
-            const reqs = latestServiceRequestsRef.current;
-            const enrichWrites: Promise<void>[] = [];
-            for (const req of reqs) {
-              if (!req.studentId || !fetched[req.studentId]) continue;
-              if (!orderNeedsAutoFix(req)) continue;
-              const student = fetched[req.studentId] as unknown as Record<string, unknown>;
-              const serviceId = String(req.serviceId || '');
-              if (!serviceId) continue;
-              const merged = mergeEnrichedRequestData(
-                (req.data || {}) as Record<string, unknown>,
-                buildRestoredRequestData(student, serviceId)
-              );
-              enrichWrites.push(
-                setDoc(
-                  doc(db, `serviceRequests_${serviceId}`, req.id!),
-                  { data: merged, updatedAt: serverTimestamp() },
-                  { merge: true }
-                )
-              );
-            }
-            for (let i = 0; i < enrichWrites.length; i += 15) {
-              await Promise.all(enrichWrites.slice(i, i + 15));
-            }
-            for (const req of reqs) {
-              if (!req.id || !req.studentId || !fetched[req.studentId]) continue;
-              if (!isPlaceholderOrderData(req.data as Record<string, unknown>)) {
-                fixedRequestIdsRef.current.add(req.id);
-              }
-            }
-          })
-          .catch(() => {
-            missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
-          });
-      }, 550);
     });
 
     return () => {
       cancelled = true;
-      if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
-      studentIdsInFlightRef.current.clear();
-      unsubscribe?.();
     };
-  }, [isLoading, restoreToolsUnlocked]);
+  }, [isLoading, refreshServiceCountsSummary]);
+
+  // اشتراك محدود بأحدث 50 طلباً للخدمة المفتوحة فقط (بدل تحميل الـ 12 مجموعة بالكامل)
+  useEffect(() => {
+    if (isLoading || !selectedServiceId) return;
+
+    let cancelled = false;
+    let studentFetchTimer: number | undefined;
+    const activeSid = selectedServiceId;
+
+    const unsubscribe = subscribeToServiceRequestsPageLimited(
+      activeSid,
+      50,
+      (latestForService, lastSnap, hasMore) => {
+        if (cancelled) return;
+
+        setServiceRequests((prev) => {
+          const otherServices = prev.filter((r) => String(r.serviceId) !== String(activeSid));
+          const latestIds = new Set(latestForService.map((r) => r.id));
+          const olderLoadedForService = prev.filter(
+            (r) => String(r.serviceId) === String(activeSid) && !latestIds.has(r.id)
+          );
+          const merged = [...otherServices, ...latestForService, ...olderLoadedForService];
+          latestServiceRequestsRef.current = merged;
+          return merged;
+        });
+
+        if (!serviceLastSnapshotsRef.current[activeSid] && lastSnap) {
+          serviceLastSnapshotsRef.current[activeSid] = lastSnap;
+          setServiceLastSnapshots((prev) => (prev[activeSid] ? prev : { ...prev, [activeSid]: lastSnap }));
+          setServiceHasMore((prev) => ({ ...prev, [activeSid]: hasMore }));
+        }
+
+        if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
+        studentFetchTimer = window.setTimeout(() => {
+          if (cancelled) return;
+          void fetchMissingStudentsForRequests(latestForService);
+        }, 300);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
+      unsubscribe();
+    };
+  }, [isLoading, selectedServiceId, fetchMissingStudentsForRequests]);
+
+  // تحميل طلبات التحول الرقمي (خدمة 7) عند فتح تبويب التحول الرقمي فقط لربط الأكواد
+  useEffect(() => {
+    if (isLoading || activeTab !== 'digitalTransformation') return;
+    if (allLoadedByService['7']) return;
+    if (serviceRequests.some((r) => String(r.serviceId) === '7')) return;
+
+    let cancelled = false;
+    void fetchServiceRequestsPage('7', 100, null).then((res) => {
+      if (cancelled || res.requests.length === 0) return;
+      setServiceRequests((prev) => {
+        const existingIds = new Set(prev.map((r) => r.id));
+        const newReqs = res.requests.filter((r) => !existingIds.has(r.id));
+        return [...prev, ...newReqs];
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, activeTab, allLoadedByService, serviceRequests]);
 
   /** إصلاح تلقائي: أي طلب اسمه «طالب» يُحدَّث من ملف الطالب — يدوي فقط من تبويب الخدمات */
   const runAutoFixPlaceholderOrders = useCallback(async (scopeServiceId?: string | null) => {
@@ -1558,9 +1697,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
     }
   }, []);
 
-  // تحميل إعدادات الخدمات والأكواد بعد ظهور الطلبات (حتى لا نبطئ أول رسم للجدول)
+  // تحميل إعدادات الخدمات والأكواد فور التحقق من صلاحية الأدمن (مرة واحدة بدون إعادة الاشتراك)
   useEffect(() => {
-    if (!dataReady || isLoading) return;
+    if (isLoading) return;
 
     // ======= Realtime subscriptions for all service configs =======
     const unsubscribeBook = subscribeToBookServiceConfig((config) => {
@@ -1723,7 +1862,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       unsubscribeDtCodes();
       unsubscribeEpCodes();
     };
-  }, [dataReady, isLoading]);
+  }, [isLoading]);
 
   // Subscribe to service settings
   useEffect(() => {
@@ -4119,7 +4258,9 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </span>
               ) : (
                 <span className="requests-section-heading-count" title="إجمالي الطلبات عبر كل الخدمات">
-                  {serviceRequests.length}
+                  {Object.keys(serviceTotalCounts).length > 0
+                    ? Object.values(serviceTotalCounts).reduce((acc, n) => acc + (Number(n) || 0), 0)
+                    : serviceRequests.length}
                 </span>
               )}
             </h2>
@@ -4237,17 +4378,40 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
                 </div>
 
                 <div className="requests-list-container">
-                  <div className="search-bar" style={{ marginBottom: '25px' }}>
-                    <div className="search-input-wrapper">
+                  <div className="search-bar" style={{ marginBottom: '25px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="search-input-wrapper" style={{ flex: 1, minWidth: '240px' }}>
                       <Search size={20} className="search-icon" />
                       <input
                         type="text"
-                        placeholder="ابحث في جميع بيانات الطلبات (الاسم، الرقم القومي، الهاتف، العنوان، الحالة...)"
+                        placeholder="ابحث في الطلبات المحمّلة (الاسم، الرقم القومي، الهاتف، العنوان، الحالة...)"
                         value={serviceSearchTerm}
                         onChange={(e) => setServiceSearchTerm(e.target.value)}
                         className="search-input"
                       />
                     </div>
+                    {!allLoadedByService[selectedServiceId] &&
+                      (serviceTotalCounts[selectedServiceId] ?? 0) > (requestsByServiceId[selectedServiceId]?.length ?? 0) && (
+                        <button
+                          type="button"
+                          onClick={() => void handleLoadFullServiceRequests(selectedServiceId)}
+                          disabled={isLoadingFullServiceRequests}
+                          style={{
+                            padding: '10px 16px',
+                            borderRadius: '10px',
+                            border: '1px solid #cbd5e1',
+                            background: isLoadingFullServiceRequests ? '#e2e8f0' : '#f8fafc',
+                            color: '#1e293b',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            cursor: isLoadingFullServiceRequests ? 'not-allowed' : 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {isLoadingFullServiceRequests
+                            ? 'جاري تحميل كل طلبات الخدمة...'
+                            : `تحميل كل الطلبات (${serviceTotalCounts[selectedServiceId]}) للبحث الشامل`}
+                        </button>
+                      )}
                   </div>
 
                   {(() => {
@@ -9207,23 +9371,63 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onLogout, onBac
       }
 
       {activeTab === 'statistics' && (
-        <AdminStatisticsTab
-          serviceRequests={serviceRequests}
-          adminPrefs={adminPrefs}
-          setAdminPrefs={setAdminPrefs}
-          updateAdminPreferences={updateAdminPreferences}
-          statsDateRange={statsDateRange}
-          setStatsDateRange={setStatsDateRange}
-          isMobile={isMobile}
-          statsUnlocked={statsUnlocked}
-          lockStats={lockStats}
-          setStatsPasswordOpen={setStatsPasswordOpen}
-          statsPasswordOpen={statsPasswordOpen}
-          statsPasswordInput={statsPasswordInput}
-          setStatsPasswordInput={setStatsPasswordInput}
-          tryUnlockStats={tryUnlockStats}
-          setToastState={setToastState}
-        />
+        <>
+          {!allServicesRequestsLoaded && (
+            <div
+              style={{
+                margin: '0 24px 16px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                flexWrap: 'wrap',
+                direction: 'rtl'
+              }}
+            >
+              <span style={{ color: '#1e3a8a', fontSize: '14px', fontWeight: 600 }}>
+                لتقليل استهلاك القراءات، الإحصائيات تعرض الطلبات المحمّلة حالياً فقط ({serviceRequests.length} طلب).
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleLoadAllServicesRequests()}
+                disabled={isLoadingAllServicesRequests}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: isLoadingAllServicesRequests ? '#94a3b8' : '#2563eb',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: isLoadingAllServicesRequests ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isLoadingAllServicesRequests ? 'جاري تحميل كافة الطلبات...' : 'تحميل كافة الطلبات للإحصائيات الكاملة'}
+              </button>
+            </div>
+          )}
+          <AdminStatisticsTab
+            serviceRequests={serviceRequests}
+            adminPrefs={adminPrefs}
+            setAdminPrefs={setAdminPrefs}
+            updateAdminPreferences={updateAdminPreferences}
+            statsDateRange={statsDateRange}
+            setStatsDateRange={setStatsDateRange}
+            isMobile={isMobile}
+            statsUnlocked={statsUnlocked}
+            lockStats={lockStats}
+            setStatsPasswordOpen={setStatsPasswordOpen}
+            statsPasswordOpen={statsPasswordOpen}
+            statsPasswordInput={statsPasswordInput}
+            setStatsPasswordInput={setStatsPasswordInput}
+            tryUnlockStats={tryUnlockStats}
+            setToastState={setToastState}
+          />
+        </>
       )}
       {false && (() => {
         // --- STATISTICS CALCULATION ENGINE ---

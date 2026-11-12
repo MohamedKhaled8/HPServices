@@ -3626,6 +3626,97 @@ export const fetchServiceRequestsPage = async (
   }
 };
 
+/** حساب إجمالي وطلبات الانتظار لكل خدمة بدون تنزيل المستندات */
+export const getAllServicesCountsSummary = async (): Promise<
+  Record<string, { pending: number; total: number }>
+> => {
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+  const summary: Record<string, { pending: number; total: number }> = {};
+
+  await Promise.all(
+    serviceIds.map(async (serviceId) => {
+      const coll = collection(db, `serviceRequests_${serviceId}`);
+      try {
+        const [totalSnap, pendingSnap] = await Promise.all([
+          getCountFromServer(query(coll)),
+          getCountFromServer(query(coll, where('status', '==', 'pending')))
+        ]);
+        summary[serviceId] = {
+          total: totalSnap.data().count,
+          pending: pendingSnap.data().count
+        };
+      } catch (err) {
+        logger.error(`getAllServicesCountsSummary error for service ${serviceId}:`, err);
+        summary[serviceId] = { total: 0, pending: 0 };
+      }
+    })
+  );
+
+  return summary;
+};
+
+/** اشتراك محدود بأحدث N طلب لخدمة واحدة فقط بدل تحميل كل المجموعات */
+export const subscribeToServiceRequestsPageLimited = (
+  serviceId: string,
+  pageSize: number = 50,
+  onUpdate: (
+    requests: ServiceRequest[],
+    lastSnapshot: QueryDocumentSnapshot<DocumentData> | null,
+    hasMore: boolean
+  ) => void
+): (() => void) => {
+  const collectionName = `serviceRequests_${serviceId}`;
+  const q = query(collection(db, collectionName), orderBy('createdAt', 'desc'), limit(pageSize));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const requests: ServiceRequest[] = snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          ...data,
+          id: docSnap.id,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+        } as ServiceRequest;
+      });
+      const lastSnapshot = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+      const hasMore = snap.docs.length === pageSize;
+      onUpdate(requests, lastSnapshot, hasMore);
+    },
+    (error) => {
+      logger.error(`Error in limited subscription for service ${serviceId}:`, error);
+      onUpdate([], null, false);
+    }
+  );
+};
+
+/** جلب كافة طلبات خدمة واحدة عند الطلب (للبحث الشامل أو التصدير) */
+export const fetchAllServiceRequestsForService = async (
+  serviceId: string
+): Promise<ServiceRequest[]> => {
+  try {
+    const q = query(collection(db, `serviceRequests_${serviceId}`), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return {
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+      } as ServiceRequest;
+    });
+  } catch (error: any) {
+    logger.error(`fetchAllServiceRequestsForService error for ${serviceId}:`, error);
+    return [];
+  }
+};
+
+/** جلب كافة الطلبات عبر كل الخدمات لمرة واحدة عند طلب الإحصائيات الكاملة */
+export const fetchAllServicesRequestsOnce = async (): Promise<ServiceRequest[]> => {
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+  const pages = await Promise.all(serviceIds.map((id) => fetchAllServiceRequestsForService(id)));
+  return pages.flat();
+};
+
 export const updateServiceRequestStatus = async (
   requestId: string,
   status: ServiceRequestWorkflowStatus,
