@@ -127,9 +127,9 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
   }, []);
 
-  // Subscribe to service requests in real-time
+  // Subscribe to service requests in real-time (students only; admin loads via AdminDashboard)
   useEffect(() => {
-    if (!student?.id) {
+    if (!student?.id || isAdmin) {
       setServiceRequests([]);
       return;
     }
@@ -139,7 +139,7 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     });
 
     return () => unsubscribe();
-  }, [student?.id]);
+  }, [student?.id, isAdmin]);
 
   const handleSetStudent = (data: StudentData) => {
     setStudent(data);
