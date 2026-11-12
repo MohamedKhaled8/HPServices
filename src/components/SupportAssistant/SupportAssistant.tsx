@@ -65,13 +65,14 @@ const SupportAssistant: React.FC<SupportAssistantProps> = ({
   const sawEmptyRequestsRef = useRef(false);
 
   useEffect(() => {
-    const unsub = subscribeToTrainedQAs((items) => {
+    let unsub = subscribeToTrainedQAs((items) => {
       setTrainedQAs(items);
     });
 
     // Polling كل 30 ثانية كـ fallback لضمان ظهور الإجابات الجديدة بدون Refresh
-    const pollInterval = setInterval(async () => {
-      subscribeToTrainedQAs((items) => {
+    const pollInterval = setInterval(() => {
+      unsub();
+      unsub = subscribeToTrainedQAs((items) => {
         setTrainedQAs(items);
       });
     }, 30_000);
