@@ -1,7 +1,6 @@
-import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { StudentProvider, useStudent } from './context';
-import { getCurrentUser, checkIsAdmin } from './services/firebaseService';
 import RegisterPage from './page/RegisterPage';
 import LoginPage from './page/LoginPage';
 import DashboardPage from './page/DashboardPage';
@@ -37,6 +36,7 @@ const lazyWithRetry = (componentImport: () => Promise<any>) =>
 const AdminDashboardPage = lazyWithRetry(() => import('./page/AdminDashboardPage'));
 const AssignmentsManagementPage = lazyWithRetry(() => import('./page/AssignmentsManagementPage'));
 const AllUsersPage = lazyWithRetry(() => import('./page/AllUsersPage'));
+const TelemetryDashboardPage = lazyWithRetry(() => import('./modules/telemetry/presentation/pages/TelemetryDashboardPage'));
 import './styles/App.css';
 import LoadingDots from './components/common/LoadingDots';
 import StudentSupportAssistant from './components/SupportAssistant/StudentSupportAssistant';
@@ -125,11 +125,15 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
 // مكون حماية المسارات الخاصة بالمستخدمين المسجلين (الطلاب فقط)
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-    const { isLoggedIn, isAdmin } = useStudent();
+    const { isLoggedIn, isAdmin, isTelemetryAdmin } = useStudent();
 
     // غير مسجل دخول -> Login
     if (!isLoggedIn) {
         return <Navigate to="/login" replace />;
+    }
+
+    if (isTelemetryAdmin) {
+        return <Navigate to="/telemetry" replace />;
     }
 
     // مسجل دخول وهو مدير -> Admin Dashboard (ممنوع عليه صفحة الطلاب)
@@ -140,12 +144,16 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return <>{children}</>;
 };
 
-// مكون حماية مسارات الأدمن
+// مكون حماية مسارات الأدمن الرئيسي
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
-    const { isLoggedIn, isAdmin } = useStudent();
+    const { isLoggedIn, isAdmin, isTelemetryAdmin } = useStudent();
 
     if (!isLoggedIn) {
         return <Navigate to="/login" replace />;
+    }
+
+    if (isTelemetryAdmin) {
+        return <Navigate to="/telemetry" replace />;
     }
 
     if (!isAdmin) {
@@ -156,37 +164,48 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     return <>{children}</>;
 };
 
+// مكون حماية بوابة المراقبة والأمان المعزولة (Tracking Admin فقط)
+const TelemetryRoute = ({ children }: { children: React.ReactNode }) => {
+    const { isLoggedIn, isAdmin, isTelemetryAdmin } = useStudent();
+
+    if (!isLoggedIn) {
+        return <Navigate to="/login" replace />;
+    }
+
+    if (isAdmin) {
+        return <Navigate to="/admin" replace />;
+    }
+
+    if (!isTelemetryAdmin) {
+        return <Navigate to="/dashboard" replace />;
+    }
+
+    return <>{children}</>;
+};
+
 // --- Page Wrappers & Logic ---
 
 const LoginWrapper = () => {
     const navigate = useNavigate();
-    const { isLoggedIn } = useStudent();
+    const { isLoggedIn, isAdmin, isTelemetryAdmin } = useStudent();
 
     useEffect(() => {
-        const checkRedirect = async () => {
-            if (isLoggedIn) {
-                // التحقق من الدور قبل التوجيه
-                const user = getCurrentUser();
-                if (user) {
-                    const isAdmin = await checkIsAdmin(user.uid);
-                    if (isAdmin) {
-                        navigate('/admin', { replace: true });
-                    } else {
-                        navigate('/dashboard', { replace: true });
-                    }
-                }
-            }
-        };
-        checkRedirect();
-    }, [isLoggedIn, navigate]);
+        if (!isLoggedIn) return;
+        if (isTelemetryAdmin) {
+            navigate('/telemetry', { replace: true });
+        } else if (isAdmin) {
+            navigate('/admin', { replace: true });
+        } else {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [isLoggedIn, isAdmin, isTelemetryAdmin, navigate]);
 
     return (
         <LoginPage
-            onLoginSuccess={() => {
-                // يتم التعامل مع التوجيه في useEffect
-            }}
+            onLoginSuccess={() => navigate('/dashboard', { replace: true })}
             onGoToRegister={() => navigate('/register')}
-            onAdminLogin={() => navigate('/login')}
+            onAdminLogin={() => navigate('/admin', { replace: true })}
+            onTelemetryLogin={() => navigate('/telemetry', { replace: true })}
         />
     );
 };
@@ -313,6 +332,37 @@ const AssignmentsWrapper = () => {
     );
 };
 
+const TelemetryDashboardWrapper = () => {
+    const navigate = useNavigate();
+    const { logout } = useStudent();
+
+    const handleLogout = async () => {
+        try {
+            await logout();
+        } catch (error) {
+            console.error('Telemetry logout error:', error);
+        }
+        navigate('/login', { replace: true });
+    };
+
+    return (
+        <React.Suspense fallback={<LoadingDots fullScreen text="جارٍ تحميل مركز المراقبة..." />}>
+            <TelemetryDashboardPage onLogout={handleLogout} />
+        </React.Suspense>
+    );
+};
+
+const StudentChromeGuard = () => {
+    const { isTelemetryAdmin } = useStudent();
+    if (isTelemetryAdmin) return null;
+    return (
+        <>
+            <StudentSupportAssistant />
+            <StudentPhonePromptModal />
+        </>
+    );
+};
+
 // --- Main App Component ---
 
 const App: React.FC = () => {
@@ -320,11 +370,11 @@ const App: React.FC = () => {
         <ErrorBoundary>
             <StudentProvider>
                 <BrowserRouter>
-                    <StudentSupportAssistant />
-                    <StudentPhonePromptModal />
+                    <StudentChromeGuard />
                     <Routes>
                         {/* Public Routes */}
                         <Route path="/login" element={<LoginWrapper />} />
+                        <Route path="/telemetry-login" element={<Navigate to="/login" replace />} />
                         <Route path="/register" element={<Navigate to="/login" replace />} />
                         <Route path="/reset-password" element={<ResetPasswordPage />} />
                         <Route path="/admin-login" element={<Navigate to="/login" replace />} />
@@ -388,6 +438,13 @@ const App: React.FC = () => {
                             <AdminRoute>
                                 <AssignmentsWrapper />
                             </AdminRoute>
+                        } />
+
+                        {/* Isolated Super-Admin Telemetry Route */}
+                        <Route path="/telemetry" element={
+                            <TelemetryRoute>
+                                <TelemetryDashboardWrapper />
+                            </TelemetryRoute>
                         } />
 
                         {/* Catch All */}

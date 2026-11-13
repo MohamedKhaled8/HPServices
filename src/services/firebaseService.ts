@@ -45,6 +45,8 @@ import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
 import { classifyAssignment, AssignmentCategory } from '../utils/assignmentClassifier';
+import { SERVICES } from '../constants/services';
+import { PlatformTelemetryEmitter } from '../modules/telemetry/infrastructure/emitters/PlatformTelemetryEmitter';
 
 const MAX_FILE_SIZE_MB = 10; // Max 10MB per file
 const MAX_DOC_SIZE_KB = 1024; // 1MB Firestore doc limit warning
@@ -408,7 +410,8 @@ export const loginUser = async (identifier: string, password: string): Promise<F
 export const ensureStudentDocExists = async (
   user: FirebaseUser,
   email: string,
-  password?: string
+  password?: string,
+  nationalID?: string
 ): Promise<StudentData> => {
   const docRef = doc(db, 'students', user.uid);
   const docSnap = await getDoc(docRef);
@@ -503,7 +506,7 @@ export const ensureStudentDocExists = async (
     diplomaYear: '',
     diplomaType: '',
     track: '',
-    nationalID: '',
+    nationalID: nationalID || '',
     address: {
       governorate: '',
       city: '',
@@ -520,17 +523,71 @@ export const ensureStudentDocExists = async (
   return initialStudent;
 };
 
+const isReservedAdminEmail = (identifier: string): boolean => {
+  const lower = identifier.trim().toLowerCase();
+  return (
+    lower.startsWith('admin@') ||
+    lower.includes('admin') ||
+    lower.endsWith('@hp-portal.sec') ||
+    lower.endsWith('@hp-telemetry.sec')
+  );
+};
+
+export type AdminRole = 'primary_admin' | 'telemetry_admin' | 'student';
+
+/**
+ * Resolves the authenticated role using signed JWT Custom Claims first (0 Firestore reads),
+ * falling back to Firestore admins/{userId} only for legacy admin accounts.
+ */
+export const checkAdminRole = async (userId: string): Promise<AdminRole> => {
+  try {
+    const current = auth.currentUser;
+    if (current && current.uid === userId) {
+      const tokenResult = await current.getIdTokenResult();
+      const claims = tokenResult.claims as Record<string, unknown>;
+      if (claims.role === 'telemetry_admin' || claims.isTelemetryAdmin === true) {
+        return 'telemetry_admin';
+      }
+      if (claims.role === 'primary_admin' || claims.isAdmin === true) {
+        return 'primary_admin';
+      }
+    }
+    const adminDoc = await getDoc(doc(db, 'admins', userId));
+    if (adminDoc.exists()) {
+      const data = adminDoc.data();
+      if (data.isAdmin === true) return 'primary_admin';
+    }
+    return 'student';
+  } catch (error) {
+    logger.error('Error checking admin role:', error);
+    return 'student';
+  }
+};
+
+const buildAdminProfilePlaceholder = (user: FirebaseUser, role: 'primary_admin' | 'telemetry_admin'): StudentData => ({
+  id: user.uid,
+  fullNameArabic: role === 'telemetry_admin' ? 'مشرف المراقبة والأمان' : 'مدير النظام',
+  vehicleNameEnglish: role === 'telemetry_admin' ? 'Telemetry Admin' : 'Admin',
+  whatsappNumber: '',
+  diplomaYear: '',
+  diplomaType: '',
+  track: '',
+  nationalID: '',
+  address: { governorate: '', city: '', street: '', building: '', siteNumber: '' },
+  course: '',
+  email: user.email || '',
+});
+
 /**
  * Helper to fetch a student's password hint (masked) for forgot-password
  */
 export const getStudentPasswordHint = async (identifier: string): Promise<{ password?: string; email?: string; accountExists?: boolean } | null> => {
   const originalClean = identifier.trim();
   const clean = convertArabicIndicToAscii(originalClean).trim();
-  const lower = clean.toLowerCase();
   if (!clean) return null;
 
-  // حماية أمنية مشددة: حظر تام لأي محاولة استكشاف أو استعلام عن إيميل المدير أو حسابات الأدمن
-  if (lower === 'admin@example.com' || lower.startsWith('admin@') || lower.includes('admin')) {
+  // حماية أمنية مشددة: حظر تام لأي محاولة استكشاف أو استعلام عن حسابات الأدمن أو المراقبة
+  if (isReservedAdminEmail(clean)) {
     return {
       accountExists: false,
       email: clean
@@ -542,7 +599,14 @@ export const getStudentPasswordHint = async (identifier: string): Promise<{ pass
 
     if (found) {
       const docData = found.data as any;
-      if (docData.role === 'admin' || docData.isAdmin === true || docData.email?.toLowerCase() === 'admin@example.com') {
+      if (
+        docData.role === 'admin' ||
+        docData.role === 'primary_admin' ||
+        docData.role === 'telemetry_admin' ||
+        docData.isAdmin === true ||
+        docData.isTelemetryAdmin === true ||
+        (docData.email && isReservedAdminEmail(String(docData.email)))
+      ) {
         return { accountExists: false, email: clean };
       }
       const pw = docData.password || docData.nationalID || docData.national_id || '';
@@ -587,13 +651,16 @@ export const loginOrRegisterUser = async (
   const clean = convertArabicIndicToAscii(rawClean).trim();
   const cleanDigits = clean.replace(/\D/g, '');
   const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
+  const reservedAdmin = isEmail && isReservedAdminEmail(clean);
 
   if (!password) {
     throw new Error('يرجى إدخال كلمة المرور');
   }
 
-  // 1. Lookup student in Firestore by any entered identifier (Email, National ID, Phone, or Name)
-  const preFoundStudent = await findStudentInFirestore(rawClean) || (clean !== rawClean ? await findStudentInFirestore(clean) : null);
+  // 1. Lookup student in Firestore (skipped for reserved admin/telemetry emails to avoid unnecessary DB reads)
+  const preFoundStudent = reservedAdmin
+    ? null
+    : (await findStudentInFirestore(rawClean)) || (clean !== rawClean ? await findStudentInFirestore(clean) : null);
 
   // 2. Build candidate emails to attempt direct Firebase Auth sign-in
   const candidateEmails: string[] = [];
@@ -646,11 +713,24 @@ export const loginOrRegisterUser = async (
   }
 
   if (loggedInUser) {
+    const role = await checkAdminRole(loggedInUser.uid);
+    if (role === 'primary_admin' || role === 'telemetry_admin') {
+      return {
+        user: loggedInUser,
+        isNewUser: false,
+        studentData: buildAdminProfilePlaceholder(loggedInUser, role)
+      };
+    }
     const studentData = await ensureStudentDocExists(loggedInUser, loggedInUser.email || candidateEmails[0], password);
     return { user: loggedInUser, isNewUser: false, studentData };
   }
 
   // 4. Direct sign-in did not succeed.
+  // Block auto-healing / auto-registration for reserved or leaked admin emails
+  if (reservedAdmin) {
+    throw new Error('بيانات الدخول غير صحيحة');
+  }
+
   // AUTO-HEALING & LEGACY ACCOUNT RESOLUTION:
   const foundStudent = preFoundStudent || (isEmail ? await findStudentInFirestore(clean) : null);
 
@@ -718,13 +798,21 @@ export const loginOrRegisterUser = async (
   }
 
   // 5. User does not exist in Firestore:
-  if (isEmail) {
+  // Support one-step account creation via either email OR 14-digit National ID
+  if (isEmail || cleanDigits.length === 14) {
     if (password.length < 6) {
       throw new Error('كلمة المرور يجب أن تتكون من 6 أحرف أو أرقام على الأقل');
     }
+    const targetRegEmail = isEmail ? clean.toLowerCase() : `${cleanDigits}@hpservices.local`;
+    const regNationalId = !isEmail && cleanDigits.length === 14 ? cleanDigits : '';
     try {
-      const newUserCredential = await createUserWithEmailAndPassword(auth, clean, password);
-      const studentData = await ensureStudentDocExists(newUserCredential.user, clean, password);
+      const newUserCredential = await createUserWithEmailAndPassword(auth, targetRegEmail, password);
+      const studentData = await ensureStudentDocExists(
+        newUserCredential.user,
+        targetRegEmail,
+        password,
+        regNationalId
+      );
       return { user: newUserCredential.user, isNewUser: true, studentData };
     } catch (createError: any) {
       if (createError.code === 'auth/email-already-in-use') {
@@ -775,8 +863,11 @@ export const changeUserPassword = async (oldPassword: string, newPassword: strin
     // 2. Update Auth Password
     await updatePassword(user, newPassword);
 
-    // 3. Update Firestore (Admin View)
-    await updateStudentData(user.uid, { password: newPassword } as any);
+    // 3. Update Firestore (Student records only; never store admin passwords in plaintext)
+    const role = await checkAdminRole(user.uid);
+    if (role === 'student') {
+      await updateStudentData(user.uid, { password: newPassword } as any);
+    }
 
   } catch (error: any) {
     logger.error('Error changing password:', error);
@@ -3368,6 +3459,29 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
     // Save request - only links, no base64, optimized and secure
     await setDoc(requestRef, safeRequestData);
     void incrementPlatformRequestsCount();
+
+    const svcName =
+      SERVICES.find((s) => s.id === String(request.serviceId))?.nameAr || `خدمة #${request.serviceId}`;
+    const rawAmt =
+      request.data?.price ??
+      request.data?.totalPrice ??
+      request.data?.amount ??
+      request.data?.cost ??
+      request.data?.fees;
+    const parsedRev = rawAmt ? parseFloat(String(rawAmt).replace(/[^0-9.]/g, '')) || 0 : 0;
+    PlatformTelemetryEmitter.emit({
+      kind: parsedRev > 0 ? 'service_sale' : 'service_traffic',
+      serviceId: String(request.serviceId),
+      serviceName: svcName,
+      count: 1,
+      revenue: parsedRev,
+      tokenUnits: 10,
+      source: 'service_request_submit',
+      category: 'service',
+      actionName: 'SERVICE_REQUEST_SUBMITTED',
+      actorUid: request.studentId || 'student',
+      logMessage: `New request on "${svcName}"${parsedRev > 0 ? ` (${parsedRev} EGP)` : ''}`
+    });
     if (String(request.serviceId) === '1' && request.studentId) {
       try {
         await setDoc(
@@ -3496,17 +3610,8 @@ export const subscribeToServiceRequests = (
 
 // Admin Functions
 export const checkIsAdmin = async (userId: string): Promise<boolean> => {
-  try {
-    const adminDoc = await getDoc(doc(db, 'admins', userId));
-    if (adminDoc.exists()) {
-      const data = adminDoc.data();
-      return data.isAdmin === true;
-    }
-    return false;
-  } catch (error) {
-    logger.error('Error checking admin status:', error);
-    return false;
-  }
+  const role = await checkAdminRole(userId);
+  return role === 'primary_admin';
 };
 
 export const getAllServiceRequests = async (): Promise<ServiceRequest[]> => {
@@ -3641,6 +3746,21 @@ export const updateServiceRequestStatus = async (
       },
       { merge: true }
     );
+    if (status === 'completed') {
+      const svcName = SERVICES.find((s) => s.id === String(serviceId))?.nameAr || `خدمة #${serviceId}`;
+      PlatformTelemetryEmitter.emit({
+        kind: 'service_sale',
+        serviceId: String(serviceId),
+        serviceName: svcName,
+        count: 1,
+        revenue: 0,
+        tokenUnits: 5,
+        source: 'admin_status_complete',
+        category: 'service',
+        actionName: 'SERVICE_ORDER_COMPLETED',
+        logMessage: `Request ${requestId} on "${svcName}" marked completed`
+      });
+    }
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء تحديث حالة الطلب');
   }

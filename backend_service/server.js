@@ -15,11 +15,14 @@ app.use(
         origin: true,
         credentials: true,
         methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Telemetry-Client', 'X-Telemetry-Token']
     })
 );
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const { registerTelemetryMiddlewareAndRoutes } = require('./telemetryEngine');
+registerTelemetryMiddlewareAndRoutes(app);
 
 /** متى يكون true: تم تهيئة Firebase Admin ويمكن التحقق من idToken + مستند admins/{uid} */
 let firebaseAutomationAuthReady = false;

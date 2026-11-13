@@ -14,3 +14,7 @@ pnpm-debug.log*
 .env*.local
 .env.vercel.production.download
 .env.vercel*.download
+*.local.txt
+ADMIN_CREDENTIALS.local.txt
+telemetry_logs/
+backend_service/telemetry_logs/

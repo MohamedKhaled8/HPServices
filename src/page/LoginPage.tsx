@@ -1,6 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useStudent } from '../context';
-import { loginOrRegisterUser, checkIsAdmin, getStudentPasswordHint, sendResetPasswordEmail } from '../services/firebaseService';
+import { loginOrRegisterUser, checkAdminRole, getStudentPasswordHint, sendResetPasswordEmail } from '../services/firebaseService';
+import { DeviceTelemetryParser } from '../modules/telemetry/infrastructure/parsers/DeviceTelemetryParser';
+import { authenticateTelemetryAdmin } from '../modules/telemetry/infrastructure/repositories/HttpTelemetryRepositories';
 import { checkLoginLockout, recordLoginFailure, recordLoginSuccess, checkForgotPasswordLimit } from '../utils/security';
 import { StudentData } from '../types';
 import {
@@ -24,9 +26,15 @@ interface LoginPageProps {
   onLoginSuccess: () => void;
   onGoToRegister?: () => void;
   onAdminLogin?: () => void;
+  onTelemetryLogin?: () => void;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, onAdminLogin }) => {
+const LoginPage: React.FC<LoginPageProps> = ({
+  onLoginSuccess,
+  onGoToRegister,
+  onAdminLogin,
+  onTelemetryLogin
+}) => {
   const navigate = useNavigate();
   const { setStudent } = useStudent();
 
@@ -35,8 +43,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
-  const [showBubble, setShowBubble] = useState(false);
-  const bubbleRef = useRef<HTMLDivElement>(null);
 
   // Forgot Password modal state
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
@@ -52,17 +58,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
     accountExists?: boolean;
     message?: string;
   } | null>(null);
-
-  useEffect(() => {
-    if (!showBubble) return;
-    const handleClick = (e: MouseEvent) => {
-      if (bubbleRef.current && !bubbleRef.current.contains(e.target as Node)) {
-        setShowBubble(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showBubble]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -109,7 +104,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
     }
 
     const queryLower = query.toLowerCase();
-    if (queryLower === 'admin@example.com' || queryLower.startsWith('admin@') || queryLower.includes('admin')) {
+    if (
+      queryLower.startsWith('admin@') ||
+      queryLower.includes('admin') ||
+      queryLower.endsWith('@hp-portal.sec') ||
+      queryLower.endsWith('@hp-telemetry.sec')
+    ) {
       setForgotResult({
         hint: '',
         found: false,
@@ -208,12 +208,44 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
 
     try {
       const { user, studentData } = await loginOrRegisterUser(formData.email, formData.password);
-      const isAdmin = await checkIsAdmin(user.uid);
+      const role = await checkAdminRole(user.uid);
 
       // Reset login failure counter on success
       recordLoginSuccess(formData.email);
 
-      if (isAdmin) {
+      if (role === 'telemetry_admin') {
+        const sessionId = `sess_${user.uid.slice(0, 6)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        try {
+          sessionStorage.setItem('hp_admin_telemetry_session_id', sessionId);
+          const tokenRes = await authenticateTelemetryAdmin(
+            sessionId,
+            DeviceTelemetryParser.getTimezone()
+          );
+          sessionStorage.setItem('hp_telemetry_hmac_token', tokenRes.telemetryToken);
+        } catch {
+          // Non-blocking HMAC sync; Firebase Custom Claim enforces access
+        }
+
+        const telemetryStudentData: StudentData = {
+          id: user.uid,
+          fullNameArabic: 'مشرف المراقبة والأمان',
+          vehicleNameEnglish: 'Telemetry Admin',
+          whatsappNumber: '',
+          diplomaYear: '',
+          diplomaType: '',
+          track: '',
+          nationalID: '',
+          address: { governorate: '', city: '', street: '', building: '', siteNumber: '' },
+          course: '',
+          email: user.email || formData.email,
+        };
+        setStudent(telemetryStudentData, 'telemetry_admin');
+        if (onTelemetryLogin) onTelemetryLogin();
+        else navigate('/telemetry', { replace: true });
+        return;
+      }
+
+      if (role === 'primary_admin') {
         const adminStudentData: StudentData = {
           id: user.uid,
           fullNameArabic: 'مدير النظام',
@@ -227,13 +259,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
           course: '',
           email: user.email || formData.email,
         };
-        setStudent(adminStudentData);
+        setStudent(adminStudentData, 'primary_admin');
         if (onAdminLogin) onAdminLogin();
-        else onLoginSuccess();
+        else navigate('/admin', { replace: true });
         return;
       }
 
-      setStudent(studentData);
+      setStudent(studentData, 'student');
       onLoginSuccess();
     } catch (err: any) {
       const failure = recordLoginFailure(formData.email);
@@ -333,7 +365,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
                   className="wyf-ff-input"
                   autoComplete="username"
                   disabled={isSubmitting}
-                  placeholder=""
+                  placeholder="أدخل البريد الإلكتروني أو رقم الهاتف أو الرقم القومي"
                 />
               </div>
               {isInputFilled && (
@@ -359,7 +391,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
                     className="wyf-ff-input"
                     autoComplete="current-password"
                     disabled={isSubmitting}
-                    placeholder=""
+                    placeholder="أدخل كلمة المرور"
                   />
                 </div>
               </div>
@@ -431,28 +463,36 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onGoToRegister, o
           {/* Promo Content */}
           <div className="wyf-promo-content">
             <h2 className="wyf-promo-heading">مستخدم جديد؟</h2>
-            <p className="wyf-promo-desc">
-              HP Services منصتك الشاملة لإنجاز كل خدماتك بسهولة وسرعة، في أي وقت ومن أي مكان.
-            </p>
 
-            <div className="wyf-bubble-anchor" ref={bubbleRef}>
+            <div className="wyf-onboarding-notice" role="note" aria-label="إرشادات التسجيل لأول مرة">
+              <div className="wyf-notice-badge">
+                <KeyRound size={14} />
+                <span>تنبيه مهم لأول مرة</span>
+              </div>
+              <p className="wyf-notice-body">
+                لو جديد في منصتنا وعاوز تعمل حساب: اكتب{' '}
+                <strong>البريد الإلكتروني</strong> أو <strong>الرقم القومي</strong>،
+                واكتب <strong>باسورد قوي تكون حافظه</strong>، واضغط على زرار{' '}
+                <strong>تسجيل الدخول</strong> — مش محتاج أكتر من كده!
+              </p>
+              <div className="wyf-notice-reminder">
+                وفي كل مرة تدخل فيها لو طلب منك تسجيل دخول، اكتب{' '}
+                <strong>نفس البيانات</strong> وهيدخلك على طول.
+              </div>
+            </div>
+
+            <div className="wyf-bubble-anchor">
               <button
                 type="button"
                 className="wyf-promo-signup-btn"
-                onClick={() => setShowBubble(b => !b)}
+                onClick={() => {
+                  const el = document.getElementById('wyf-email-field');
+                  el?.focus();
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
               >
-                <span>إنشاء حساب جديد</span>
+                <span>ابدأ وأنشئ حسابك الآن</span>
               </button>
-
-              {showBubble && (
-                <div className="wyf-speech-bubble">
-                  <div className="wyf-sb-arrow" />
-                  <p className="wyf-sb-text">
-                    أدخل بريدك الإلكتروني وكلمة مرور من اختيارك في الحقول،
-                    وسيتم إنشاء حسابك تلقائياً والدخول إليه فوراً — بدون أي خطوات إضافية! 🎉
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 

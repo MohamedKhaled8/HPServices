@@ -2,6 +2,7 @@
  * Gemini Vision API Service for Document Data Extraction
  * يستخرج البيانات من صور المستندات (بطاقات هوية، شهادات تخرج، شهادات ميلاد، إلخ)
  */
+import { PlatformTelemetryEmitter } from '../modules/telemetry/infrastructure/emitters/PlatformTelemetryEmitter';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
@@ -69,6 +70,7 @@ export async function analyzeImage(base64Data: string, mimeType: string): Promis
   rawText: string;
 }> {
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const startedAt = Date.now();
   
   const response = await fetch(`${apiUrl}/api/extract-data`, {
     method: 'POST',
@@ -80,6 +82,20 @@ export async function analyzeImage(base64Data: string, mimeType: string): Promis
   });
 
   if (!response.ok) {
+    PlatformTelemetryEmitter.emit({
+      kind: 'token_usage',
+      serviceId: 'ocr',
+      serviceName: 'استخراج المستندات (OCR)',
+      count: 1,
+      tokenUnits: 40,
+      latencyMs: Date.now() - startedAt,
+      statusCode: response.status,
+      source: 'ocr_client',
+      severity: 'error',
+      category: 'token',
+      actionName: 'OCR_EXTRACTION_FAILED',
+      logMessage: `OCR failed with HTTP ${response.status}`
+    });
     const errorText = await response.text();
     console.error('OCR API Error:', errorText);
     let errMsg = `فشل الاتصال بخادم الاستخراج المحلي (${response.status})`;
@@ -93,6 +109,20 @@ export async function analyzeImage(base64Data: string, mimeType: string): Promis
   }
 
   const data = await response.json();
+  const estimatedTokens = Math.max(80, Math.round(((data.rawText || '').length + base64Data.length * 0.01) / 4));
+  PlatformTelemetryEmitter.emit({
+    kind: 'token_usage',
+    serviceId: 'ocr',
+    serviceName: 'استخراج المستندات (OCR)',
+    count: 1,
+    tokenUnits: estimatedTokens,
+    latencyMs: Date.now() - startedAt,
+    statusCode: 200,
+    source: 'ocr_client',
+    category: 'token',
+    actionName: 'OCR_EXTRACTION_OK',
+    logMessage: `Extracted document (${data.documentType || 'غير محدد'}) ~${estimatedTokens} units`
+  });
   return {
     documentType: data.documentType || 'غير محدد',
     confidence: data.confidence || 'غير محدد',

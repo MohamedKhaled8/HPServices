@@ -141,7 +141,7 @@ const LivePlatformStats: React.FC<LivePlatformStatsProps> = ({ isAdmin = false }
     <section className="live-stats-wrapper" aria-label="إحصائيات المنصة الحية">
       <div className="live-stats-minimal-container">
         
-        {/* 3 Stats Directly On Pure White Page Background */}
+        {/* 3 Stats Display */}
         <div className="live-stats-row">
           
           {/* Stat 1: عدد المشتركين */}
@@ -153,13 +153,16 @@ const LivePlatformStats: React.FC<LivePlatformStatsProps> = ({ isAdmin = false }
               <span className="stat-item-icon blue">
                 <Users size={18} />
               </span>
-              <span>المشتركون بالمنصة</span>
+              <span className="stat-badge-text">المشتركون بالمنصة</span>
             </div>
             <div className="stat-item-number-wrap">
               <span className="stat-item-plus blue">+</span>
               <span className="stat-item-number">{formatNumber(animatedStudents)}</span>
             </div>
-            <h4 className="stat-item-label">طالب ومشترك مسجل</h4>
+            <h4 className="stat-item-label">
+              <span className="label-desktop">طالب ومشترك مسجل</span>
+              <span className="label-mobile">طالب مسجل</span>
+            </h4>
             <p className="stat-item-desc">يزداد مع كل تسجيل دخول واشتراك جديد</p>
           </div>
 
@@ -174,13 +177,16 @@ const LivePlatformStats: React.FC<LivePlatformStatsProps> = ({ isAdmin = false }
               <span className="stat-item-icon emerald">
                 <CheckCircle2 size={18} />
               </span>
-              <span>اشتراكات الخدمات</span>
+              <span className="stat-badge-text">اشتراكات الخدمات</span>
             </div>
             <div className="stat-item-number-wrap">
               <span className="stat-item-plus emerald">+</span>
               <span className="stat-item-number">{formatNumber(animatedRequests)}</span>
             </div>
-            <h4 className="stat-item-label">خدمة وطلب تم تقديمها</h4>
+            <h4 className="stat-item-label">
+              <span className="label-desktop">خدمة وطلب تم تقديمها</span>
+              <span className="label-mobile">خدمة مكتملة</span>
+            </h4>
             <p className="stat-item-desc">عداد يرتفع تلقائياً مع كل طلب خدمة</p>
           </div>
 
@@ -192,13 +198,16 @@ const LivePlatformStats: React.FC<LivePlatformStatsProps> = ({ isAdmin = false }
               <span className="stat-item-icon purple">
                 <Activity size={18} />
               </span>
-              <span>الحركات والعمليات المكتملة</span>
+              <span className="stat-badge-text">الحركات والعمليات المكتملة</span>
             </div>
             <div className="stat-item-number-wrap">
               <span className="stat-item-plus purple">+</span>
               <span className="stat-item-number">{formatNumber(animatedActivity)}</span>
             </div>
-            <h4 className="stat-item-label">عملية دخول واشتراك ناجحة</h4>
+            <h4 className="stat-item-label">
+              <span className="label-desktop">عملية دخول واشتراك ناجحة</span>
+              <span className="label-mobile">عملية ناجحة</span>
+            </h4>
             <p className="stat-item-desc">نشاط طلابي مستمر على مدار الساعة</p>
           </div>
 

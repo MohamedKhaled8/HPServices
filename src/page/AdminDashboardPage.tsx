@@ -6,6 +6,7 @@ import AdminDashboardHeader from '../components/admin/AdminDashboardHeader';
 import AdminDashboardContent from '../components/admin/AdminDashboardContent';
 import AdminDashboardModals from '../components/admin/AdminDashboardModals';
 import { useAdminDashboard } from '../hooks/useAdminDashboard';
+import { useAdminSessionGuard } from '../modules/telemetry/application/useAdminSessionGuard';
 import '../styles/SpreadsheetGrid.css';
 import '../styles/AdminDashboardPage.css';
 import '../styles/AdminExpandableRows.css';
@@ -24,6 +25,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 }) => {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const dashboard = useAdminDashboard({ onBack });
+  useAdminSessionGuard(true, onLogout);
 
   if (dashboard.isLoading) {
     return (

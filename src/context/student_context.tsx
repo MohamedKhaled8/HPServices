@@ -5,32 +5,39 @@ import {
   logoutUser,
   subscribeToServiceRequests,
   addServiceRequest as addServiceRequestToFirebase,
-  checkIsAdmin,
+  checkAdminRole,
   subscribeToStudentData,
-  ensureStudentDocExists
+  ensureStudentDocExists,
+  type AdminRole
 } from '../services/firebaseService';
+import { clearTrackedSessionId } from '../modules/telemetry/application/useAdminSessionGuard';
 import LoadingDots from '../components/common/LoadingDots';
 
 interface StudentContextType {
   student: StudentData | null;
-  setStudent: (data: StudentData) => void;
+  setStudent: (data: StudentData, roleOverride?: AdminRole) => void;
   isLoggedIn: boolean;
   isAdmin: boolean;
+  isTelemetryAdmin: boolean;
+  adminRole: AdminRole;
   isAuthLoading: boolean;
   serviceRequests: ServiceRequest[];
   addServiceRequest: (request: ServiceRequest) => Promise<void>;
   updateServiceRequest: (id: string, request: Partial<ServiceRequest>) => void;
   getServiceRequest: (id: string) => ServiceRequest | undefined;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const StudentContext = createContext<StudentContextType | undefined>(undefined);
 
 export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [student, setStudent] = useState<StudentData | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [adminRole, setAdminRole] = useState<AdminRole>('student');
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const isAdmin = adminRole === 'primary_admin';
+  const isTelemetryAdmin = adminRole === 'telemetry_admin';
 
   // Listen to auth state changes
   useEffect(() => {
@@ -38,20 +45,17 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     const unsubscribe = onAuthStateChange(async (user) => {
       if (user) {
         try {
-          // Check if user is admin
-          const adminCheck = await checkIsAdmin(user.uid);
-          setIsAdmin(adminCheck);
-          if (adminCheck) {
-            // Cleanup any previous student subscription (switching accounts)
+          const role = await checkAdminRole(user.uid);
+          setAdminRole(role);
+          if (role === 'primary_admin' || role === 'telemetry_admin') {
             if (unsubscribeStudentDoc) {
               unsubscribeStudentDoc();
               unsubscribeStudentDoc = null;
             }
-            // Create temporary admin student data
             const adminStudentData: StudentData = {
               id: user.uid,
-              fullNameArabic: 'مدير النظام',
-              vehicleNameEnglish: 'Admin',
+              fullNameArabic: role === 'telemetry_admin' ? 'مشرف المراقبة والأمان' : 'مدير النظام',
+              vehicleNameEnglish: role === 'telemetry_admin' ? 'Telemetry Admin' : 'Admin',
               whatsappNumber: '',
               diplomaYear: '',
               diplomaType: '',
@@ -114,7 +118,7 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
           unsubscribeStudentDoc();
           unsubscribeStudentDoc = null;
         }
-        setIsAdmin(false);
+        setAdminRole('student');
         setStudent(null);
         setServiceRequests([]);
       }
@@ -127,9 +131,9 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
   }, []);
 
-  // Subscribe to service requests in real-time
+  // Subscribe to service requests in real-time (students only — zero Firestore reads for telemetry_admin)
   useEffect(() => {
-    if (!student?.id) {
+    if (!student?.id || adminRole !== 'student') {
       setServiceRequests([]);
       return;
     }
@@ -139,18 +143,27 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     });
 
     return () => unsubscribe();
-  }, [student?.id]);
+  }, [student?.id, adminRole]);
 
-  const handleSetStudent = (data: StudentData) => {
+  const handleSetStudent = (data: StudentData, roleOverride?: AdminRole) => {
+    if (roleOverride) {
+      setAdminRole(roleOverride);
+    }
     setStudent(data);
   };
 
   const handleLogout = async () => {
     try {
-      await logoutUser();
-      setIsAdmin(false);
+      clearTrackedSessionId();
+      try {
+        sessionStorage.removeItem('hp_telemetry_hmac_token');
+      } catch {
+        // Ignore storage error
+      }
+      setAdminRole('student');
       setStudent(null);
       setServiceRequests([]);
+      await logoutUser();
     } catch (error) {
       console.error('Error logging out:', error);
     }
@@ -183,6 +196,8 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     setStudent: handleSetStudent,
     isLoggedIn: student !== null,
     isAdmin,
+    isTelemetryAdmin,
+    adminRole,
     isAuthLoading: isLoading,
     serviceRequests,
     addServiceRequest,

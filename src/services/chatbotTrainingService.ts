@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { TrainedQA, UnansweredQuestion } from '../types';
 import { logger } from '../utils/logger';
+import { PlatformTelemetryEmitter } from '../modules/telemetry/infrastructure/emitters/PlatformTelemetryEmitter';
 
 const UNANSWERED_TABLE = 'chatbot_unanswered';
 const KNOWLEDGE_TABLE = 'chatbot_knowledge';
@@ -480,6 +481,18 @@ export async function deleteTrainedQA(id: string, questionText?: string): Promis
 }
 
 export async function incrementQAUsage(id: string): Promise<void> {
+  PlatformTelemetryEmitter.emit({
+    kind: 'token_usage',
+    serviceId: 'chatbot',
+    serviceName: 'مساعد الدعم الطلابي (Chatbot)',
+    count: 1,
+    tokenUnits: 25,
+    source: 'chatbot_qa_match',
+    category: 'token',
+    actionName: 'CHATBOT_QA_SERVED',
+    logMessage: `Served trained Q&A (${id})`
+  });
+
   if (isUUID(id)) {
     try {
       const { data } = await supabase

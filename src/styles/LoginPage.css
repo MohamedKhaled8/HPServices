@@ -525,40 +525,35 @@
 
 .wyf-ff-inner {
   flex: 1;
+  min-width: 0;
   position: relative;
-  min-height: 50px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  gap: 3px;
   background: transparent !important;
   background-color: transparent !important;
 }
 
 .wyf-ff-label {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  transform: translateY(-50%);
-  font-size: 14px;
-  font-weight: 600;
-  color: #94a3b8;
-  pointer-events: none;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  transform-origin: right center;
-  white-space: nowrap;
+  position: static;
+  transform: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #64748b;
+  line-height: 1.65;
+  white-space: normal;
+  overflow: visible;
+  text-align: right;
+  cursor: pointer;
+  transition: color 0.2s ease;
 }
 
-/* Label floats up when focused or filled */
-.wyf-float-field:focus-within .wyf-ff-label,
-.wyf-float-field.wyf-ff-filled .wyf-ff-label {
-  top: 4px;
-  transform: translateY(0) scale(0.8);
+.wyf-float-field:focus-within .wyf-ff-label {
   color: #2563eb;
-  font-weight: 700;
 }
 
 .wyf-float-field.wyf-ff-filled:not(:focus-within) .wyf-ff-label {
-  color: #64748b;
+  color: #475569;
 }
 
 .wyf-ff-input {
@@ -569,12 +564,24 @@
   box-shadow: none !important;
   font-family: inherit;
   font-size: 15px;
+  line-height: 1.5;
   color: #0f172a;
-  padding: 18px 0 2px;
+  padding: 2px 0 4px;
+  margin: 0;
+  min-height: 28px;
   direction: rtl;
+  unicode-bidi: plaintext;
+  text-align: right;
   width: 100%;
+  box-sizing: border-box;
   transition: color 0.2s ease;
   caret-color: #2563eb;
+}
+
+.wyf-ff-input::placeholder {
+  color: #94a3b8;
+  opacity: 0.78;
+  font-size: 13.5px;
 }
 
 .wyf-ff-input:disabled {
@@ -1147,18 +1154,61 @@
 }
 
 .wyf-promo-heading {
-  font-size: 34px;
+  font-size: 32px;
   font-weight: 800;
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   letter-spacing: -0.3px;
 }
 
-.wyf-promo-desc {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.92);
-  line-height: 1.8;
-  max-width: 280px;
-  margin: 0 auto 28px;
+.wyf-onboarding-notice {
+  background: rgba(15, 23, 42, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-right: 4px solid #fbbf24;
+  border-radius: 14px;
+  padding: 15px 16px;
+  margin: 0 auto 22px;
+  max-width: 340px;
+  text-align: right;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.16);
+}
+
+.wyf-notice-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(251, 191, 36, 0.18);
+  border: 1px solid rgba(251, 191, 36, 0.42);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 10px;
+}
+
+.wyf-notice-body {
+  font-size: 13.5px;
+  line-height: 1.82;
+  color: #ffffff;
+  margin: 0 0 10px;
+  font-weight: 500;
+}
+
+.wyf-notice-body strong,
+.wyf-notice-reminder strong {
+  color: #fde68a;
+  font-weight: 800;
+}
+
+.wyf-notice-reminder {
+  padding-top: 9px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.24);
+  font-size: 12.8px;
+  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.94);
+  font-weight: 600;
 }
 
 .wyf-promo-signup-btn {

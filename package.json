@@ -17,7 +17,7 @@
     "crypto:provision": "node scripts/provisionAutomationCrypto.cjs",
     "restore:orders": "node scripts/restoreOrdersFromCloudinary.cjs",
     "restore:enrich": "node scripts/enrichRestoredOrders.cjs",
-    "test": "node --experimental-strip-types --test src/utils/servicePaymentNumber.test.ts src/utils/backgroundImages.test.ts src/services/cloudinaryDestroy.test.ts"
+    "test": "node --experimental-strip-types --test src/utils/servicePaymentNumber.test.ts src/utils/backgroundImages.test.ts src/services/cloudinaryDestroy.test.ts src/modules/telemetry/domain/usecases/telemetryUseCases.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.93.1",
