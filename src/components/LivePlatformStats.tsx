@@ -7,8 +7,7 @@ import {
 } from 'lucide-react';
 import {
   subscribeToPlatformStats,
-  getStudentsCollectionCount,
-  subscribeToAllServiceRequests
+  getStudentsCollectionCount
 } from '../services/firebaseService';
 import '../styles/LivePlatformStats.css';
 
@@ -68,14 +67,37 @@ const LivePlatformStats: React.FC<LivePlatformStatsProps> = ({ isAdmin = false }
 
   // 1. استرجاع إحصائيات الطلاب والطلبات الحية
   useEffect(() => {
-    // محاولة جلب عدد مستندات الطلاب الحقيقي
-    getStudentsCollectionCount()
-      .then((count) => {
-        if (typeof count === 'number' && count > 0) {
-          setRawStudentsCount(prev => Math.max(prev, count));
+    const CACHE_KEY = 'hp_stats_students_count_v1';
+    const CACHE_TTL_MS = 10 * 60 * 1000;
+    let usedCache = false;
+
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed?.count === 'number' && Date.now() - Number(parsed.ts || 0) < CACHE_TTL_MS) {
+          if (parsed.count > 0) setRawStudentsCount(prev => Math.max(prev, parsed.count));
+          usedCache = true;
         }
-      })
-      .catch(() => {});
+      }
+    } catch {
+      // Ignore storage error
+    }
+
+    if (!usedCache) {
+      getStudentsCollectionCount()
+        .then((count) => {
+          if (typeof count === 'number' && count > 0) {
+            setRawStudentsCount(prev => Math.max(prev, count));
+            try {
+              sessionStorage.setItem(CACHE_KEY, JSON.stringify({ count, ts: Date.now() }));
+            } catch {
+              // Ignore storage error
+            }
+          }
+        })
+        .catch(() => {});
+    }
 
     // الاشتراك في وثيقة الإحصائيات العامة المحدثة تلقائياً مع كل تسجيل واشتراك
     const unsubStats = subscribeToPlatformStats((stats) => {
@@ -87,19 +109,8 @@ const LivePlatformStats: React.FC<LivePlatformStatsProps> = ({ isAdmin = false }
       }
     });
 
-    // إذا كان مديراً، استمع للطلبات الحية الفورية
-    let unsubRequests: (() => void) | null = null;
-    if (isAdmin) {
-      unsubRequests = subscribeToAllServiceRequests((requests) => {
-        if (Array.isArray(requests) && requests.length > 0) {
-          setRawRequestsCount(prev => Math.max(prev, requests.length));
-        }
-      });
-    }
-
     return () => {
       unsubStats();
-      if (unsubRequests) unsubRequests();
     };
   }, [isAdmin]);
 

@@ -131,7 +131,7 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
   }, []);
 
-  // Subscribe to service requests in real-time (students only — zero Firestore reads for telemetry_admin)
+  // Subscribe to service requests in real-time (students only — zero Firestore reads for admin or telemetry)
   useEffect(() => {
     if (!student?.id || adminRole !== 'student') {
       setServiceRequests([]);

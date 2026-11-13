@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useStudent } from '../../context';
 import {
@@ -45,9 +45,24 @@ const StudentSupportAssistant: React.FC = () => {
   }, [isLoggedIn]);
 
   // اشتراك ذكي فقط في الأكواد الخاصة بطلبات هذا الطالب (يوفر آلاف القراءات من الفايربيز)
+  const reqIdsKey = useMemo(
+    () =>
+      Array.from(
+        new Set((serviceRequests || []).map((r) => r.id).filter(Boolean) as string[])
+      )
+        .sort()
+        .join(','),
+    [serviceRequests]
+  );
+
   useEffect(() => {
     if (!isLoggedIn || isAdmin) return;
-    const reqIds = (serviceRequests || []).map((r) => r.id).filter(Boolean) as string[];
+    if (!reqIdsKey) {
+      setDtCodes((prev) => (prev.length === 0 ? prev : []));
+      setEpCodes((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    const reqIds = reqIdsKey.split(',');
     const unsub = subscribeToCodesForRequests(reqIds, (dt, ep) => {
       setDtCodes(dt as DtCodeRow[]);
       setEpCodes(ep as EpCodeRow[]);
@@ -55,7 +70,7 @@ const StudentSupportAssistant: React.FC = () => {
     return () => {
       unsub();
     };
-  }, [isLoggedIn, isAdmin, serviceRequests]);
+  }, [isLoggedIn, isAdmin, reqIdsKey]);
 
   const pathHidden = HIDDEN_PREFIXES.some((p) => location.pathname.startsWith(p));
   if (!adminChecked || !isLoggedIn || isAdmin || pathHidden) {

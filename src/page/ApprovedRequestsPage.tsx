@@ -13,19 +13,31 @@ interface ApprovedRequestsPageProps {
 
 const ApprovedRequestsPage: React.FC<ApprovedRequestsPageProps> = ({ onBack }) => {
     const { student, serviceRequests } = useStudent();
-    const approvedRequests = serviceRequests.filter((r: ServiceRequest) => r.status === 'completed');
+    const approvedRequests = React.useMemo(
+        () => serviceRequests.filter((r: ServiceRequest) => r.status === 'completed'),
+        [serviceRequests]
+    );
+    const approvedReqIdsKey = React.useMemo(
+        () => Array.from(new Set(approvedRequests.map(r => r.id).filter(Boolean) as string[])).sort().join(','),
+        [approvedRequests]
+    );
     const [dtCodes, setDtCodes] = React.useState<any[]>([]);
     const [epCodes, setEpCodes] = React.useState<any[]>([]);
 
     // جلب أكواد الطلبات الموافق عليها فقط لهذا الطالب (يوفر آلاف القراءات)
     React.useEffect(() => {
-        const reqIds = approvedRequests.map(r => r.id).filter(Boolean) as string[];
+        if (!approvedReqIdsKey) {
+            setDtCodes(prev => (prev.length === 0 ? prev : []));
+            setEpCodes(prev => (prev.length === 0 ? prev : []));
+            return;
+        }
+        const reqIds = approvedReqIdsKey.split(',');
         const unsub = subscribeToCodesForRequests(reqIds, (dt, ep) => {
             setDtCodes(dt);
             setEpCodes(ep);
         });
         return () => unsub();
-    }, [approvedRequests]);
+    }, [approvedReqIdsKey]);
 
     // Calculate total spent
     const totalSpent = approvedRequests.reduce((sum, req) => {

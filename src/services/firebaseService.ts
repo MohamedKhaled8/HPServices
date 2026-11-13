@@ -40,7 +40,7 @@ import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
 import { uploadMultipleToCloudStorage, CloudProvider } from './cloudStorageService';
 import { StudentData, ServiceRequest, ServiceRequestWorkflowStatus, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings, StatementEnrollmentConfig } from '../types';
-import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+import type { Query, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
@@ -143,151 +143,123 @@ export const findStudentInFirestore = async (rawIdentifier: string): Promise<Fou
   const clean = convertArabicIndicToAscii(originalClean).trim();
   const lower = clean.toLowerCase();
   const digitsOnly = clean.replace(/\D/g, '');
+  const isEmailInput = clean.includes('@') || originalClean.includes('@');
   const studentsRef = collection(db, 'students');
 
-  // 1. Direct doc lookup by UID or custom document ID
-  const directIds = [clean, originalClean];
-  if (digitsOnly && !directIds.includes(digitsOnly)) directIds.push(digitsOnly);
-  for (const did of directIds) {
-    try {
-      const directSnap = await getDoc(doc(db, 'students', did));
-      if (directSnap.exists()) {
-        const data = directSnap.data();
-        return { docId: directSnap.id, data: { id: directSnap.id, ...data } as StudentData };
+  const runQueriesSequentially = async (queries: Query<DocumentData>[]): Promise<FoundStudentResult | null> => {
+    for (const q of queries) {
+      try {
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const docSnap = snap.docs[0];
+          return { docId: docSnap.id, data: { id: docSnap.id, ...(docSnap.data() as Record<string, any>) } as StudentData };
+        }
+      } catch (_) {}
+    }
+    return null;
+  };
+
+  // 1. Direct doc lookup by UID or custom document ID (skip when clearly an email)
+  if (!isEmailInput) {
+    const directIds = Array.from(new Set([clean, originalClean, digitsOnly].filter(Boolean)));
+    for (const did of directIds) {
+      try {
+        const directSnap = await getDoc(doc(db, 'students', did));
+        if (directSnap.exists()) {
+          const data = directSnap.data();
+          return { docId: directSnap.id, data: { id: directSnap.id, ...data } as StudentData };
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 2. Email lookup (exact or lowercase, deduplicated — return early if not found)
+  if (isEmailInput) {
+    const emailCandidates = Array.from(new Set([lower, clean, originalClean.toLowerCase()].filter(Boolean)));
+    const emailQueries = emailCandidates.map((val) => query(studentsRef, where('email', '==', val), limit(1)));
+    return runQueriesSequentially(emailQueries);
+  }
+
+  // 3. National ID lookup (14 digits or >=13 digits)
+  if (digitsOnly.length >= 13) {
+    const strValues = Array.from(new Set([clean, digitsOnly, originalClean].filter(Boolean)));
+    const natFields = ['nationalID', 'national_id', 'nationalId', 'nationalNumber', 'national_number', 'nid'];
+    const natQueries: Query<DocumentData>[] = [];
+    for (const field of ['nationalID', 'national_id', 'nationalId']) {
+      for (const v of strValues) {
+        natQueries.push(query(studentsRef, where(field, '==', v), limit(1)));
       }
-    } catch (_) {}
-  }
-
-  // 2. Email lookup (exact or lowercase)
-  if (clean.includes('@') || originalClean.includes('@')) {
-    const emailQueries = [
-      query(studentsRef, where('email', '==', lower)),
-      query(studentsRef, where('email', '==', clean)),
-      query(studentsRef, where('email', '==', originalClean.toLowerCase())),
-    ];
-    for (const q of emailQueries) {
-      try {
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const docSnap = snap.docs[0];
-          return { docId: docSnap.id, data: { id: docSnap.id, ...docSnap.data() } as StudentData };
-        }
-      } catch (_) {}
     }
-  }
-
-  // 3. National ID lookup
-  if (digitsOnly.length >= 10) {
-    const natQueries = [
-      query(studentsRef, where('nationalID', '==', clean)),
-      query(studentsRef, where('nationalID', '==', digitsOnly)),
-      query(studentsRef, where('nationalID', '==', originalClean)),
-      query(studentsRef, where('national_id', '==', clean)),
-      query(studentsRef, where('national_id', '==', digitsOnly)),
-      query(studentsRef, where('national_id', '==', originalClean)),
-      query(studentsRef, where('nationalId', '==', clean)),
-      query(studentsRef, where('nationalId', '==', digitsOnly)),
-      query(studentsRef, where('nationalNumber', '==', digitsOnly)),
-      query(studentsRef, where('national_number', '==', digitsOnly)),
-      query(studentsRef, where('nid', '==', digitsOnly))
-    ];
+    for (const field of natFields.slice(3)) {
+      natQueries.push(query(studentsRef, where(field, '==', digitsOnly), limit(1)));
+    }
     if (/^\d+$/.test(digitsOnly)) {
-      natQueries.push(query(studentsRef, where('nationalID', '==', Number(digitsOnly))));
-      natQueries.push(query(studentsRef, where('national_id', '==', Number(digitsOnly))));
-      natQueries.push(query(studentsRef, where('nationalId', '==', Number(digitsOnly))));
+      const numVal = Number(digitsOnly);
+      natQueries.push(query(studentsRef, where('nationalID', '==', numVal), limit(1)));
+      natQueries.push(query(studentsRef, where('national_id', '==', numVal), limit(1)));
+      natQueries.push(query(studentsRef, where('nationalId', '==', numVal), limit(1)));
     }
-
-    for (const q of natQueries) {
-      try {
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const docSnap = snap.docs[0];
-          return { docId: docSnap.id, data: { id: docSnap.id, ...docSnap.data() } as StudentData };
-        }
-      } catch (_) {}
+    const foundNat = await runQueriesSequentially(natQueries);
+    if (foundNat || digitsOnly.length === 14) {
+      return foundNat;
     }
   }
 
-  // 4. WhatsApp / Phone lookup
-  const phoneQueries = [
-    query(studentsRef, where('whatsappNumber', '==', clean)),
-    query(studentsRef, where('whatsappNumber', '==', originalClean)),
-    query(studentsRef, where('phone', '==', clean)),
-    query(studentsRef, where('phoneNumber', '==', clean)),
-    query(studentsRef, where('mobile', '==', clean)),
-    query(studentsRef, where('whatsapp', '==', clean)),
-    query(studentsRef, where('tel', '==', clean)),
-  ];
-
-  if (digitsOnly && digitsOnly.length >= 8) {
-    phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', digitsOnly)));
-    phoneQueries.push(query(studentsRef, where('phone', '==', digitsOnly)));
-    phoneQueries.push(query(studentsRef, where('phoneNumber', '==', digitsOnly)));
-    phoneQueries.push(query(studentsRef, where('mobile', '==', digitsOnly)));
+  // 4. WhatsApp / Phone lookup (only when input actually looks like a phone number)
+  if (digitsOnly.length >= 8 && digitsOnly.length <= 13) {
+    const rawValues = Array.from(new Set([clean, originalClean, digitsOnly].filter(Boolean)));
+    const phoneQueries: Query<DocumentData>[] = [];
+    for (const field of ['whatsappNumber', 'phone', 'phoneNumber', 'mobile']) {
+      for (const v of rawValues) {
+        phoneQueries.push(query(studentsRef, where(field, '==', v), limit(1)));
+      }
+    }
+    phoneQueries.push(query(studentsRef, where('whatsapp', '==', clean), limit(1)));
+    phoneQueries.push(query(studentsRef, where('tel', '==', clean), limit(1)));
 
     if (digitsOnly.startsWith('01') && digitsOnly.length === 11) {
-      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '+2' + digitsOnly)));
-      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '2' + digitsOnly)));
-      phoneQueries.push(query(studentsRef, where('phone', '==', '+2' + digitsOnly)));
-      phoneQueries.push(query(studentsRef, where('phone', '==', '2' + digitsOnly)));
-    } else if (digitsOnly.startsWith('201') && digitsOnly.length === 12) {
+      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '+2' + digitsOnly), limit(1)));
+      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '2' + digitsOnly), limit(1)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', '+2' + digitsOnly), limit(1)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', '2' + digitsOnly), limit(1)));
+    } else if ((digitsOnly.startsWith('201') || clean.startsWith('+201')) && digitsOnly.length === 12) {
       const local = '0' + digitsOnly.slice(2);
-      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', local)));
-      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '+' + digitsOnly)));
-      phoneQueries.push(query(studentsRef, where('phone', '==', local)));
-      phoneQueries.push(query(studentsRef, where('phone', '==', '+' + digitsOnly)));
-    } else if (clean.startsWith('+201') && digitsOnly.length === 12) {
-      const local = '0' + digitsOnly.slice(2);
-      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', local)));
-      phoneQueries.push(query(studentsRef, where('phone', '==', local)));
+      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', local), limit(1)));
+      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', '+' + digitsOnly), limit(1)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', local), limit(1)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', '+' + digitsOnly), limit(1)));
     }
 
     if (/^\d+$/.test(digitsOnly)) {
-      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', Number(digitsOnly))));
-      phoneQueries.push(query(studentsRef, where('phone', '==', Number(digitsOnly))));
+      const numVal = Number(digitsOnly);
+      phoneQueries.push(query(studentsRef, where('whatsappNumber', '==', numVal), limit(1)));
+      phoneQueries.push(query(studentsRef, where('phone', '==', numVal), limit(1)));
     }
-  }
 
-  for (const q of phoneQueries) {
-    try {
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const docSnap = snap.docs[0];
-        return { docId: docSnap.id, data: { id: docSnap.id, ...docSnap.data() } as StudentData };
-      }
-    } catch (_) {}
+    return runQueriesSequentially(phoneQueries);
   }
 
   // 5. Name lookup (Arabic / English)
-  if (!clean.includes('@') && digitsOnly.length < 7 && originalClean.length >= 2) {
+  if (digitsOnly.length < 7 && originalClean.length >= 2) {
     const normArabic = normalizeArabicText(originalClean);
     const nameQueries = [
-      query(studentsRef, where('fullNameArabic', '==', originalClean)),
-      query(studentsRef, where('full_name_arabic', '==', originalClean)),
-      query(studentsRef, where('full_name', '==', originalClean)),
-      query(studentsRef, where('fullName', '==', originalClean)),
-      query(studentsRef, where('name', '==', originalClean)),
-      query(studentsRef, where('vehicleNameEnglish', '==', originalClean)),
-      query(studentsRef, where('vehicleNameEnglish', '==', lower)),
-      query(studentsRef, where('fullNameEnglish', '==', originalClean)),
-      query(studentsRef, where('fullNameEnglish', '==', lower)),
-      query(studentsRef, where('full_name_english', '==', originalClean)),
-      query(studentsRef, where('name_en', '==', originalClean)),
+      query(studentsRef, where('fullNameArabic', '==', originalClean), limit(1)),
+      query(studentsRef, where('full_name_arabic', '==', originalClean), limit(1)),
+      query(studentsRef, where('full_name', '==', originalClean), limit(1)),
+      query(studentsRef, where('fullName', '==', originalClean), limit(1)),
+      query(studentsRef, where('name', '==', originalClean), limit(1)),
+      query(studentsRef, where('vehicleNameEnglish', '==', originalClean), limit(1)),
+      ...(lower !== originalClean ? [query(studentsRef, where('vehicleNameEnglish', '==', lower), limit(1))] : []),
+      query(studentsRef, where('fullNameEnglish', '==', originalClean), limit(1)),
+      ...(lower !== originalClean ? [query(studentsRef, where('fullNameEnglish', '==', lower), limit(1))] : []),
+      query(studentsRef, where('full_name_english', '==', originalClean), limit(1)),
+      query(studentsRef, where('name_en', '==', originalClean), limit(1)),
     ];
     if (normArabic && normArabic !== originalClean) {
-      nameQueries.push(query(studentsRef, where('fullNameArabic', '==', normArabic)));
-      nameQueries.push(query(studentsRef, where('full_name_arabic', '==', normArabic)));
+      nameQueries.push(query(studentsRef, where('fullNameArabic', '==', normArabic), limit(1)));
+      nameQueries.push(query(studentsRef, where('full_name_arabic', '==', normArabic), limit(1)));
     }
-
-    for (const q of nameQueries) {
-      try {
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const docSnap = snap.docs[0];
-          return { docId: docSnap.id, data: { id: docSnap.id, ...docSnap.data() } as StudentData };
-        }
-      } catch (_) {}
-    }
+    return runQueriesSequentially(nameQueries);
   }
 
   return null;
@@ -657,8 +629,9 @@ export const loginOrRegisterUser = async (
     throw new Error('يرجى إدخال كلمة المرور');
   }
 
-  // 1. Lookup student in Firestore (skipped for reserved admin/telemetry emails to avoid unnecessary DB reads)
-  const preFoundStudent = reservedAdmin
+  // 1. When identifier is an email (or reserved admin), try direct Auth sign-in first (0 Firestore lookup reads).
+  // Only query Firestore before Auth when logging in with National ID / Phone / Name.
+  const preFoundStudent = (isEmail || reservedAdmin)
     ? null
     : (await findStudentInFirestore(rawClean)) || (clean !== rawClean ? await findStudentInFirestore(clean) : null);
 
@@ -732,7 +705,7 @@ export const loginOrRegisterUser = async (
   }
 
   // AUTO-HEALING & LEGACY ACCOUNT RESOLUTION:
-  const foundStudent = preFoundStudent || (isEmail ? await findStudentInFirestore(clean) : null);
+  const foundStudent = preFoundStudent ?? (isEmail ? await findStudentInFirestore(clean) : null);
 
   if (foundStudent) {
     const storedDoc = foundStudent.data as any;
@@ -3024,17 +2997,24 @@ export const searchStudent = async (searchTerm: string, cachedStudents?: Student
       });
     }
 
+    // Avoid firing 4-8 Firestore queries on a single character
+    if (searchTrimmed.length < 2) {
+      return Array.from(matchedDocsMap.values());
+    }
+
     // 2. ALWAYS execute targeted queries on Firestore to fetch matches outside local cache
     const studentsRef = collection(db, 'students');
     const queryPromises: Promise<any>[] = [];
 
-    // Search via searchKeywords array-contains (matches any word/phrase inside name for tokenized docs)
+    // Search via searchKeywords array-contains (deduplicated)
     queryPromises.push(
       getDocs(query(studentsRef, where('searchKeywords', 'array-contains', searchLower), limit(50)))
     );
-    queryPromises.push(
-      getDocs(query(studentsRef, where('searchKeywords', 'array-contains', searchNorm), limit(50)))
-    );
+    if (searchNorm && searchNorm !== searchLower) {
+      queryPromises.push(
+        getDocs(query(studentsRef, where('searchKeywords', 'array-contains', searchNorm), limit(50)))
+      );
+    }
 
     if (isNumeric) {
       // Search by nationalID or whatsappNumber prefix
@@ -3729,6 +3709,97 @@ export const fetchServiceRequestsPage = async (
     logger.error(`fetchServiceRequestsPage for service ${serviceId}:`, error);
     return { requests: [], lastSnapshot: null, hasMore: false };
   }
+};
+
+/** حساب إجمالي وطلبات الانتظار لكل خدمة بدون تنزيل المستندات */
+export const getAllServicesCountsSummary = async (): Promise<
+  Record<string, { pending: number; total: number }>
+> => {
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+  const summary: Record<string, { pending: number; total: number }> = {};
+
+  await Promise.all(
+    serviceIds.map(async (serviceId) => {
+      const coll = collection(db, `serviceRequests_${serviceId}`);
+      try {
+        const [totalSnap, pendingSnap] = await Promise.all([
+          getCountFromServer(query(coll)),
+          getCountFromServer(query(coll, where('status', '==', 'pending')))
+        ]);
+        summary[serviceId] = {
+          total: totalSnap.data().count,
+          pending: pendingSnap.data().count
+        };
+      } catch (err) {
+        logger.error(`getAllServicesCountsSummary error for service ${serviceId}:`, err);
+        summary[serviceId] = { total: 0, pending: 0 };
+      }
+    })
+  );
+
+  return summary;
+};
+
+/** اشتراك محدود بأحدث N طلب لخدمة واحدة فقط بدل تحميل كل المجموعات */
+export const subscribeToServiceRequestsPageLimited = (
+  serviceId: string,
+  pageSize: number = 50,
+  onUpdate: (
+    requests: ServiceRequest[],
+    lastSnapshot: QueryDocumentSnapshot<DocumentData> | null,
+    hasMore: boolean
+  ) => void
+): (() => void) => {
+  const collectionName = `serviceRequests_${serviceId}`;
+  const q = query(collection(db, collectionName), orderBy('createdAt', 'desc'), limit(pageSize));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const requests: ServiceRequest[] = snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          ...data,
+          id: docSnap.id,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+        } as ServiceRequest;
+      });
+      const lastSnapshot = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+      const hasMore = snap.docs.length === pageSize;
+      onUpdate(requests, lastSnapshot, hasMore);
+    },
+    (error) => {
+      logger.error(`Error in limited subscription for service ${serviceId}:`, error);
+      onUpdate([], null, false);
+    }
+  );
+};
+
+/** جلب كافة طلبات خدمة واحدة عند الطلب (للبحث الشامل أو التصدير) */
+export const fetchAllServiceRequestsForService = async (
+  serviceId: string
+): Promise<ServiceRequest[]> => {
+  try {
+    const q = query(collection(db, `serviceRequests_${serviceId}`), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return {
+        ...data,
+        id: docSnap.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+      } as ServiceRequest;
+    });
+  } catch (error: any) {
+    logger.error(`fetchAllServiceRequestsForService error for ${serviceId}:`, error);
+    return [];
+  }
+};
+
+/** جلب كافة الطلبات عبر كل الخدمات لمرة واحدة عند طلب الإحصائيات الكاملة */
+export const fetchAllServicesRequestsOnce = async (): Promise<ServiceRequest[]> => {
+  const serviceIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+  const pages = await Promise.all(serviceIds.map((id) => fetchAllServiceRequestsForService(id)));
+  return pages.flat();
 };
 
 export const updateServiceRequestStatus = async (

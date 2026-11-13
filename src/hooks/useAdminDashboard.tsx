@@ -6,7 +6,8 @@ import { db } from '../config/firebase';
 import {
   checkIsAdmin,
   getStudentsByIds,
-  subscribeToAllServiceRequests,
+  getAllServicesCountsSummary,
+  subscribeToServiceRequestsPageLimited,
   deleteElectronicPaymentCode
 } from '../services/firebaseService';
 import { ServiceRequest, StudentData } from '../types';
@@ -189,7 +190,36 @@ export function useAdminDashboard({ onBack }: UseAdminDashboardOptions = {}) {
     checkAdmin();
   }, [student, onBack]);
 
-  // Realtime subscription to service requests with debounced batch student resolution
+  // Fetch service counts summary on mount (aggregation query - 0 document reads)
+  useEffect(() => {
+    if (isLoading) return;
+    let isCancelled = false;
+
+    getAllServicesCountsSummary()
+      .then((summary) => {
+        if (isCancelled) return;
+        const countsMap: Record<string, number> = {};
+        Object.entries(summary).forEach(([svcId, data]) => {
+          countsMap[svcId] = data.total;
+        });
+        setServiceTotalCounts(countsMap);
+        if (!dataReadyRef.current) {
+          setDataReady(true);
+        }
+      })
+      .catch((err) => {
+        logger.error('Failed to load services summary:', err);
+        if (!dataReadyRef.current) {
+          setDataReady(true);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isLoading]);
+
+  // Realtime subscription to the selected service with limit(50) pagination
   useEffect(() => {
     if (isLoading) return;
 
@@ -197,7 +227,9 @@ export function useAdminDashboard({ onBack }: UseAdminDashboardOptions = {}) {
     let studentFetchTimer: number | undefined;
     let unsubscribe: (() => void) | undefined;
 
-    unsubscribe = subscribeToAllServiceRequests((requests) => {
+    const targetServiceId = selectedServiceId || '1';
+
+    unsubscribe = subscribeToServiceRequestsPageLimited(targetServiceId, 50, (requests) => {
       if (!dataReadyRef.current) {
         setServiceRequests(requests);
         setDataReady(true);
@@ -272,7 +304,7 @@ export function useAdminDashboard({ onBack }: UseAdminDashboardOptions = {}) {
       studentIdsInFlightRef.current.clear();
       unsubscribe?.();
     };
-  }, [isLoading, restoreToolsUnlocked]);
+  }, [isLoading, selectedServiceId, restoreToolsUnlocked]);
 
   // Auto-fix orders with placeholder names
   const runAutoFixPlaceholderOrders = useCallback(async (scopeServiceId?: string | null) => {
