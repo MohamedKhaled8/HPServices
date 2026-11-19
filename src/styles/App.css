@@ -14,6 +14,27 @@ html {
   -webkit-touch-callout: none;
 }
 
+/* Lenis smooth scrolling rules */
+html.lenis, html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent],
+.admin-dashboard-page,
+.admin-main,
+.assignments-management-page,
+.tier-modal,
+.delete-confirm-modal,
+.recall-modal,
+.modal-overlay,
+.tier-modal-overlay {
+  overscroll-behavior: contain;
+}
+
 /* Fix mobile selection on scroll */
 button,
 a,

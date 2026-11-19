@@ -1,11 +1,13 @@
 import React from 'react';
-import { Trash2, X } from 'lucide-react';
+import { Trash2, X, RotateCcw } from 'lucide-react';
 import { DeleteConfirmModalState } from '../../types/assignments.types';
+
+export type DeleteActionMode = 'both' | 'server-only' | 'students-only' | boolean;
 
 export interface DeleteConfirmationModalProps {
   deleteConfirmModal: DeleteConfirmModalState;
   setDeleteConfirmModal: React.Dispatch<React.SetStateAction<DeleteConfirmModalState>>;
-  executeDelete: (removeFromUsers: boolean) => void;
+  executeDelete: (mode: DeleteActionMode) => void;
   isRemovingFromUsers: boolean;
 }
 
@@ -25,37 +27,49 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
             <div className="delete-confirm-icon">
               <Trash2 size={32} />
             </div>
-            <h3>تأكيد الحذف</h3>
+            <h3>إدارة وحذف الملفات المحددة</h3>
             <p className="delete-confirm-count">
-              سيتم حذف <strong>{deleteConfirmModal.fileIds.length}</strong> ملف
+              تم تحديد <strong>{deleteConfirmModal.fileIds.length}</strong> ملف
               {deleteConfirmModal.source === 'unified130' ? ' من ملفات الـ 130 الموحدة' : ' من ملفات المسار'}
             </p>
             <p className="delete-confirm-question">
-              هل تريد أيضاً حذف هذه الملفات من حسابات جميع الطلاب؟
+              اختر الإجراء المطلوب تنفيذه على الملفات المحددة:
             </p>
 
             <div className="delete-confirm-buttons">
               <button
+                className="delete-btn-students-only"
+                onClick={() => executeDelete('students-only')}
+                disabled={isRemovingFromUsers}
+              >
+                <RotateCcw size={18} />
+                <div>
+                  <strong>سحب من حسابات الطلاب فقط (موصى به)</strong>
+                  <span>إزالة الملفات من حسابات الطلاب مع الإبقاء عليها في الداش بورد والسيرفر</span>
+                </div>
+              </button>
+
+              <button
                 className="delete-btn-both"
-                onClick={() => executeDelete(true)}
+                onClick={() => executeDelete('both')}
                 disabled={isRemovingFromUsers}
               >
                 <Trash2 size={18} />
                 <div>
-                  <strong>حذف من الكل</strong>
-                  <span>حذف الملفات + إزالتها من حسابات الطلاب</span>
+                  <strong>حذف نهائي من الكل</strong>
+                  <span>حذف الملفات من الداش بورد + إزالتها من حسابات الطلاب</span>
                 </div>
               </button>
 
               <button
                 className="delete-btn-server-only"
-                onClick={() => executeDelete(false)}
+                onClick={() => executeDelete('server-only')}
                 disabled={isRemovingFromUsers}
               >
                 <X size={18} />
                 <div>
-                  <strong>حذف من السيرفر فقط</strong>
-                  <span>حذف الملفات بدون إزالتها من حسابات الطلاب</span>
+                  <strong>حذف من الداش بورد فقط</strong>
+                  <span>حذف الملفات من الداش بورد مع بقائها لدى الطلاب</span>
                 </div>
               </button>
             </div>

@@ -15,6 +15,12 @@ import {
   updateStudentData,
   changeOtherUserPasswordHelper
 } from '../services/firebaseService';
+import {
+  syncStudentAssignmentsOnTrackChange,
+  getTrackKey,
+  type TrackSyncResult
+} from '../services/studentTrackSyncService';
+import { normalizeTrackName } from '../utils/trackUtils';
 import { logger } from '../utils/logger';
 
 export const ADMIN_USERS_PAGE_SIZE = 75;
@@ -234,11 +240,38 @@ export function useAdminUsers({
         }
       }
 
-      await updateStudentData(editedStudentData.id, editedStudentData);
+      // مزامنة ملفات المسار الدراسي للطالب تلقائياً إذا تم تغيير المسار
+      const oldTrack = originalStudent?.track;
+      const newTrack = editedStudentData.track;
+      const isTrackChanged = Boolean(
+        newTrack && getTrackKey(newTrack) !== getTrackKey(oldTrack)
+      );
+
+      let syncResult: TrackSyncResult | null = null;
+      if (isTrackChanged && editedStudentData.id) {
+        setToastState?.({ message: 'جاري مزامنة ملفات المسار الدراسي للطالب...', type: 'loading' });
+        try {
+          syncResult = await syncStudentAssignmentsOnTrackChange(
+            editedStudentData.id,
+            newTrack!,
+            oldTrack
+          );
+        } catch (syncErr: any) {
+          logger.error('Track sync failed during admin save:', syncErr);
+        }
+      }
+
+      const payloadToSave: StudentData = { ...editedStudentData };
+      if (syncResult && syncResult.synced) {
+        payloadToSave.assignedFiles = syncResult.assignedFiles;
+        payloadToSave.assignedFile = syncResult.assignedFile;
+      }
+
+      await updateStudentData(editedStudentData.id, payloadToSave);
 
       const updatedUser: StudentData = {
         ...(originalStudent || {}),
-        ...editedStudentData
+        ...payloadToSave
       };
 
       const studentId = editedStudentData.id;
@@ -273,7 +306,13 @@ export function useAdminUsers({
           );
         }
       } else {
-        showAlert('نجاح', 'تم تحديث بيانات المستخدم بنجاح', 'success');
+        let msg = 'تم تحديث بيانات المستخدم بنجاح';
+        if (syncResult && syncResult.synced) {
+          msg = `تم تحديث بيانات المستخدم ومزامنة ملفات التكليفات للمسار الجديد (${normalizeTrackName(newTrack)}) بنجاح ✅\n(تمت إزالة ${syncResult.removedFilesCount} ملف من المسار السابق وإسناد ${syncResult.addedFilesCount} ملف للمسار الجديد)`;
+        } else if (syncResult && syncResult.action === 'no_new_files_preserved') {
+          msg = `تم تحديث بيانات المستخدم، وتم الإبقاء على الملفات الحالية لعدم وجود ملفات مرفوعة للمسار الجديد (${normalizeTrackName(newTrack)}) ⚠️`;
+        }
+        showAlert('نجاح', msg, 'success');
       }
     } catch (error: any) {
       showAlert('خطأ', error.message || 'حدث خطأ أثناء تحديث البيانات', 'error');

@@ -1,52 +1,194 @@
-/* Assignment Card Responsive Layout */
+/* Assignment Card Responsive & Adaptive Layout */
+.student-assignments-container {
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 20px 40px;
+    box-sizing: border-box;
+}
+
+.assignments-cards-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
 .assigned-file-card-responsive {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 20px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    background: white;
+    border-radius: 16px;
+    padding: 20px 24px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border: 1px solid #E2E8F0;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.assigned-file-card-responsive:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
 }
 
 .assignment-card-content {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+}
+
+.assignment-card-icon {
+    width: 52px;
+    height: 52px;
+    background: #F5F3FF;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #7C3AED;
+    flex-shrink: 0;
+}
+
+.assignment-card-details {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.assignment-card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1E293B;
+    margin: 0 0 6px 0;
+    line-height: 1.5;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    direction: rtl;
+}
+
+.assignment-card-date {
+    color: #64748B;
+    font-size: 12.5px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .assignment-card-actions {
     display: flex;
+    align-items: center;
     gap: 10px;
     flex-shrink: 0;
 }
 
-/* Mobile Responsive */
-@media (max-width: 768px) {
+.assignment-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 18px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 13.5px;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.assignment-action-btn.view {
+    background: #6366F1;
+    color: white;
+    border: 1px solid transparent;
+}
+
+.assignment-action-btn.view:hover {
+    background: #4F46E5;
+}
+
+.assignment-action-btn.download {
+    background: #F1F5F9;
+    color: #1E293B;
+    border: 1px solid #E2E8F0;
+}
+
+.assignment-action-btn.download:hover {
+    background: #E2E8F0;
+}
+
+/* Tablet & Laptop Adaptive Layout */
+@media (max-width: 860px) {
     .assigned-file-card-responsive {
         flex-direction: column;
         align-items: stretch;
-        gap: 20px;
-    }
-
-    .assignment-card-content {
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        gap: 15px;
-    }
-
-    .assignment-card-content h3 {
-        white-space: normal !important;
-        text-align: center;
+        gap: 16px;
+        padding: 18px 20px;
     }
 
     .assignment-card-actions {
-        justify-content: center;
         width: 100%;
+        justify-content: flex-end;
+        border-top: 1px solid #F1F5F9;
+        padding-top: 14px;
         gap: 10px;
     }
 
-    .assignment-card-actions a {
+    .assignment-action-btn {
         flex: 1;
-        max-width: 150px;
+        max-width: 180px;
+    }
+}
+
+/* Mobile Screens */
+@media (max-width: 540px) {
+    .student-assignments-container {
+        padding: 0 12px 30px;
+    }
+
+    .assigned-file-card-responsive {
+        padding: 16px;
+        gap: 14px;
+    }
+
+    .assignment-card-content {
+        gap: 12px;
+    }
+
+    .assignment-card-icon {
+        width: 44px;
+        height: 44px;
+    }
+
+    .assignment-card-title {
+        font-size: 14px;
+        -webkit-line-clamp: 3;
+    }
+
+    .assignment-card-actions {
+        width: 100%;
+        gap: 8px;
+    }
+
+    .assignment-action-btn {
+        max-width: none;
+        flex: 1;
+        padding: 9px 10px;
+        font-size: 13px;
     }
 }

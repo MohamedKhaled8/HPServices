@@ -45,6 +45,7 @@ interface TracksManagementTabProps {
   handleDeleteSelected: (track: TrackKey) => void;
   handleDeleteSingleTrackFile: (track: TrackKey, fileId: string) => void;
   handleDeleteTrackFolder: (track: TrackKey, folderPath: string) => Promise<void>;
+  handleRevokeFolderFromStudents?: (track: TrackKey, folderPath: string) => void;
   handleFileUpload: (track: TrackKey, files: File[]) => Promise<void>;
   handleOpenRecallModal: (track: TrackKey | 'unified130') => Promise<void>;
 }
@@ -75,6 +76,7 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
   handleDeleteSelected,
   handleDeleteSingleTrackFile,
   handleDeleteTrackFolder,
+  handleRevokeFolderFromStudents,
   handleFileUpload,
   handleOpenRecallModal,
 }) => {
@@ -123,30 +125,66 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                   const visibleFiles = getVisibleTrackFiles(openedTrack);
                   const visibleFolders = getVisibleTrackFolders(openedTrack);
                   const currentPath = trackCurrentPath[openedTrack] || '';
+
+                  // خريطة سريعة لملفات كل مجلد لتفادي التكرار الحسابي O(Folders * Files)
+                  const folderFilesMap = new Map<string, any[]>();
+                  const currentTrackFiles = trackFiles[openedTrack] || [];
+                  for (const folder of visibleFolders) {
+                    const fPath = folder.path;
+                    const fPathPrefix = `${fPath}/`;
+                    const matching = currentTrackFiles.filter((f: any) => {
+                      const fp = String(f.folderPath || '');
+                      return fp === fPath || fp.startsWith(fPathPrefix);
+                    });
+                    folderFilesMap.set(folder.path, matching);
+                  }
+
+                  const allFilesInVisibleFolders: any[] = [];
+                  folderFilesMap.forEach((files) => {
+                    for (const f of files) {
+                      allFilesInVisibleFolders.push(f);
+                    }
+                  });
+
+                  // جميع الملفات المتاحة للاختيار (الملفات الظاهرة مباشرة + ملفات المجلدات الظاهرة)
+                  const allSelectableFiles = [
+                    ...visibleFiles,
+                    ...allFilesInVisibleFolders,
+                  ];
+                  const allSelectableFileIds = Array.from(
+                    new Set(allSelectableFiles.map((f: any) => f.id))
+                  );
+                  const isAllChecked =
+                    allSelectableFileIds.length > 0 &&
+                    allSelectableFileIds.every((id) => selectedFileIds[openedTrack]?.has(id));
+
                   return (
                     <>
                 <div className="track-files-header">
                   <div className="track-header-main">
-                    <button
-                      type="button"
-                      className="back-to-tracks-button"
-                      onClick={() => {
-                        setTrackView('overview');
-                        setOpenedTrack(null);
-                      }}
-                    >
-                      <ArrowRight size={16} />
-                      جميع المسارات
-                    </button>
-                    <h3>
-                      {openedTrack === 'track1' && 'ملفات المسار الأول'}
-                      {openedTrack === 'track2' && 'ملفات المسار الثاني'}
-                      {openedTrack === 'track3' && 'ملفات المسار الثالث'}
-                    </h3>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="track-title-row">
                       <button
                         type="button"
                         className="back-to-tracks-button"
+                        onClick={() => {
+                          setTrackView('overview');
+                          setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: '' }));
+                          setOpenedTrack(null);
+                        }}
+                      >
+                        <ArrowRight size={15} />
+                        <span>جميع المسارات</span>
+                      </button>
+                      <h3 className="track-section-title">
+                        {openedTrack === 'track1' && 'ملفات المسار الأول'}
+                        {openedTrack === 'track2' && 'ملفات المسار الثاني'}
+                        {openedTrack === 'track3' && 'ملفات المسار الثالث'}
+                      </h3>
+                    </div>
+                    <div className="track-breadcrumbs">
+                      <button
+                        type="button"
+                        className={`breadcrumb-item ${!currentPath ? 'active' : ''}`}
                         onClick={() => setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: '' }))}
                         disabled={!currentPath}
                       >
@@ -154,15 +192,18 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                       </button>
                       {getPathParts(currentPath).map((part, idx, arr) => {
                         const full = arr.slice(0, idx + 1).join('/');
+                        const isLast = idx === arr.length - 1;
                         return (
-                          <button
-                            key={full}
-                            type="button"
-                            className="back-to-tracks-button"
-                            onClick={() => setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: full }))}
-                          >
-                            {part}
-                          </button>
+                          <React.Fragment key={full}>
+                            <span className="breadcrumb-separator">/</span>
+                            <button
+                              type="button"
+                              className={`breadcrumb-item ${isLast ? 'active' : ''}`}
+                              onClick={() => setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: full }))}
+                            >
+                              {part}
+                            </button>
+                          </React.Fragment>
                         );
                       })}
                     </div>
@@ -188,14 +229,14 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                     {/* زر الرفع الظاهر */}
                     <button
                       type="button"
-                      className="add-costs-button"
+                      className="track-action-btn btn-upload"
                       onClick={() => document.getElementById(`upload-input-${openedTrack}`)?.click()}
                       disabled={isUploadingAssignments[openedTrack]}
                     >
                       {isUploadingAssignments[openedTrack] ? (
                         <>
                           <Loader2 className="spinning-loader-small" size={16} />
-                          <span className="uploading-text">
+                          <span>
                             جاري الرفع...
                             {uploadProgress[openedTrack]?.total > 0 && ` (${uploadProgress[openedTrack].current}/${uploadProgress[openedTrack].total})`}
                           </span>
@@ -203,48 +244,58 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                       ) : (
                         <>
                           <Upload size={16} />
-                          رفع ملفات
+                          <span>رفع ملفات</span>
                         </>
                       )}
                     </button>
-                    <input
-                      type="text"
-                      value={newTrackFolderName}
-                      onChange={(e) => setNewTrackFolderName(e.target.value)}
-                      placeholder="اسم مجلد جديد"
-                      style={{ minWidth: 170, padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}
-                    />
-                    <button
-                      type="button"
-                      className="add-costs-button"
-                      onClick={() => handleCreateTrackFolder(openedTrack)}
-                    >
-                      <Folder size={16} />
-                      إنشاء مجلد
-                    </button>
 
+                    {/* وحدة إنشاء مجلد مدمجة (Input + Button متناسقين) */}
+                    <div className="create-folder-combo">
+                      <input
+                        type="text"
+                        value={newTrackFolderName}
+                        onChange={(e) => setNewTrackFolderName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleCreateTrackFolder(openedTrack);
+                        }}
+                        placeholder="اسم مجلد جديد..."
+                        className="create-folder-input"
+                      />
+                      <button
+                        type="button"
+                        className="create-folder-btn"
+                        onClick={() => handleCreateTrackFolder(openedTrack)}
+                        title="إنشاء المجلد"
+                      >
+                        <Folder size={15} />
+                        <span>إنشاء مجلد</span>
+                      </button>
+                    </div>
+
+                    {/* زر الإرسال للطلاب */}
                     <button
                       type="button"
-                      className="send-button"
+                      className="track-action-btn btn-send"
                       disabled={isDistributingAssignments || (selectedFileIds[openedTrack]?.size === 0 && visibleFiles.length === 0)}
                       onClick={() => setShowTierModal(true)}
                     >
                       {isDistributingAssignments ? (
                         <>
                           <Loader2 className="spinning-loader-small" size={16} />
-                          <span className="uploading-text">جاري التوزيع...</span>
+                          <span>جاري التوزيع...</span>
                         </>
                       ) : (
                         <>
-                          <Send size={16} />
-                          إرسال للطلاب
+                          <Send size={15} />
+                          <span>إرسال للطلاب</span>
                         </>
                       )}
                     </button>
 
+                    {/* زر مسح المحدد */}
                     <button
                       type="button"
-                      className="delete-button"
+                      className="track-action-btn btn-delete"
                       disabled={
                         isDeletingAssignments[openedTrack] ||
                         !selectedFileIds[openedTrack] ||
@@ -255,24 +306,25 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                       {isDeletingAssignments[openedTrack] ? (
                         <>
                           <Loader2 className="spinning-loader-small" size={16} />
-                          <span className="uploading-text">جاري المسح...</span>
+                          <span>جاري المسح...</span>
                         </>
                       ) : (
                         <>
-                          <Trash2 size={16} />
-                          مسح المحدد
+                          <Trash2 size={15} />
+                          <span>مسح المحدد</span>
                         </>
                       )}
                     </button>
 
+                    {/* زر سحب الملفات */}
                     <button
                       type="button"
-                      className="revoke-button"
+                      className="track-action-btn btn-recall"
                       onClick={() => handleOpenRecallModal(openedTrack)}
-                      title="سحب الملفات التي تم إرسالها للطلاب في هذا المسار"
+                      title="سحب الملفات والمجلدات التي تم إرسالها للطلاب في هذا المسار"
                     >
-                      <RotateCcw size={16} />
-                      سحب الملفات
+                      <RotateCcw size={15} />
+                      <span>سحب الملفات</span>
                     </button>
                   </div>
                 </div>
@@ -288,22 +340,23 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                         <thead>
                           <tr>
                             <th style={{ width: '50px' }}>
-                              <label className="checkbox-label">
+                              <label className="checkbox-label" title="تحديد / إلغاء تحديد الكل">
                                 <input
                                   type="checkbox"
-                                  checked={
-                                    visibleFiles.length > 0 &&
-                                    visibleFiles.every((f: any) => selectedFileIds[openedTrack]?.has(f.id))
-                                  }
+                                  checked={isAllChecked}
                                   onChange={(e) => {
                                     if (e.target.checked) {
-                                      const allIds = new Set(selectedFileIds[openedTrack] || []);
-                                      visibleFiles.forEach((f: any) => allIds.add(f.id));
-                                      setSelectedFileIds(prev => ({ ...prev, [openedTrack]: allIds }));
+                                      setSelectedFileIds((prev) => {
+                                        const allIds = new Set(prev[openedTrack] || []);
+                                        allSelectableFileIds.forEach((id) => allIds.add(id));
+                                        return { ...prev, [openedTrack]: allIds };
+                                      });
                                     } else {
-                                      const allIds = new Set(selectedFileIds[openedTrack] || []);
-                                      visibleFiles.forEach((f: any) => allIds.delete(f.id));
-                                      setSelectedFileIds(prev => ({ ...prev, [openedTrack]: allIds }));
+                                      setSelectedFileIds((prev) => {
+                                        const allIds = new Set(prev[openedTrack] || []);
+                                        allSelectableFileIds.forEach((id) => allIds.delete(id));
+                                        return { ...prev, [openedTrack]: allIds };
+                                      });
                                     }
                                   }}
                                 />
@@ -316,10 +369,7 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                         </thead>
                         <tbody>
                           {visibleFolders.map((folder) => {
-                            const filesInFolder = (trackFiles[openedTrack] || []).filter((f: any) => {
-                              const fp = String(f.folderPath || '');
-                              return fp === folder.path || fp.startsWith(`${folder.path}/`);
-                            });
+                            const filesInFolder = folderFilesMap.get(folder.path) || [];
                             const isFolderChecked = filesInFolder.length > 0 && filesInFolder.every((f: any) => selectedFileIds[openedTrack]?.has(f.id));
 
                             const deletingThis =
@@ -364,18 +414,31 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                                 </button>
                               </td>
                               <td>
-                                <button
-                                  className="icon-button delete"
-                                  disabled={!!folderDeleteLoading || isDeletingAssignments[openedTrack]}
-                                  onClick={() => handleDeleteTrackFolder(openedTrack, folder.path)}
-                                  title="حذف المجلد"
-                                >
-                                  {deletingThis ? (
-                                    <Loader2 size={16} className="spinning-loader-small" />
-                                  ) : (
-                                    <X size={16} />
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  {handleRevokeFolderFromStudents && (
+                                    <button
+                                      type="button"
+                                      className="icon-button revoke"
+                                      disabled={!!folderDeleteLoading || isDeletingAssignments[openedTrack]}
+                                      onClick={() => handleRevokeFolderFromStudents(openedTrack, folder.path)}
+                                      title="سحب محتويات هذا المجلد من الطلاب (مع إبقائه في الداش بورد)"
+                                    >
+                                      <RotateCcw size={16} />
+                                    </button>
                                   )}
-                                </button>
+                                  <button
+                                    className="icon-button delete"
+                                    disabled={!!folderDeleteLoading || isDeletingAssignments[openedTrack]}
+                                    onClick={() => handleDeleteTrackFolder(openedTrack, folder.path)}
+                                    title="حذف المجلد نهائياً"
+                                  >
+                                    {deletingThis ? (
+                                      <Loader2 size={16} className="spinning-loader-small" />
+                                    ) : (
+                                      <X size={16} />
+                                    )}
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );

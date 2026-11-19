@@ -37,8 +37,11 @@ import { AssignmentsConfigTab } from './assignments/components/tabs/AssignmentsC
 import { TracksManagementTab } from './assignments/components/tabs/TracksManagementTab';
 import { Unified130Tab } from './assignments/components/tabs/Unified130Tab';
 import { TierSelectionModal } from './assignments/components/modals/TierSelectionModal';
+import { DistributionReportModal } from './assignments/components/modals/DistributionReportModal';
 import { DeleteConfirmationModal } from './assignments/components/modals/DeleteConfirmationModal';
 import { ConfirmRevokeSingleModal } from './assignments/components/modals/recall/ConfirmRevokeSingleModal';
+import { ConfirmRevokeFolderModal } from './assignments/components/modals/recall/ConfirmRevokeFolderModal';
+import { ConfirmRevokeDateModal } from './assignments/components/modals/recall/ConfirmRevokeDateModal';
 import { ConfirmRevokeSelectedModal } from './assignments/components/modals/recall/ConfirmRevokeSelectedModal';
 import { ConfirmRevokeAllModal } from './assignments/components/modals/recall/ConfirmRevokeAllModal';
 import { ConfirmRevokeStudentAllModal } from './assignments/components/modals/recall/ConfirmRevokeStudentAllModal';
@@ -135,6 +138,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     handleDeleteSelected,
     handleDeleteSingleTrackFile,
     executeDelete,
+    handleRevokeFolderFromStudents,
+    handleRevoke130FolderFromStudents,
   } = useAssignmentsDeletion({
     selectedFileIds,
     setSelectedFileIds,
@@ -142,6 +147,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     setSelected130FileIds,
     setTrackFiles,
     setUnified130Files,
+    trackFiles,
+    unified130Files,
     setAssignmentsMessage,
     showSnackbarNotification,
   });
@@ -191,6 +198,10 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     setConfirmRevokeAllOpen,
     confirmRevokeSingle,
     setConfirmRevokeSingle,
+    confirmRevokeFolder,
+    setConfirmRevokeFolder,
+    confirmRevokeDateOpen,
+    setConfirmRevokeDateOpen,
     confirmRevokeStudentAllOpen,
     setConfirmRevokeStudentAllOpen,
     selectedRecallFileIds,
@@ -201,6 +212,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     setIsRevokingSelected,
     handleOpenRecallModal,
     handleRevokeSingleFile,
+    handleRevokeFolder,
+    handleRevokeAllFoldersForDate,
     handleRevokeAllFiles,
     latestBatchFiles,
     isLatestBatchSelected,
@@ -316,6 +329,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const {
     showTierModal,
     setShowTierModal,
+    distributionReport,
+    setDistributionReport,
+    selectedFilesCount,
     isDistributingAssignments,
     setIsDistributingAssignments,
     isDistributing130,
@@ -343,7 +359,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
 
   return (
-    <div className="assignments-management-page">
+    <div className="assignments-management-page" data-lenis-prevent>
       <AssignmentsHeader
         handleBack={handleBack}
         assignmentsMessage={assignmentsMessage}
@@ -410,6 +426,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
             handleDeleteSelected={handleDeleteSelected}
             handleDeleteSingleTrackFile={handleDeleteSingleTrackFile}
             handleDeleteTrackFolder={handleDeleteTrackFolder}
+            handleRevokeFolderFromStudents={handleRevokeFolderFromStudents}
             handleFileUpload={handleFileUpload}
             handleOpenRecallModal={handleOpenRecallModal}
           />
@@ -437,6 +454,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
             handle130FileUpload={handle130FileUpload}
             handleCreateUnified130Folder={handleCreateUnified130Folder}
             handleDeleteUnified130Folder={handleDeleteUnified130Folder}
+            handleRevoke130FolderFromStudents={handleRevoke130FolderFromStudents}
             handleOpenRecallModal={handleOpenRecallModal}
           />
         )}
@@ -453,14 +471,60 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
       <PaperPlaneAnimation showPaperPlane={showPaperPlane} />
 
       {/* Tier Selection Modal */}
-      <TierSelectionModal
-        showTierModal={showTierModal}
-        setShowTierModal={setShowTierModal}
-        assignmentsConfig={assignmentsConfig}
-        handleDistribute={handleDistribute}
+      {(() => {
+        const currentTargetTrack = openedTrack || activeTrackFolder;
+        const currentTrackPathStr = trackCurrentPath[currentTargetTrack] || '';
+        const selectedTrackIds = selectedFileIds[currentTargetTrack];
+
+        let detectedFolderName = '';
+        if (activeTab === 'unified130') {
+          if (unified130CurrentPath) {
+            const parts = unified130CurrentPath.split('/');
+            detectedFolderName = parts[parts.length - 1];
+          }
+        } else {
+          if (currentTrackPathStr) {
+            const parts = currentTrackPathStr.split('/');
+            detectedFolderName = parts[parts.length - 1];
+          } else if (selectedTrackIds && selectedTrackIds.size > 0) {
+            const selectedFiles = (trackFiles[currentTargetTrack] || []).filter(f => selectedTrackIds.has(f.id));
+            const folderPaths = Array.from(new Set(selectedFiles.map(f => f.folderPath).filter(Boolean)));
+            if (folderPaths.length === 1 && typeof folderPaths[0] === 'string') {
+              const parts = folderPaths[0].split('/');
+              detectedFolderName = parts[parts.length - 1];
+            } else if (folderPaths.length > 1) {
+              detectedFolderName = `${folderPaths.length} مجلدات مختارة`;
+            }
+          }
+        }
+
+        return (
+          <TierSelectionModal
+            showTierModal={showTierModal}
+            setShowTierModal={setShowTierModal}
+            assignmentsConfig={assignmentsConfig}
+            handleDistribute={handleDistribute}
+            selectedFilesCount={selectedFilesCount}
+            isDistributing={isDistributingAssignments}
+            currentFolderName={detectedFolderName}
+          />
+        );
+      })()}
+
+      {/* Distribution Report Modal */}
+      <DistributionReportModal
+        isOpen={!!distributionReport}
+        onClose={() => setDistributionReport(null)}
+        report={distributionReport}
+        trackName={
+          (openedTrack || activeTrackFolder) === 'track1'
+            ? 'المسار الأول'
+            : (openedTrack || activeTrackFolder) === 'track2'
+            ? 'المسار الثاني'
+            : 'المسار الثالث'
+        }
       />
 
-      {/* نافذة سحب الملفات الموزعة على الطلاب */}
       {/* نافذة سحب الملفات الموزعة على الطلاب */}
       <RecallModal
         recallModal={recallModal}
@@ -473,11 +537,30 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         setConfirmRevokeSelectedOpen={setConfirmRevokeSelectedOpen}
         setConfirmRevokeAllOpen={setConfirmRevokeAllOpen}
         setConfirmRevokeSingle={setConfirmRevokeSingle}
+        setConfirmRevokeFolder={setConfirmRevokeFolder}
+        setConfirmRevokeDateOpen={setConfirmRevokeDateOpen}
         handleToggleSelectAllFiles={handleToggleSelectAllFiles}
         handleToggleSelectLatestBatch={handleToggleSelectLatestBatch}
         handleToggleSelectFile={handleToggleSelectFile}
         setConfirmRevokeStudentAllOpen={setConfirmRevokeStudentAllOpen}
         handleRevokeSingleFileFromStudent={handleRevokeSingleFileFromStudent}
+      />
+
+      {/* تأكيد سحب مجلد كامل */}
+      <ConfirmRevokeFolderModal
+        confirmRevokeFolder={confirmRevokeFolder}
+        setConfirmRevokeFolder={setConfirmRevokeFolder}
+        handleRevokeFolder={handleRevokeFolder}
+      />
+
+      {/* تأكيد سحب كافة مجلدات يوم محدد */}
+      <ConfirmRevokeDateModal
+        confirmRevokeDateOpen={confirmRevokeDateOpen}
+        setConfirmRevokeDateOpen={setConfirmRevokeDateOpen}
+        dateString={recallModal.selectedDateFilter}
+        foldersForDate={recallModal.folders.filter((f) => f.dateString === recallModal.selectedDateFilter)}
+        handleRevokeAllFoldersForDate={handleRevokeAllFoldersForDate}
+        isRevokingDateAll={recallModal.isRevokingDateAll}
       />
 
       {/* تأكيد سحب ملف واحد */}

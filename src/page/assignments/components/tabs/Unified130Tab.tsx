@@ -39,6 +39,7 @@ interface Unified130TabProps {
   handle130FileUpload: (file: File) => Promise<void>;
   handleCreateUnified130Folder: () => Promise<void>;
   handleDeleteUnified130Folder: (folderPath: string) => Promise<void>;
+  handleRevoke130FolderFromStudents?: (folderPath: string) => void;
   handleOpenRecallModal: (track: TrackKey | 'unified130') => Promise<void>;
 }
 
@@ -62,6 +63,7 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
   handle130FileUpload,
   handleCreateUnified130Folder,
   handleDeleteUnified130Folder,
+  handleRevoke130FolderFromStudents,
   handleOpenRecallModal,
 }) => {
   return (
@@ -74,11 +76,11 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
                 <>
             <div className="track-files-header">
               <div className="track-header-main">
-                <h3>ملفات خدمة الـ 130 جنيه (ملف موحد للكل)</h3>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <h3 className="track-section-title">ملفات خدمة الـ 130 جنيه (ملف موحد للكل)</h3>
+                <div className="track-breadcrumbs">
                   <button
                     type="button"
-                    className="back-to-tracks-button"
+                    className={`breadcrumb-item ${!currentPath ? 'active' : ''}`}
                     onClick={() => setUnified130CurrentPath('')}
                     disabled={!currentPath}
                   >
@@ -86,15 +88,18 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
                   </button>
                   {getPathParts(currentPath).map((part, idx, arr) => {
                     const full = arr.slice(0, idx + 1).join('/');
+                    const isLast = idx === arr.length - 1;
                     return (
-                      <button
-                        key={full}
-                        type="button"
-                        className="back-to-tracks-button"
-                        onClick={() => setUnified130CurrentPath(full)}
-                      >
-                        {part}
-                      </button>
+                      <React.Fragment key={full}>
+                        <span className="breadcrumb-separator">/</span>
+                        <button
+                          type="button"
+                          className={`breadcrumb-item ${isLast ? 'active' : ''}`}
+                          onClick={() => setUnified130CurrentPath(full)}
+                        >
+                          {part}
+                        </button>
+                      </React.Fragment>
                     );
                   })}
                 </div>
@@ -115,63 +120,87 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
                 />
                 <button
                   type="button"
-                  className="add-costs-button"
+                  className="track-action-btn btn-upload"
                   onClick={() => document.getElementById('upload-input-130')?.click()}
                   disabled={isUploading130}
                 >
                   {isUploading130 ? (
-                    <><Loader2 className="spinning-loader-small" size={16} /> جاري الرفع...</>
+                    <>
+                      <Loader2 className="spinning-loader-small" size={16} />
+                      <span>جاري الرفع...</span>
+                    </>
                   ) : (
-                    <><Upload size={16} /> رفع ملف</>
+                    <>
+                      <Upload size={16} />
+                      <span>رفع ملف</span>
+                    </>
                   )}
                 </button>
-                <input
-                  type="text"
-                  value={newUnified130FolderName}
-                  onChange={(e) => setNewUnified130FolderName(e.target.value)}
-                  placeholder="اسم مجلد جديد"
-                  style={{ minWidth: 170, padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}
-                />
+                <div className="create-folder-combo">
+                  <input
+                    type="text"
+                    value={newUnified130FolderName}
+                    onChange={(e) => setNewUnified130FolderName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreateUnified130Folder();
+                    }}
+                    placeholder="اسم مجلد جديد..."
+                    className="create-folder-input"
+                  />
+                  <button
+                    type="button"
+                    className="create-folder-btn"
+                    onClick={handleCreateUnified130Folder}
+                    title="إنشاء المجلد"
+                  >
+                    <Folder size={15} />
+                    <span>إنشاء مجلد</span>
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className="add-costs-button"
-                  onClick={handleCreateUnified130Folder}
-                >
-                  <Folder size={16} />
-                  إنشاء مجلد
-                </button>
-                <button
-                  type="button"
-                  className="send-button"
+                  className="track-action-btn btn-send"
                   disabled={isDistributing130 || (selected130FileIds.size === 0 && visibleFiles.length === 0)}
                   onClick={handle130Distribute}
                 >
                   {isDistributing130 ? (
-                    <><Loader2 className="spinning-loader-small" size={16} /> جاري التوزيع...</>
+                    <>
+                      <Loader2 className="spinning-loader-small" size={16} />
+                      <span>جاري التوزيع...</span>
+                    </>
                   ) : (
-                    <><Send size={16} /> إرسال لمشتركي الـ 130</>
+                    <>
+                      <Send size={15} />
+                      <span>إرسال لمشتركي الـ 130</span>
+                    </>
                   )}
                 </button>
                 <button
                   type="button"
-                  className="delete-button"
+                  className="track-action-btn btn-delete"
                   disabled={isDeleting130 || selected130FileIds.size === 0}
                   onClick={handle130Delete}
                 >
                   {isDeleting130 ? (
-                    <><Loader2 className="spinning-loader-small" size={16} /> جاري المسح...</>
+                    <>
+                      <Loader2 className="spinning-loader-small" size={16} />
+                      <span>جاري المسح...</span>
+                    </>
                   ) : (
-                    <><Trash2 size={16} /> مسح المحدد</>
+                    <>
+                      <Trash2 size={15} />
+                      <span>مسح المحدد</span>
+                    </>
                   )}
                 </button>
                 <button
                   type="button"
-                  className="revoke-button"
+                  className="track-action-btn btn-recall"
                   onClick={() => handleOpenRecallModal('unified130')}
                   title="سحب الملفات الموحدة التي تم إرسالها للطلاب"
                 >
-                  <RotateCcw size={16} />
-                  سحب الملفات
+                  <RotateCcw size={15} />
+                  <span>سحب الملفات</span>
                 </button>
               </div>
             </div>
@@ -181,40 +210,57 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
                   <div className="no-items-message">
                     لا توجد عناصر داخل هذا المجلد بعد. الملفات المرفوعة هنا ستُرسل لجميع مشتركي خدمة الـ 130 جنيه.
                   </div>
-                ) : (
-                  <table className="files-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: '50px' }}>
-                          <label className="checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={visibleFiles.length > 0 && visibleFiles.every((f: any) => selected130FileIds.has(f.id))}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelected130FileIds(prev => {
-                                    const s = new Set(prev);
-                                    visibleFiles.forEach((f: any) => s.add(f.id));
-                                    return s;
-                                  });
-                                } else {
-                                  setSelected130FileIds(prev => {
-                                    const s = new Set(prev);
-                                    visibleFiles.forEach((f: any) => s.delete(f.id));
-                                    return s;
-                                  });
-                                }
-                              }}
-                            />
-                            <span className="checkbox-custom" />
-                          </label>
-                        </th>
-                        <th>اسم الملف</th>
-                        <th>الإجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleFolders.map((folder) => {
+                ) : (() => {
+                  const all130SelectableFiles = [
+                    ...visibleFiles,
+                    ...unified130Files.filter((f: any) => {
+                      const fp = String(f.folderPath || '');
+                      return visibleFolders.some(
+                        (folder) => fp === folder.path || fp.startsWith(`${folder.path}/`)
+                      );
+                    }),
+                  ];
+                  const all130SelectableIds = Array.from(
+                    new Set(all130SelectableFiles.map((f: any) => f.id))
+                  );
+                  const isAll130Checked =
+                    all130SelectableIds.length > 0 &&
+                    all130SelectableIds.every((id) => selected130FileIds.has(id));
+
+                  return (
+                    <table className="files-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '50px' }}>
+                            <label className="checkbox-label" title="تحديد / إلغاء تحديد الكل">
+                              <input
+                                type="checkbox"
+                                checked={isAll130Checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelected130FileIds((prev) => {
+                                      const s = new Set(prev);
+                                      all130SelectableIds.forEach((id) => s.add(id));
+                                      return s;
+                                    });
+                                  } else {
+                                    setSelected130FileIds((prev) => {
+                                      const s = new Set(prev);
+                                      all130SelectableIds.forEach((id) => s.delete(id));
+                                      return s;
+                                    });
+                                  }
+                                }}
+                              />
+                              <span className="checkbox-custom" />
+                            </label>
+                          </th>
+                          <th>اسم الملف</th>
+                          <th>الإجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleFolders.map((folder) => {
                         const filesInFolder = unified130Files.filter((f: any) => {
                           const fp = String(f.folderPath || '');
                           return fp === folder.path || fp.startsWith(`${folder.path}/`);
@@ -262,18 +308,31 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
                             </button>
                           </td>
                           <td>
-                            <button
-                              className="icon-button delete"
-                              disabled={!!folderDeleteLoading || isDeleting130}
-                              onClick={() => handleDeleteUnified130Folder(folder.path)}
-                              title="حذف المجلد"
-                            >
-                              {deletingThis ? (
-                                <Loader2 size={16} className="spinning-loader-small" />
-                              ) : (
-                                <X size={16} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {handleRevoke130FolderFromStudents && (
+                                <button
+                                  type="button"
+                                  className="icon-button revoke"
+                                  disabled={!!folderDeleteLoading || isDeleting130}
+                                  onClick={() => handleRevoke130FolderFromStudents(folder.path)}
+                                  title="سحب محتويات هذا المجلد من الطلاب (مع إبقائه في الداش بورد)"
+                                >
+                                  <RotateCcw size={16} />
+                                </button>
                               )}
-                            </button>
+                              <button
+                                className="icon-button delete"
+                                disabled={!!folderDeleteLoading || isDeleting130}
+                                onClick={() => handleDeleteUnified130Folder(folder.path)}
+                                title="حذف المجلد نهائياً"
+                              >
+                                {deletingThis ? (
+                                  <Loader2 size={16} className="spinning-loader-small" />
+                                ) : (
+                                  <X size={16} />
+                                )}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -323,7 +382,8 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
                       })}
                     </tbody>
                   </table>
-                )}
+                );
+              })()}
               </div>
             </div>
                 </>

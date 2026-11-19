@@ -1,5 +1,6 @@
 import React, { useEffect, Component, ErrorInfo, ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useLenis } from './hooks/useLenis';
 import { StudentProvider, useStudent } from './context';
 import RegisterPage from './page/RegisterPage';
 import LoginPage from './page/LoginPage';
@@ -363,13 +364,30 @@ const StudentChromeGuard = () => {
     );
 };
 
+const ScrollToTop = () => {
+    const { pathname } = useLocation();
+
+    useEffect(() => {
+        if (typeof window !== 'undefined' && (window as any).__lenis) {
+            (window as any).__lenis.scrollTo(0, { immediate: true });
+        } else {
+            window.scrollTo(0, 0);
+        }
+    }, [pathname]);
+
+    return null;
+};
+
 // --- Main App Component ---
 
 const App: React.FC = () => {
+    useLenis();
+
     return (
         <ErrorBoundary>
             <StudentProvider>
                 <BrowserRouter>
+                    <ScrollToTop />
                     <StudentChromeGuard />
                     <Routes>
                         {/* Public Routes */}

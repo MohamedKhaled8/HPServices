@@ -1,9 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStudent } from '../context';
 import { StudentData, ValidationError } from '../types';
 import { validateStudentData } from '../utils/validation';
 import { GOVERNORATES, DIPLOMA_YEARS, TRACKS, COURSES, DIPLOMA_TYPES } from '../constants/services';
 import { updateStudentData } from '../services/firebaseService';
+import {
+  syncStudentAssignmentsOnTrackChange,
+  getTrackKey,
+  type TrackSyncResult
+} from '../services/studentTrackSyncService';
+import { auth } from '../config/firebase';
 import { normalizeTrackName } from '../utils/trackUtils';
 import { ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
 import '../styles/ProfilePage.css';
@@ -20,12 +26,27 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (student) {
+      setFormData(student);
+    }
+  }, [student]);
+
   if (!student) {
     return null;
   }
 
   const getFieldError = (fieldName: string): string | undefined => {
     return errors.find(e => e.field === fieldName)?.message;
+  };
+
+  const handleStartEdit = () => {
+    if (student) {
+      setFormData(student);
+    }
+    setErrors([]);
+    setMessage(null);
+    setIsEditing(true);
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -49,7 +70,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
         }
       };
     });
-    setErrors(prev => prev.filter(e => !e.field.startsWith('address.')));
+    setErrors(prev => prev.filter(e => !e.field.startsWith('address.') && e.field !== 'address'));
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -57,19 +78,43 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
     setIsSubmitting(true);
     setMessage(null);
 
-    const validationErrors = validateStudentData(formData as StudentData);
+    const validationErrors = validateStudentData(formData as StudentData, { isEdit: true });
 
     if (validationErrors.length > 0) {
       setErrors(validationErrors);
+      setMessage({
+        type: 'error',
+        text: validationErrors[0]?.message || 'يرجى مراجعة وتصحيح الحقول المطلوبة'
+      });
       setIsSubmitting(false);
       return;
     }
 
     try {
-      if (!student.id) {
+      const studentId = student.id || auth.currentUser?.uid;
+      if (!studentId) {
         setMessage({ type: 'error', text: 'معرف المستخدم غير موجود' });
         setIsSubmitting(false);
         return;
+      }
+
+      const oldTrack = student.track;
+      const newTrack = formData.track || student.track;
+      const isTrackChanged = Boolean(
+        newTrack && getTrackKey(newTrack) !== getTrackKey(oldTrack)
+      );
+
+      let syncResult: TrackSyncResult | null = null;
+      if (isTrackChanged) {
+        try {
+          syncResult = await syncStudentAssignmentsOnTrackChange(
+            studentId,
+            newTrack,
+            oldTrack
+          );
+        } catch (syncErr: any) {
+          console.warn('Track sync failed during profile save:', syncErr);
+        }
       }
 
       const updatedStudent: StudentData = {
@@ -78,16 +123,33 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
         fullNameArabic: formData.fullNameArabic || student.fullNameArabic,
         vehicleNameEnglish: formData.vehicleNameEnglish || student.vehicleNameEnglish,
         whatsappNumber: formData.whatsappNumber || student.whatsappNumber,
+        nationalID: formData.nationalID || student.nationalID,
+        diplomaYear: formData.diplomaYear || student.diplomaYear,
+        diplomaType: formData.diplomaType || student.diplomaType,
+        track: newTrack,
+        course: formData.course || student.course,
         email: formData.email || student.email,
         address: formData.address || student.address
       };
 
+      if (syncResult && syncResult.synced) {
+        updatedStudent.assignedFiles = syncResult.assignedFiles;
+        updatedStudent.assignedFile = syncResult.assignedFile;
+      }
+
       // Update in Firestore
-      await updateStudentData(student.id, updatedStudent);
+      await updateStudentData(studentId, updatedStudent);
 
       // Update local state
       setStudent(updatedStudent);
-      setMessage({ type: 'success', text: 'تم تحديث البيانات بنجاح' });
+
+      let successMsg = 'تم تحديث البيانات بنجاح';
+      if (syncResult && syncResult.synced) {
+        successMsg = `تم تحديث البيانات ومزامنة ملفات التكليفات لمسارك الجديد (${normalizeTrackName(newTrack)}) بنجاح ✅`;
+      } else if (syncResult && syncResult.action === 'no_new_files_preserved') {
+        successMsg = `تم تحديث المسار، والاحتفاظ بملفاتك الحالية لعدم توفر ملفات للمسار الجديد حالياً ⚠️`;
+      }
+      setMessage({ type: 'success', text: successMsg });
       setTimeout(() => {
         setIsEditing(false);
       }, 1500);
@@ -110,7 +172,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
         <h1>الملف الشخصي</h1>
         {!isEditing && (
           <button
-            onClick={() => setIsEditing(true)}
+            onClick={handleStartEdit}
             className="edit-profile-button"
           >
             تعديل
@@ -218,11 +280,15 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   disabled={!isEditing}
                   value={displayData.diplomaYear || ''}
                   onChange={(e) => handleInputChange('diplomaYear', e.target.value)}
+                  className={getFieldError('diplomaYear') ? 'error' : ''}
                 >
                   {DIPLOMA_YEARS.map(year => (
                     <option key={year} value={year}>{year}</option>
                   ))}
                 </select>
+                {getFieldError('diplomaYear') && (
+                  <span className="error-message">{getFieldError('diplomaYear')}</span>
+                )}
               </div>
 
               <div className="form-group">
@@ -232,12 +298,16 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   disabled={!isEditing}
                   value={displayData.diplomaType || ''}
                   onChange={(e) => handleInputChange('diplomaType', e.target.value)}
+                  className={getFieldError('diplomaType') ? 'error' : ''}
                 >
                   <option value="">اختر نوع الدبلوم</option>
                   {DIPLOMA_TYPES.map(type => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
+                {getFieldError('diplomaType') && (
+                  <span className="error-message">{getFieldError('diplomaType')}</span>
+                )}
               </div>
             </div>
 
@@ -257,12 +327,16 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                     id="track"
                     value={displayData.track || ''}
                     onChange={(e) => handleInputChange('track', e.target.value as any)}
+                    className={getFieldError('track') ? 'error' : ''}
                   >
                     <option value="">اختر المسار</option>
                     {TRACKS.map(track => (
                       <option key={track} value={track}>{track}</option>
                     ))}
                   </select>
+                )}
+                {getFieldError('track') && (
+                  <span className="error-message">{getFieldError('track')}</span>
                 )}
               </div>
 
@@ -273,12 +347,16 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   disabled={!isEditing}
                   value={displayData.course || ''}
                   onChange={(e) => handleInputChange('course', e.target.value as any)}
+                  className={getFieldError('course') ? 'error' : ''}
                 >
                   <option value="">اختر المقرر</option>
                   {COURSES.map(course => (
                     <option key={course} value={course}>{course}</option>
                   ))}
                 </select>
+                {getFieldError('course') && (
+                  <span className="error-message">{getFieldError('course')}</span>
+                )}
               </div>
             </div>
           </section>
@@ -294,12 +372,16 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   disabled={!isEditing}
                   value={(typeof displayData.address === 'object' && displayData.address?.governorate) || ''}
                   onChange={(e) => handleAddressChange('governorate', e.target.value)}
+                  className={(getFieldError('address.governorate') || getFieldError('address')) ? 'error' : ''}
                 >
                   <option value="">اختر المحافظة</option>
                   {GOVERNORATES.map(gov => (
                     <option key={gov} value={gov}>{gov}</option>
                   ))}
                 </select>
+                {(getFieldError('address.governorate') || getFieldError('address')) && (
+                  <span className="error-message">{getFieldError('address.governorate') || getFieldError('address')}</span>
+                )}
               </div>
 
               <div className="form-group">
@@ -310,7 +392,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   disabled={!isEditing}
                   value={(typeof displayData.address === 'object' && displayData.address?.city) || ''}
                   onChange={(e) => handleAddressChange('city', e.target.value)}
+                  className={getFieldError('address.city') ? 'error' : ''}
                 />
+                {getFieldError('address.city') && (
+                  <span className="error-message">{getFieldError('address.city')}</span>
+                )}
               </div>
             </div>
 
@@ -323,7 +409,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   disabled={!isEditing}
                   value={(typeof displayData.address === 'object' && displayData.address?.street) || ''}
                   onChange={(e) => handleAddressChange('street', e.target.value)}
+                  className={getFieldError('address.street') ? 'error' : ''}
                 />
+                {getFieldError('address.street') && (
+                  <span className="error-message">{getFieldError('address.street')}</span>
+                )}
               </div>
 
               <div className="form-group">
@@ -334,7 +424,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   disabled={!isEditing}
                   value={(typeof displayData.address === 'object' && displayData.address?.building) || ''}
                   onChange={(e) => handleAddressChange('building', e.target.value)}
+                  className={getFieldError('address.building') ? 'error' : ''}
                 />
+                {getFieldError('address.building') && (
+                  <span className="error-message">{getFieldError('address.building')}</span>
+                )}
               </div>
             </div>
 
@@ -390,6 +484,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
                   setIsEditing(false);
                   setFormData(student);
                   setErrors([]);
+                  setMessage(null);
                 }}
                 className="cancel-button"
                 disabled={isSubmitting}

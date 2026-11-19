@@ -1,3 +1,15 @@
+export type TrackKey = 'track1' | 'track2' | 'track3';
+
+export interface AssignmentFileMeta {
+  id: string;
+  name: string;
+  url: string;
+  track: TrackKey;
+  storagePath: string;
+  folderPath?: string;
+  uploadedAt?: any;
+}
+
 export interface AssignedFile {
   id: string;
   name: string; // اسم الملف الأصلي
@@ -5,6 +17,21 @@ export interface AssignedFile {
   url: string;
   track?: 'track1' | 'track2' | 'track3' | 'unified130' | string;
   assignedAt?: string;
+  assignmentId?: string; // معرف التكليف المنطقي
+  specialization?: string; // تخصص الطالب الذي أرسل التكليف بناءً عليه
+  folderPath?: string; // مسار المجلد الأصلي للملف
+  folderName?: string; // اسم المجلد الأصلي للتكليف
+}
+
+export interface DistributionReport {
+  totalTargeted: number;
+  totalSentAssignments: number;
+  newStudentsCount: number;
+  completedOldStudentsCount: number;
+  skippedStudentsCount: number;
+  specializationBreakdown: Record<string, { studentCount: number; sentCount: number }>;
+  failedCount: number;
+  failureReasons?: string[];
 }
 
 export interface StudentData {

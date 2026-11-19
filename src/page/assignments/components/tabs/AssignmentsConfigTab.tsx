@@ -165,30 +165,30 @@ export const AssignmentsConfigTab: React.FC<AssignmentsConfigTabProps> = ({
                           assignmentsConfig.assignments.map(assignment => {
                             const isEditing = editingAssignmentId === assignment.id;
                             return (
-                              <div key={assignment.id} className="assignment-item" style={{ alignItems: 'center' }}>
+                              <div key={assignment.id} className="assignment-item">
                                 {isEditing ? (
-                                  <>
-                                    <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <div className="assignment-edit-row">
+                                    <div className="assignment-edit-inputs">
                                       <input
                                         type="text"
                                         value={editAssignmentName}
                                         onChange={e => setEditAssignmentName(e.target.value)}
-                                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #94a3b8', flex: 2, minWidth: '130px' }}
+                                        className="assignment-edit-name-input"
                                         placeholder="اسم التكليف"
                                       />
                                       <input
                                         type="number"
                                         value={editAssignmentPrice}
                                         onChange={e => setEditAssignmentPrice(e.target.value)}
-                                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #94a3b8', width: '90px' }}
+                                        className="assignment-edit-price-input"
                                         placeholder="السعر"
                                       />
                                     </div>
-                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <div className="assignment-edit-actions">
                                       <button
                                         type="button"
                                         onClick={handleSaveEditAssignment}
-                                        style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', fontWeight: '600' }}
+                                        className="assignment-save-edit-btn"
                                         title="حفظ التعديل"
                                         disabled={isSaving}
                                       >
@@ -198,14 +198,14 @@ export const AssignmentsConfigTab: React.FC<AssignmentsConfigTabProps> = ({
                                       <button
                                         type="button"
                                         onClick={handleCancelEditAssignment}
-                                        style={{ background: '#64748b', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
+                                        className="assignment-cancel-edit-btn"
                                         title="إلغاء التعديل"
                                       >
                                         <X size={16} />
                                         <span>إلغاء</span>
                                       </button>
                                     </div>
-                                  </>
+                                  </div>
                                 ) : (
                                   <>
                                     <div className="assignment-info">
@@ -214,11 +214,11 @@ export const AssignmentsConfigTab: React.FC<AssignmentsConfigTabProps> = ({
                                         {assignment.price} ج.م
                                       </span>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <div className="assignment-actions">
                                       <button
                                         type="button"
                                         onClick={() => handleStartEditAssignment(assignment)}
-                                        style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', fontWeight: '600' }}
+                                        className="btn-start-edit"
                                         title="تعديل السعر أو الاسم"
                                       >
                                         <Edit2 size={15} />

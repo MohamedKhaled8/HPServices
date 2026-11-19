@@ -98,6 +98,7 @@ const TelemetryDashboardInner: React.FC<TelemetryDashboardPageProps> = ({ onLogo
 
   return (
     <div
+      data-lenis-prevent
       className={isLightMode ? 'tel-shell tel-light' : 'tel-shell'}
       style={{
         backgroundColor: isLightMode ? '#f4f7fb' : '#050a14',

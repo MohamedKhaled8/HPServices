@@ -61,7 +61,7 @@ export const AdminDashboardContent: React.FC<AdminDashboardContentProps> = ({
   } = dashboard;
 
   return (
-    <div className="admin-main">
+    <div className="admin-main" data-lenis-prevent>
       {activeTab === 'assignments' && (
         <AssignmentsManagementPage onBack={onBackToRequests} />
       )}

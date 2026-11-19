@@ -218,6 +218,7 @@ const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
         />
       )}
       <aside
+        data-lenis-prevent
         className={`admin-sidebar${collapsed ? ' is-collapsed' : ''}${mobileOpen ? ' is-mobile-open' : ''}`}
         aria-label="قائمة لوحة التحكم"
       >

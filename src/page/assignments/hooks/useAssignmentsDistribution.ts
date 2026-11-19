@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   TrackKey,
   ServiceTier,
@@ -6,6 +6,7 @@ import {
   distributeAssignmentsForTrack,
   distribute130UnifiedFiles,
 } from '../../../services/firebaseService';
+import { DistributionReport } from '../../../types';
 import { DistributionProgressInfo } from '../components/common/DistributionProgressToast';
 
 interface UseAssignmentsDistributionOptions {
@@ -34,6 +35,7 @@ export const useAssignmentsDistribution = ({
   showSnackbarNotification,
 }: UseAssignmentsDistributionOptions) => {
   const [showTierModal, setShowTierModal] = useState(false);
+  const [distributionReport, setDistributionReport] = useState<DistributionReport | null>(null);
   const [isDistributingAssignments, setIsDistributingAssignments] = useState(false);
   const [isDistributing130, setIsDistributing130] = useState(false);
   const [showPaperPlane, setShowPaperPlane] = useState(false);
@@ -54,7 +56,18 @@ export const useAssignmentsDistribution = ({
     }
   });
 
-  const updateProgress = (info: DistributionProgressInfo | null) => {
+  const lastProgressUpdateRef = useRef<number>(0);
+
+  const updateProgress = (info: DistributionProgressInfo | null, force: boolean = false) => {
+    const now = Date.now();
+    const isTerminal = !info || info.status === 'completed' || info.status === 'error';
+
+    // كبح التحديثات المتتالية (Throttling) لتفادي تجميد المتصفح والقرص
+    if (!force && !isTerminal && now - lastProgressUpdateRef.current < 120) {
+      return;
+    }
+    lastProgressUpdateRef.current = now;
+
     setDistProgress(info);
     try {
       if (info) {
@@ -119,7 +132,7 @@ export const useAssignmentsDistribution = ({
         percent: 0,
         studentName: 'جاري فحص الطلبات...',
         updatedAt: Date.now()
-      });
+      }, true);
 
       const result = await distributeAssignmentsForTrack(
         targetTrack,
@@ -141,6 +154,10 @@ export const useAssignmentsDistribution = ({
       );
 
       // Completed successfully
+      if (result.report) {
+        setDistributionReport(result.report);
+      }
+
       updateProgress({
         active: true,
         status: 'completed',
@@ -149,9 +166,20 @@ export const useAssignmentsDistribution = ({
         total: result.total,
         percent: 100,
         updatedAt: Date.now()
-      });
+      }, true);
 
-      showSnackbarNotification(`تم إرسال ${ids.length} ملف لـ ${tierLabel} بنجاح (${result.sent} طالب)`, 'success');
+      if (result.sent === 0) {
+        showSnackbarNotification(`كافة الطلاب المستهدفين (${result.total} طالب) استلموا هذه التكليفات مسبقاً (لا توجد نواقص للإرسال)`, 'success');
+      } else {
+        const newCount = result.report?.newStudentsCount || 0;
+        const oldComp = result.report?.completedOldStudentsCount || 0;
+        const details = [
+          newCount > 0 ? `${newCount} طالب جديد` : '',
+          oldComp > 0 ? `${oldComp} استكملوا النواقص` : ''
+        ].filter(Boolean).join('، ');
+        const detailsStr = details ? ` (${details})` : '';
+        showSnackbarNotification(`تم إرسال التكليفات لـ ${tierLabel} بنجاح (${result.sent} تكليف تم توزيعه)${detailsStr}`, 'success');
+      }
 
       // Clear selection
       setSelectedFileIds(prev => ({
@@ -168,7 +196,7 @@ export const useAssignmentsDistribution = ({
         percent: 0,
         error: error.message || 'حدث خطأ أثناء التوزيع',
         updatedAt: Date.now()
-      });
+      }, true);
       showSnackbarNotification(error.message || 'حدث خطأ أثناء توزيع الملفات', 'error');
     } finally {
       setIsDistributingAssignments(false);
@@ -198,7 +226,7 @@ export const useAssignmentsDistribution = ({
         percent: 0,
         studentName: 'جاري فحص الطلبات...',
         updatedAt: Date.now()
-      });
+      }, true);
 
       const result = await distribute130UnifiedFiles(
         ids.length > 0 ? ids : undefined,
@@ -226,7 +254,7 @@ export const useAssignmentsDistribution = ({
         total: result.total,
         percent: 100,
         updatedAt: Date.now()
-      });
+      }, true);
 
       showSnackbarNotification(`تم إرسال الملفات الموحدة بنجاح (${result.sent} طالب)`, 'success');
       setSelected130FileIds(new Set());
@@ -240,16 +268,24 @@ export const useAssignmentsDistribution = ({
         percent: 0,
         error: error.message || 'حدث خطأ أثناء التوزيع',
         updatedAt: Date.now()
-      });
+      }, true);
       showSnackbarNotification(error.message || 'حدث خطأ أثناء التوزيع', 'error');
     } finally {
       setIsDistributing130(false);
     }
   };
 
+  const currentTargetTrack = openedTrack || activeTrackFolder;
+  const currentSelectedIds = Array.from(selectedFileIds[currentTargetTrack] || []);
+  const currentVisibleFiles = getVisibleTrackFiles(currentTargetTrack);
+  const selectedFilesCount = currentSelectedIds.length > 0 ? currentSelectedIds.length : currentVisibleFiles.length;
+
   return {
     showTierModal,
     setShowTierModal,
+    distributionReport,
+    setDistributionReport,
+    selectedFilesCount,
     isDistributingAssignments,
     setIsDistributingAssignments,
     isDistributing130,

@@ -2,10 +2,14 @@ import { useState, useMemo } from 'react';
 import {
   TrackKey,
   DistributedFileSummary,
+  DistributedFolderSummary,
   StudentWithAssignedFiles,
   getDistributedFilesForTrack,
+  getDistributedFoldersForTrack,
   getStudentsWithAssignedFiles,
   revokeDistributedFileFromStudents,
+  revokeDistributedFolderFromStudents,
+  revokeAllFoldersForDate,
   revokeMultipleDistributedFilesFromStudents,
   revokeAllDistributedFilesForTrack,
   revokeSingleFileFromStudent,
@@ -24,20 +28,26 @@ export const useAssignmentsRecall = ({
   const [recallModal, setRecallModal] = useState<RecallModalState>({
     open: false,
     track: 'track1',
-    tab: 'by_file',
+    tab: 'by_folder',
     loading: false,
     files: [],
+    folders: [],
     students: [],
     selectedStudent: null,
     studentSearchQuery: '',
+    selectedDateFilter: 'all',
     revokingId: null,
+    revokingFolderKey: null,
     isRevokingAll: false,
+    isRevokingDateAll: false,
     revokingStudentFileId: null,
     isRevokingStudentAll: false
   });
 
   const [confirmRevokeAllOpen, setConfirmRevokeAllOpen] = useState(false);
   const [confirmRevokeSingle, setConfirmRevokeSingle] = useState<DistributedFileSummary | null>(null);
+  const [confirmRevokeFolder, setConfirmRevokeFolder] = useState<DistributedFolderSummary | null>(null);
+  const [confirmRevokeDateOpen, setConfirmRevokeDateOpen] = useState(false);
   const [confirmRevokeStudentAllOpen, setConfirmRevokeStudentAllOpen] = useState(false);
   const [selectedRecallFileIds, setSelectedRecallFileIds] = useState<Set<string>>(new Set());
   const [confirmRevokeSelectedOpen, setConfirmRevokeSelectedOpen] = useState(false);
@@ -48,27 +58,39 @@ export const useAssignmentsRecall = ({
     setRecallModal({
       open: true,
       track,
-      tab: 'by_file',
+      tab: 'by_folder',
       loading: true,
       files: [],
+      folders: [],
       students: [],
       selectedStudent: null,
       studentSearchQuery: '',
+      selectedDateFilter: 'all',
       revokingId: null,
+      revokingFolderKey: null,
       isRevokingAll: false,
+      isRevokingDateAll: false,
       revokingStudentFileId: null,
       isRevokingStudentAll: false
     });
 
     try {
-      const [distributed, students] = await Promise.all([
+      const [distributed, distributedFolders, students] = await Promise.all([
         getDistributedFilesForTrack(track),
+        getDistributedFoldersForTrack(track),
         getStudentsWithAssignedFiles(track)
       ]);
+
+      const todayDateString = new Date().toISOString().split('T')[0];
+      const hasToday = distributedFolders.some((f) => f.dateString === todayDateString || f.isToday);
+      const initialDateFilter = hasToday ? 'today' : 'all';
+
       setRecallModal((prev) => ({
         ...prev,
         loading: false,
         files: distributed,
+        folders: distributedFolders,
+        selectedDateFilter: initialDateFilter,
         students
       }));
     } catch (err: any) {
@@ -292,6 +314,76 @@ export const useAssignmentsRecall = ({
     }
   };
 
+  const handleRevokeFolder = async (folder: DistributedFolderSummary) => {
+    try {
+      setConfirmRevokeFolder(null);
+      setRecallModal((prev) => ({ ...prev, revokingFolderKey: folder.folderKey }));
+
+      const result = await revokeDistributedFolderFromStudents({
+        track: recallModal.track,
+        folderPath: folder.folderPath,
+        dateString: folder.dateString,
+        studentIds: folder.studentIds,
+        fileIds: folder.fileIds
+      });
+
+      const revokedFileIdSet = new Set(folder.fileIds);
+
+      // Refresh distributed list and update state
+      setRecallModal((prev) => ({
+        ...prev,
+        revokingFolderKey: null,
+        folders: prev.folders.filter((f) => f.folderKey !== folder.folderKey),
+        files: prev.files.filter((f) => !revokedFileIdSet.has(f.fileId)),
+        students: prev.students
+          .map((s) => ({
+            ...s,
+            assignedFiles: s.assignedFiles.filter((f) => !revokedFileIdSet.has(f.id))
+          }))
+          .filter((s) => s.assignedFiles.length > 0)
+      }));
+
+      showSnackbarNotification(
+        `تم سحب مجلد "${folder.folderName}" بنجاح من حسابات ${result.updatedStudentsCount} طالب (${result.revokedFilesCount} ملف)`,
+        'success'
+      );
+    } catch (err: any) {
+      setRecallModal((prev) => ({ ...prev, revokingFolderKey: null }));
+      showSnackbarNotification(err.message || 'حدث خطأ أثناء سحب المجلد من الطلاب', 'error');
+    }
+  };
+
+  const handleRevokeAllFoldersForDate = async (dateString: string) => {
+    try {
+      setConfirmRevokeDateOpen(false);
+      setRecallModal((prev) => ({ ...prev, isRevokingDateAll: true }));
+
+      const result = await revokeAllFoldersForDate(recallModal.track, dateString);
+
+      // Refresh full lists for track
+      const [distributed, distributedFolders, students] = await Promise.all([
+        getDistributedFilesForTrack(recallModal.track),
+        getDistributedFoldersForTrack(recallModal.track),
+        getStudentsWithAssignedFiles(recallModal.track)
+      ]);
+
+      setRecallModal((prev) => ({
+        ...prev,
+        isRevokingDateAll: false,
+        files: distributed,
+        folders: distributedFolders,
+        students
+      }));
+
+      showSnackbarNotification(
+        `تم سحب كافة مجلدات يوم ${dateString} بنجاح من حسابات ${result.updatedStudentsCount} طالب`,
+        'success'
+      );
+    } catch (err: any) {
+      setRecallModal((prev) => ({ ...prev, isRevokingDateAll: false }));
+      showSnackbarNotification(err.message || 'حدث خطأ أثناء سحب مجلدات هذا اليوم', 'error');
+    }
+  };
 
   return {
     recallModal,
@@ -300,6 +392,10 @@ export const useAssignmentsRecall = ({
     setConfirmRevokeAllOpen,
     confirmRevokeSingle,
     setConfirmRevokeSingle,
+    confirmRevokeFolder,
+    setConfirmRevokeFolder,
+    confirmRevokeDateOpen,
+    setConfirmRevokeDateOpen,
     confirmRevokeStudentAllOpen,
     setConfirmRevokeStudentAllOpen,
     selectedRecallFileIds,
@@ -310,6 +406,8 @@ export const useAssignmentsRecall = ({
     setIsRevokingSelected,
     handleOpenRecallModal,
     handleRevokeSingleFile,
+    handleRevokeFolder,
+    handleRevokeAllFoldersForDate,
     handleRevokeAllFiles,
     latestBatchFiles,
     isLatestBatchSelected,

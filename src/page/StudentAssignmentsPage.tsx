@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAssignmentFilesForTrack, TrackKey } from '../services/firebaseService';
 import { useStudent } from '../context';
-import { ArrowRight, FileText, Download, ExternalLink, Clock, AlertCircle } from 'lucide-react';
+import { ArrowRight, FileText, Download, ExternalLink, Clock, AlertCircle, Folder } from 'lucide-react';
 import '../styles/DashboardPage.css';
 import '../styles/StudentAssignmentsPage.css';
 
@@ -91,7 +91,7 @@ const StudentAssignmentsPage: React.FC<StudentAssignmentsPageProps> = ({ onBack 
                 </button>
             </div>
 
-            <div className="container" style={{ maxWidth: '900px', margin: '0 auto', padding: '0 20px' }}>
+            <div className="student-assignments-container">
                 {!hasFiles ? (
                     <div className="no-items-message" style={{
                         textAlign: 'center',
@@ -119,51 +119,17 @@ const StudentAssignmentsPage: React.FC<StudentAssignmentsPageProps> = ({ onBack 
                         </p>
                     </div>
                 ) : (
-                    <div style={{ display: 'grid', gap: '20px' }}>
+                    <div className="assignments-cards-list">
                         {assignedFiles.map((assignedFile, index) => (
-                            <div key={assignedFile.id || index} className="assigned-file-card-responsive" style={{
-                                background: 'white',
-                                borderRadius: '16px',
-                                padding: '25px',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-                                border: '1px solid #E2E8F0',
-                                transition: 'transform 0.2s, box-shadow 0.2s',
-                                cursor: 'pointer'
-                            }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.transform = 'translateY(-2px)';
-                                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.08)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.transform = 'translateY(0)';
-                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
-                                }}
-                            >
+                            <div key={assignedFile.id || index} className="assigned-file-card-responsive">
                                 <div className="assignment-card-content">
-                                    <div style={{
-                                        width: '60px',
-                                        height: '60px',
-                                        background: '#F5F3FF',
-                                        borderRadius: '12px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#7C3AED',
-                                        flexShrink: 0
-                                    }}>
-                                        <FileText size={30} />
+                                    <div className="assignment-card-icon">
+                                        <FileText size={26} />
                                     </div>
 
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <h3 style={{
-                                            fontSize: '16px',
-                                            color: '#1E293B',
-                                            marginBottom: '6px',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                            direction: 'rtl'
-                                        }}
+                                    <div className="assignment-card-details">
+                                        <h3
+                                            className="assignment-card-title"
                                             title={`${student?.fullNameArabic || 'طالب'} - ${assignedFile.name}`}
                                         >
                                             {(() => {
@@ -200,40 +166,41 @@ const StudentAssignmentsPage: React.FC<StudentAssignmentsPageProps> = ({ onBack 
                                                 return storedFileName.replace(/_/g, ' ');
                                             })()}
                                         </h3>
-                                        <p style={{
-                                            color: '#64748B',
-                                            fontSize: '13px',
-                                            margin: 0
-                                        }}>
-                                            تم الإسناد: {assignedFile.assignedAt ? new Date(assignedFile.assignedAt).toLocaleDateString('ar-EG') : 'غير محدد'}
-                                        </p>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+                                            <p className="assignment-card-date" style={{ margin: 0 }}>
+                                                تم الإسناد: {assignedFile.assignedAt ? new Date(assignedFile.assignedAt).toLocaleDateString('ar-EG') : 'غير محدد'}
+                                            </p>
+                                            {(assignedFile.folderName || assignedFile.folderPath) && (
+                                                <span
+                                                    style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px',
+                                                        fontSize: '11px',
+                                                        color: '#4f46e5',
+                                                        background: '#eef2ff',
+                                                        padding: '1px 8px',
+                                                        borderRadius: '6px',
+                                                        fontWeight: 600,
+                                                    }}
+                                                >
+                                                    <Folder size={11} />
+                                                    {assignedFile.folderName || (assignedFile.folderPath ? assignedFile.folderPath.split('/').filter(Boolean).pop() : '')}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="assignment-card-actions" style={{ display: 'flex', gap: '10px', flexShrink: 0 }}>
+                                <div className="assignment-card-actions">
                                     <a
                                         href={assignedFile.url}
                                         target="_blank"
                                         rel="noreferrer"
                                         onClick={(e) => e.stopPropagation()}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '6px',
-                                            padding: '10px 16px',
-                                            background: '#6366F1',
-                                            color: 'white',
-                                            borderRadius: '8px',
-                                            textDecoration: 'none',
-                                            fontWeight: 600,
-                                            fontSize: '14px',
-                                            transition: 'background 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#4F46E5'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = '#6366F1'}
+                                        className="assignment-action-btn view"
                                     >
-                                        <ExternalLink size={16} />
+                                        <ExternalLink size={15} />
                                         عرض
                                     </a>
 
@@ -241,31 +208,14 @@ const StudentAssignmentsPage: React.FC<StudentAssignmentsPageProps> = ({ onBack 
                                         href={assignedFile.url}
                                         download={assignedFile.customName || assignedFile.name}
                                         onClick={(e) => e.stopPropagation()}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '6px',
-                                            padding: '10px 16px',
-                                            background: '#F1F5F9',
-                                            color: '#1E293B',
-                                            borderRadius: '8px',
-                                            textDecoration: 'none',
-                                            fontWeight: 600,
-                                            fontSize: '14px',
-                                            transition: 'background 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#E2E8F0'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = '#F1F5F9'}
+                                        className="assignment-action-btn download"
                                     >
-                                        <Download size={16} />
+                                        <Download size={15} />
                                         تحميل
                                     </a>
                                 </div>
                             </div>
                         ))}
-
-
                     </div>
                 )}
             </div>

@@ -213,23 +213,269 @@
   background: #d1d5db;
 }
 
+/* ================================================= */
+/* شريط الأوامر والإجراءات الموحد لمسارات التكليفات */
+/* ================================================= */
 .track-files-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  flex-wrap: wrap;
 }
 
-.track-files-header h3 {
+.track-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.track-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.track-files-header h3,
+.track-section-title {
   margin: 0;
-  color: #1e293b;
-  font-size: 20px;
+  color: #0f172a;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
+.track-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.breadcrumb-item,
+.back-to-tracks-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.breadcrumb-item:hover:not(:disabled),
+.back-to-tracks-button:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.breadcrumb-item.active {
+  background: #eef2ff;
+  color: #4f46e5;
+  border-color: #c7d2fe;
+  font-weight: 700;
+}
+
+.breadcrumb-separator {
+  color: #94a3b8;
+  font-size: 12px;
+  user-select: none;
+}
+
+/* حاوية أزرار الإجراءات */
 .track-files-actions {
   display: flex;
-  gap: 16px;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* المعيار القياسي لكافة أزرار شريط الإجراءات (ارتفاع موحد 40px وتمنع تكسير النص) */
+.track-action-btn,
+.add-costs-button,
+.send-button,
+.delete-button,
+.revoke-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+  font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  line-height: 1;
+}
+
+/* 1. زر رفع ملفات */
+.btn-upload,
+.add-costs-button {
+  background: #4f46e5;
+  color: #ffffff;
+  border-color: #4f46e5;
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.2);
+}
+
+.btn-upload:hover:not(:disabled),
+.add-costs-button:hover:not(:disabled) {
+  background: #4338ca;
+  border-color: #4338ca;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+/* 2. وحدة إنشاء مجلد مدمجة (Input + Button متناسقين تماماً) */
+.create-folder-combo {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  border-radius: 10px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  overflow: hidden;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.create-folder-combo:focus-within {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.create-folder-input {
+  height: 100%;
+  border: none;
+  outline: none;
+  padding: 0 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: #0f172a;
+  background: transparent;
+  width: 145px;
+  direction: rtl;
+  box-sizing: border-box;
+}
+
+.create-folder-input::placeholder {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.create-folder-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 14px;
+  border: none;
+  border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.create-folder-btn:hover {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+/* 3. زر الإرسال للطلاب */
+.btn-send,
+.send-button {
+  background: #059669;
+  color: #ffffff;
+  border-color: #059669;
+  box-shadow: 0 1px 3px rgba(5, 150, 105, 0.2);
+}
+
+.btn-send:hover:not(:disabled),
+.send-button:hover:not(:disabled) {
+  background: #047857;
+  border-color: #047857;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+
+/* 4. زر مسح المحدد */
+.btn-delete,
+.delete-button {
+  background: #fff1f2;
+  color: #e11d48;
+  border-color: #fecdd3;
+}
+
+.btn-delete:hover:not(:disabled),
+.delete-button:hover:not(:disabled) {
+  background: #e11d48;
+  color: #ffffff;
+  border-color: #e11d48;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.25);
+}
+
+/* 5. زر سحب الملفات الموزعة */
+.btn-recall,
+.revoke-button {
+  background: #ffffff;
+  color: #be123c;
+  border: 1.5px solid #fecdd3;
+  box-shadow: 0 1px 3px rgba(190, 18, 60, 0.05);
+}
+
+.btn-recall:hover:not(:disabled),
+.revoke-button:hover:not(:disabled) {
+  background: #fff1f2;
+  border-color: #fb7185;
+  color: #9f1239;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(190, 18, 60, 0.12);
+}
+
+/* تعطيل الأزرار */
+.track-action-btn:disabled,
+.add-costs-button:disabled,
+.send-button:disabled,
+.delete-button:disabled,
+.revoke-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
 .select-all-checkbox {
@@ -240,98 +486,25 @@
   color: #374151;
 }
 
-.select-toggle-button,
-.send-button {
-  display: flex;
+.select-toggle-button {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.select-toggle-button {
+  font-size: 13.5px;
+  font-weight: 600;
   background: #f1f5f9;
   color: #475569;
+  transition: all 0.2s ease;
 }
 
 .select-toggle-button:hover {
   background: #e2e8f0;
-}
-
-.add-costs-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  background: #667eea;
-  color: white;
-}
-
-.add-costs-button:hover:not(:disabled) {
-  background: #4338ca;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.add-costs-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.send-button {
-  background: #10b981;
-  color: white;
-}
-
-.send-button:hover:not(:disabled) {
-  background: #059669;
-}
-
-.send-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.delete-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.delete-button:hover:not(:disabled) {
-  background: #ef4444;
-  color: white;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-}
-
-.delete-button:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-.delete-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  color: #0f172a;
 }
 
 .track-files-body {
@@ -580,11 +753,11 @@
 
 .assignments-list-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 60px;
+  grid-template-columns: minmax(180px, 1fr) 120px 170px;
   padding: 15px 20px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
-  font-weight: 600;
+  font-weight: 700;
   color: #475569;
   font-size: 14px;
 }
@@ -602,7 +775,7 @@
 
 .assignment-item {
   display: grid !important;
-  grid-template-columns: 2fr 1fr 60px !important;
+  grid-template-columns: minmax(180px, 1fr) 120px 170px !important;
   align-items: center !important;
   padding: 15px 20px !important;
   border-bottom: 1px solid #f1f5f9 !important;
@@ -627,27 +800,138 @@
 }
 
 .assignment-name {
-  font-weight: 500;
+  font-weight: 600;
   color: #1e293b;
   font-size: 15px;
 }
 
 .assignment-price {
   color: #059669;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 15px;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+.assignment-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.btn-start-edit {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.btn-start-edit:hover {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+.assignment-edit-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.assignment-edit-inputs {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.assignment-edit-name-input {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  flex: 2;
+  min-width: 140px;
+  font-size: 14px;
+}
+
+.assignment-edit-price-input {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  width: 100px;
+  font-size: 14px;
+}
+
+.assignment-edit-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.assignment-save-edit-btn {
+  background: #10b981;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.assignment-save-edit-btn:hover {
+  background: #059669;
+}
+
+.assignment-cancel-edit-btn {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.assignment-cancel-edit-btn:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
 .remove-assignment-button {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   background: transparent;
   color: #94a3b8;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
   transition: all 0.2s ease;
-  justify-self: center;
 }
 
 .remove-assignment-button:hover {
@@ -850,29 +1134,278 @@
   color: #dc2626;
 }
 
+.icon-button.revoke {
+  color: #d97706;
+}
+
+.icon-button.revoke:hover {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
+  .assignments-management-page {
+    padding: 12px 8px !important;
+  }
+
+  .title-header {
+    margin-bottom: 12px !important;
+    padding: 0 4px !important;
+  }
+
+  .title-header h1 {
+    font-size: 20px !important;
+    line-height: 1.3 !important;
+  }
+
   .assignments-header {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 10px 12px !important;
+    margin-bottom: 16px !important;
+    gap: 10px !important;
+  }
+
+  .back-button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px 14px !important;
+    font-size: 14px !important;
+  }
+
+  .assignments-inner-tabs {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    margin-bottom: 16px !important;
+    width: 100% !important;
+  }
+
+  .inner-tab {
+    width: 100% !important;
+    text-align: center !important;
+    padding: 11px 12px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+  }
+
+  .assignments-config-section {
+    padding: 16px 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .config-section-block {
+    padding: 16px 12px !important;
+    border-radius: 10px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .block-title {
+    font-size: 16px !important;
+    margin: 0 0 16px 0 !important;
+  }
+
+  .payment-methods-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    margin-top: 10px !important;
+  }
+
+  .form-group input {
+    font-size: 15px !important;
+    padding: 10px 12px !important;
+    width: 100% !important;
   }
 
   .track-folders-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .track-folder {
+    padding: 16px 12px;
   }
 
   .track-files-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 15px;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  .track-files-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .track-files-actions > * {
+    width: 100% !important;
+    justify-content: center !important;
   }
 
   .add-assignment-form {
-    flex-direction: column;
+    flex-direction: column !important;
+    gap: 10px !important;
   }
 
   .add-assignment-form input {
-    width: 100%;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 11px 12px !important;
+    font-size: 14px !important;
+  }
+
+  .add-button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 12px !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+  }
+
+  .section-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    text-align: center;
+  }
+
+  .section-header h2 {
+    font-size: 18px !important;
+    text-align: center !important;
+  }
+
+  .section-header .save-button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 12px !important;
+    font-size: 15px !important;
+  }
+
+  /* Responsive Mobile Cards for Assignments List */
+  .assignments-list-container {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    margin-top: 8px !important;
+  }
+
+  .assignments-list-header {
+    display: none !important;
+  }
+
+  .assignments-list {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    max-height: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  .assignment-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 14px 12px !important;
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+    margin-bottom: 8px !important;
+  }
+
+  .assignment-info {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  .assignment-name {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+    word-break: break-word !important;
+    flex: 1 !important;
+    text-align: right !important;
+  }
+
+  .assignment-price {
+    font-size: 13px !important;
+    font-weight: 800 !important;
+    color: #047857 !important;
+    background: #ecfdf5 !important;
+    border: 1px solid #a7f3d0 !important;
+    padding: 3px 10px !important;
+    border-radius: 6px !important;
+    white-space: nowrap !important;
+  }
+
+  .assignment-actions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    justify-content: stretch !important;
+    border-top: 1px solid #f1f5f9 !important;
+    padding-top: 10px !important;
+  }
+
+  .btn-start-edit {
+    flex: 1 !important;
+    justify-content: center !important;
+    padding: 9px 12px !important;
+    font-size: 13px !important;
+  }
+
+  .remove-assignment-button {
+    width: 42px !important;
+    height: 38px !important;
+    flex-shrink: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .assignment-edit-row {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  .assignment-edit-inputs {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .assignment-edit-name-input,
+  .assignment-edit-price-input {
+    width: 100% !important;
+    font-size: 14px !important;
+    padding: 10px 12px !important;
+    min-width: 0 !important;
+  }
+
+  .assignment-edit-actions {
+    display: flex !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .assignment-save-edit-btn,
+  .assignment-cancel-edit-btn {
+    flex: 1 !important;
+    justify-content: center !important;
+    padding: 10px !important;
+    font-size: 14px !important;
   }
 }
 
@@ -887,24 +1420,6 @@
   padding-bottom: 15px;
   border-bottom: 2px solid #e2e8f0;
   gap: 20px;
-}
-
-@media (max-width: 768px) {
-  .section-header {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 10px !important;
-    text-align: center;
-  }
-
-  .section-header h2 {
-    font-size: 20px !important;
-  }
-
-  .section-header .save-button {
-    width: 100% !important;
-    justify-content: center !important;
-  }
 }
 
 .section-header h2 {
@@ -1188,7 +1703,7 @@ button {
 
 .assignments-list-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 60px;
+  grid-template-columns: minmax(180px, 1fr) 120px 170px;
   padding: 16px 20px;
   background: #f1f5f9;
   border-bottom: 1px solid #cbd5e1;
@@ -1762,6 +2277,7 @@ button {
 }
 
 .delete-btn-both,
+.delete-btn-students-only,
 .delete-btn-server-only {
   display: flex;
   align-items: center;
@@ -1777,6 +2293,7 @@ button {
 }
 
 .delete-btn-both div,
+.delete-btn-students-only div,
 .delete-btn-server-only div {
   display: flex;
   flex-direction: column;
@@ -1784,11 +2301,13 @@ button {
 }
 
 .delete-btn-both div strong,
+.delete-btn-students-only div strong,
 .delete-btn-server-only div strong {
   font-size: 15px;
 }
 
 .delete-btn-both div span,
+.delete-btn-students-only div span,
 .delete-btn-server-only div span {
   font-size: 12px;
   opacity: 0.85;
@@ -1810,6 +2329,22 @@ button {
   transform: scale(0.98);
 }
 
+.delete-btn-students-only {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  box-shadow: 0 4px 14px rgba(217, 119, 6, 0.25);
+}
+
+.delete-btn-students-only:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(217, 119, 6, 0.35);
+  background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+}
+
+.delete-btn-students-only:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
 .delete-btn-server-only {
   background: #f8fafc;
   color: #475569;
@@ -1824,6 +2359,7 @@ button {
 }
 
 .delete-btn-both:disabled,
+.delete-btn-students-only:disabled,
 .delete-btn-server-only:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1982,35 +2518,36 @@ button {
   background: #ffffff;
   border-radius: 20px;
   width: 100%;
-  max-width: 680px;
+  max-width: 820px;
   max-height: 88vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 25px 60px rgba(15, 23, 42, 0.3);
+  box-shadow: 0 25px 70px rgba(15, 23, 42, 0.25);
   direction: rtl;
   overflow: hidden;
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid #e2e8f0;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .recall-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 22px;
+  padding: 18px 24px;
   border-bottom: 1px solid #f1f5f9;
-  background: #fafafa;
+  background: #ffffff;
 }
 
 .recall-modal-title-wrap {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .recall-modal-icon-badge {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   background: #ffe4e6;
   color: #e11d48;
   display: flex;
@@ -2029,14 +2566,16 @@ button {
 .recall-modal-title-wrap span {
   font-size: 12px;
   color: #64748b;
+  display: block;
+  margin-top: 2px;
 }
 
 .recall-close-btn {
   background: #f1f5f9;
   border: none;
   border-radius: 50%;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2055,9 +2594,9 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 22px;
-  background: #fff5f5;
-  border-bottom: 1px solid #fecdd3;
+  padding: 12px 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
   flex-wrap: wrap;
 }
 
@@ -2370,26 +2909,33 @@ button {
 /* تبويبات سحب الملفات والبحث بالاسم للطالب المحدد */
 /* ================================================= */
 .recall-modal-tabs {
-  display: flex;
-  gap: 8px;
-  padding: 10px 22px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 6px;
+  background: #f1f5f9;
+  border-radius: 14px;
+  margin: 14px 24px 8px;
+  border: none;
 }
 
 .recall-tab-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 8px 16px;
-  border: 1px solid transparent;
+  height: 38px;
+  padding: 0 12px;
+  border: none;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   color: #64748b;
   background: transparent;
-  transition: all 0.2s;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
 }
 
 .recall-tab-btn:hover {
@@ -2399,9 +2945,279 @@ button {
 
 .recall-tab-btn.active {
   background: #ffffff;
-  color: #e11d48;
-  border-color: #fecdd3;
-  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.08);
+  color: #be123c;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* شريط التحكم بالفلاتر والبحث داخل تبويب المجلدات */
+.recall-folder-controls-bar {
+  padding: 12px 24px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #ffffff;
+}
+
+.recall-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recall-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  height: 38px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0 12px;
+  transition: all 0.2s ease;
+}
+
+.recall-search-box:focus-within {
+  border-color: #e11d48;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.1);
+}
+
+.recall-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  font-family: inherit;
+  direction: rtl;
+  color: #0f172a;
+}
+
+.recall-search-clear {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 16px;
+  padding: 0 4px;
+}
+
+.recall-date-select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.recall-filter-icon {
+  position: absolute;
+  right: 12px;
+  color: #64748b;
+  pointer-events: none;
+}
+
+.recall-filter-select {
+  height: 38px;
+  padding-right: 34px;
+  padding-left: 14px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.recall-filter-select:focus {
+  outline: none;
+  border-color: #e11d48;
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.1);
+}
+
+.recall-pills-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.recall-pills-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recall-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.recall-filter-pill:hover {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.recall-filter-pill.active-today {
+  border-color: #10b981;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.recall-filter-pill.active-all {
+  border-color: #6366f1;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pill-dot.green {
+  background: #10b981;
+}
+
+.recall-action-batch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  background: #be123c;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.recall-action-batch-btn:hover:not(:disabled) {
+  background: #9f1239;
+  box-shadow: 0 3px 10px rgba(190, 18, 60, 0.25);
+}
+
+.recall-action-batch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* بطاقة المجلد في قائمة السحب */
+.recall-folder-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+  gap: 16px;
+  transition: background 0.15s ease;
+}
+
+.recall-folder-card:hover {
+  background: #fbfcfe;
+}
+
+.recall-folder-card.revoking {
+  background: #fff1f2;
+}
+
+.recall-folder-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #3b82f6;
+  border: 1px solid #bfdbfe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.recall-folder-icon-box.today {
+  background: #ecfdf5;
+  color: #059669;
+  border-color: #a7f3d0;
+}
+
+.recall-single-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  background: #fff1f2;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.recall-single-btn:hover:not(:disabled) {
+  background: #e11d48;
+  color: #ffffff;
+  border-color: #e11d48;
+  box-shadow: 0 3px 10px rgba(225, 29, 72, 0.25);
+}
+
+.recall-single-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.recall-switch-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  background: #eef2ff;
+  color: #4f46e5;
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: all 0.2s;
+}
+
+.recall-switch-filter-btn:hover {
+  background: #4f46e5;
+  color: #ffffff;
 }
 
 .recall-student-search-box {

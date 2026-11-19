@@ -91,13 +91,16 @@ export const validatePassword = (password: string): { valid: boolean; error?: st
   return { valid: true };
 };
 
-export const validateStudentData = (data: Partial<StudentData>): ValidationError[] => {
+export const validateStudentData = (
+  data: Partial<StudentData>,
+  options: { isEdit?: boolean } = {}
+): ValidationError[] => {
   const errors: ValidationError[] = [];
 
   if (!data.fullNameArabic) {
     errors.push({ field: 'fullNameArabic', message: 'هذا الحقل مطلوب' });
   } else {
-    const nameValidation = validateArabicText(data.fullNameArabic, 4);
+    const nameValidation = validateArabicText(data.fullNameArabic, options.isEdit ? 3 : 4);
     if (!nameValidation.valid) {
       errors.push({ field: 'fullNameArabic', message: nameValidation.error || 'خطأ في التحقق' });
     }
@@ -106,7 +109,7 @@ export const validateStudentData = (data: Partial<StudentData>): ValidationError
   if (!data.vehicleNameEnglish) {
     errors.push({ field: 'vehicleNameEnglish', message: 'This field is required' });
   } else {
-    const vehicleValidation = validateEnglishText(data.vehicleNameEnglish, 4);
+    const vehicleValidation = validateEnglishText(data.vehicleNameEnglish, options.isEdit ? 2 : 4);
     if (!vehicleValidation.valid) {
       errors.push({ field: 'vehicleNameEnglish', message: vehicleValidation.error || 'Validation error' });
     }
@@ -169,12 +172,15 @@ export const validateStudentData = (data: Partial<StudentData>): ValidationError
     }
   }
 
-  if (!data.password) {
-    errors.push({ field: 'password', message: 'هذا الحقل مطلوب' });
-  } else {
-    const passwordValidation = validatePassword(data.password);
-    if (!passwordValidation.valid) {
-      errors.push({ field: 'password', message: passwordValidation.error || 'خطأ في التحقق' });
+  // Do not require password when editing profile
+  if (!options.isEdit) {
+    if (!data.password) {
+      errors.push({ field: 'password', message: 'هذا الحقل مطلوب' });
+    } else {
+      const passwordValidation = validatePassword(data.password);
+      if (!passwordValidation.valid) {
+        errors.push({ field: 'password', message: passwordValidation.error || 'خطأ في التحقق' });
+      }
     }
   }
 

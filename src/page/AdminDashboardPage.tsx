@@ -36,7 +36,7 @@ const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   }
 
   return (
-    <div className="admin-dashboard-page">
+    <div className="admin-dashboard-page" data-lenis-prevent>
       {dashboard.toastState && (
         <CustomToast
           message={dashboard.toastState.message}

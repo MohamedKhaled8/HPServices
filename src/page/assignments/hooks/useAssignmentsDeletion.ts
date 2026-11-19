@@ -12,6 +12,8 @@ interface UseAssignmentsDeletionOptions {
   setSelectedFileIds: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
   selected130FileIds: Set<string>;
   setSelected130FileIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+  trackFiles?: Record<TrackKey, any[]>;
+  unified130Files?: any[];
   setTrackFiles: React.Dispatch<React.SetStateAction<Record<TrackKey, any[]>>>;
   setUnified130Files: React.Dispatch<React.SetStateAction<any[]>>;
   setAssignmentsMessage: (msg: string | null) => void;
@@ -23,6 +25,8 @@ export const useAssignmentsDeletion = ({
   setSelectedFileIds,
   selected130FileIds,
   setSelected130FileIds,
+  trackFiles = { track1: [], track2: [], track3: [] },
+  unified130Files = [],
   setTrackFiles,
   setUnified130Files,
   setAssignmentsMessage,
@@ -70,13 +74,74 @@ export const useAssignmentsDeletion = ({
     setDeleteConfirmModal({ open: true, fileIds: [fileId], source: 'single-track', track, singleFileId: fileId });
   };
 
+  // سحب محتويات مجلد كامل من الطلاب مع إبقائه في الداش بورد
+  const handleRevokeFolderFromStudents = (track: TrackKey, folderPath: string) => {
+    const filesInFolder = (trackFiles[track] || []).filter((f: any) => {
+      const fp = String(f.folderPath || '');
+      return fp === folderPath || fp.startsWith(`${folderPath}/`);
+    });
+    if (filesInFolder.length === 0) {
+      showSnackbarNotification('هذا المجلد لا يحتوي على ملفات لسحبها', 'error');
+      return;
+    }
+    setDeleteConfirmModal({
+      open: true,
+      fileIds: filesInFolder.map((f: any) => f.id),
+      source: 'track',
+      track
+    });
+  };
+
+  // سحب محتويات مجلد 130 موحد من الطلاب مع إبقائه في الداش بورد
+  const handleRevoke130FolderFromStudents = (folderPath: string) => {
+    const filesInFolder = (unified130Files || []).filter((f: any) => {
+      const fp = String(f.folderPath || '');
+      return fp === folderPath || fp.startsWith(`${folderPath}/`);
+    });
+    if (filesInFolder.length === 0) {
+      showSnackbarNotification('هذا المجلد لا يحتوي على ملفات لسحبها', 'error');
+      return;
+    }
+    setDeleteConfirmModal({
+      open: true,
+      fileIds: filesInFolder.map((f: any) => f.id),
+      source: 'unified130'
+    });
+  };
+
   /**
-   * تنفيذ الحذف الفعلي بعد التأكيد
-   * @param alsoRemoveFromUsers - هل نحذف الملفات من حسابات الطلاب أيضاً
+   * تنفيذ الحذف أو السحب الفعلي بعد التأكيد
+   * @param mode - 'both' (الكل) | 'server-only' (السيرفر فقط) | 'students-only' (الطلاب فقط)
    */
-  const executeDelete = async (alsoRemoveFromUsers: boolean) => {
+  const executeDelete = async (mode: 'both' | 'server-only' | 'students-only' | boolean) => {
     const { fileIds, source, track } = deleteConfirmModal;
     setDeleteConfirmModal(prev => ({ ...prev, open: false }));
+
+    if (!fileIds || fileIds.length === 0) return;
+
+    // الخيار الجديد: سحب من حسابات الطلاب فقط مع الإبقاء على الملفات في الداش بورد والسيرفر
+    if (mode === 'students-only') {
+      setIsRemovingFromUsers(true);
+      try {
+        const removedCount = await removeAssignedFilesFromAllStudents(fileIds);
+        showSnackbarNotification(
+          `تم سحب ${fileIds.length} ملف بنجاح من ${removedCount} طالب (الملفات ما زالت محفوظة في الداش بورد)`,
+          'success'
+        );
+        if (source === 'track' && track) {
+          setSelectedFileIds(prev => ({ ...prev, [track]: new Set() }));
+        } else if (source === 'unified130') {
+          setSelected130FileIds(new Set());
+        }
+      } catch (err: any) {
+        showSnackbarNotification('حدث خطأ أثناء سحب الملفات من حسابات الطلاب', 'error');
+      } finally {
+        setIsRemovingFromUsers(false);
+      }
+      return;
+    }
+
+    const alsoRemoveFromUsers = mode === true || mode === 'both';
 
     try {
       if (source === 'unified130') {
@@ -173,6 +238,8 @@ export const useAssignmentsDeletion = ({
     handle130Delete,
     handleDeleteSelected,
     handleDeleteSingleTrackFile,
+    handleRevokeFolderFromStudents,
+    handleRevoke130FolderFromStudents,
     executeDelete,
   };
 };
