@@ -5,6 +5,7 @@ import { ServiceRequest } from '../../types';
 
 interface AdminStatisticsTabProps {
   serviceRequests: ServiceRequest[];
+  serviceTotalCounts?: Record<string, { pending: number; total: number }>;
   adminPrefs: any;
   setAdminPrefs: React.Dispatch<React.SetStateAction<any>>;
   updateAdminPreferences: (prefs: any) => Promise<void>;
@@ -23,6 +24,7 @@ interface AdminStatisticsTabProps {
 
 const AdminStatisticsTab: React.FC<AdminStatisticsTabProps> = ({
   serviceRequests,
+  serviceTotalCounts,
   adminPrefs,
   setAdminPrefs,
   updateAdminPreferences,
@@ -92,6 +94,14 @@ const AdminStatisticsTab: React.FC<AdminStatisticsTabProps> = ({
       }
     }
   });
+
+  if (statsDateRange === 'all' && serviceTotalCounts) {
+    SERVICES.forEach(s => {
+      if (serviceStats[s.id] && serviceTotalCounts[s.id]) {
+        serviceStats[s.id].count = Math.max(serviceStats[s.id].count, serviceTotalCounts[s.id].total);
+      }
+    });
+  }
 
   const sortedServicesByRew = Object.values(serviceStats).sort((a, b) => b.revenue - a.revenue);
   const sortedServicesByCount = Object.values(serviceStats).sort((a, b) => b.count - a.count);

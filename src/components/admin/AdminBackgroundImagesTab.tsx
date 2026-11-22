@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Image, Trash2, Upload, Loader2 } from 'lucide-react';
+import { Image, Upload } from 'lucide-react';
 import type { HeroBackgroundImage } from '../../utils/backgroundImages';
 import { validateBackgroundImageFile } from '../../utils/backgroundImages';
 import {
@@ -7,6 +7,8 @@ import {
   uploadHeroBackgroundImages
 } from '../../services/backgroundImageService';
 import { logger } from '../../utils/logger';
+import { LoadingState } from '../common/LoadingState';
+import { AdminBackgroundImageCard } from './AdminBackgroundImageCard';
 
 interface AdminBackgroundImagesTabProps {
   images: HeroBackgroundImage[];
@@ -25,7 +27,6 @@ const AdminBackgroundImagesTab: React.FC<AdminBackgroundImagesTabProps> = ({
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
   const [uploadingCount, setUploadingCount] = useState(0);
 
   const handleUpload = async (fileList: FileList | File[]) => {
@@ -84,15 +85,7 @@ const AdminBackgroundImagesTab: React.FC<AdminBackgroundImagesTabProps> = ({
           الصور المعروضة في شاشة المستخدم الرئيسية. يمكنك رفع صورة واحدة أو عدة صور بأي صيغة صور. بعد الحذف تختفي من الواجهة.
         </p>
 
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 12,
-            alignItems: 'center',
-            marginBottom: 20
-          }}
-        >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 20 }}>
           <input
             ref={inputRef}
             type="file"
@@ -112,11 +105,17 @@ const AdminBackgroundImagesTab: React.FC<AdminBackgroundImagesTabProps> = ({
             onClick={() => inputRef.current?.click()}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
           >
-            {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-            {uploading
-              ? (uploadingCount > 1 ? `جاري رفع ${uploadingCount} صور...` : 'جاري الرفع...')
-              : 'رفع صور'}
+            <Upload size={16} />
+            <span>رفع صور</span>
           </button>
+          {uploading && (
+            <div className="track-upload-status-badge">
+              <LoadingState
+                variant="Drive"
+                label={uploadingCount > 1 ? `جاري رفع ${uploadingCount} صور...` : 'جاري رفع الصور...'}
+              />
+            </div>
+          )}
         </div>
 
         {images.length === 0 ? (
@@ -133,83 +132,16 @@ const AdminBackgroundImagesTab: React.FC<AdminBackgroundImagesTabProps> = ({
             لا توجد صور خلفية حالياً. ارفع صورة لتظهر في واجهة المستخدم.
           </div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
-              gap: 16
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))', gap: 16 }}>
             {images.map((image) => (
-              <div
+              <AdminBackgroundImageCard
                 key={image.id}
-                style={{
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  background: '#fff',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setPreviewUrl(image.url)}
-                  style={{
-                    border: 'none',
-                    padding: 0,
-                    cursor: 'pointer',
-                    background: '#0f172a',
-                    aspectRatio: '16 / 10'
-                  }}
-                  title="معاينة"
-                >
-                  <img
-                    src={image.url}
-                    alt="خلفية"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
-                </button>
-                <div style={{ padding: 10, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewUrl(image.url)}
-                    style={{
-                      flex: 1,
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 8,
-                      background: '#f8fafc',
-                      cursor: 'pointer',
-                      padding: '8px 10px',
-                      fontWeight: 700,
-                      fontSize: 13
-                    }}
-                  >
-                    معاينة
-                  </button>
-                  <button
-                    type="button"
-                    disabled={deletingId === image.id || !isAdmin}
-                    onClick={() => handleDelete(image)}
-                    style={{
-                      border: 'none',
-                      borderRadius: 8,
-                      background: '#fef2f2',
-                      color: '#dc2626',
-                      cursor: 'pointer',
-                      padding: '8px 10px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontWeight: 700,
-                      fontSize: 13
-                    }}
-                  >
-                    {deletingId === image.id ? <Loader2 size={14} /> : <Trash2 size={14} />}
-                    حذف
-                  </button>
-                </div>
-              </div>
+                image={image}
+                isAdmin={isAdmin}
+                isDeleting={deletingId === image.id}
+                onPreview={(url) => setPreviewUrl(url)}
+                onDelete={handleDelete}
+              />
             ))}
           </div>
         )}

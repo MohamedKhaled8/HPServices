@@ -10,6 +10,7 @@ import {
   mergeFoldersByPath,
   getParentPath,
   getPathLastName,
+  filterOutFolderAndDescendants,
 } from '../utils/folderUtils';
 import { writeCachedUnified130Folders } from '../storage/assignmentsCache';
 
@@ -75,22 +76,34 @@ export const useUnified130Folders = ({
     const folderName = getPathLastName(folderPath) || folderPath;
     const ok = window.confirm(`سيتم حذف المجلد "${folderName}" وكل ما بداخله. هل أنت متأكد؟`);
     if (!ok) return;
+
+    let prevFoldersSnapshot: AssignmentFolderMeta[] = unified130Folders;
+    let prevFilesSnapshot: any[] = unified130Files;
+
+    // Optimistic removal: remove folder and nested items from UI and cache immediately
+    setUnified130Folders((prev) => {
+      prevFoldersSnapshot = prev;
+      const nextFolders = filterOutFolderAndDescendants(prev, folderPath);
+      writeCachedUnified130Folders(nextFolders);
+      return nextFolders;
+    });
+
+    setUnified130Files((prev) => {
+      prevFilesSnapshot = prev;
+      return filterOutFolderAndDescendants(prev, folderPath);
+    });
+
+    setUnified130CurrentPath((cur) => {
+      const c = cur || '';
+      if (c === folderPath || c.startsWith(`${folderPath}/`)) {
+        return getParentPath(folderPath);
+      }
+      return c;
+    });
+
     setFolderDeleteLoading({ scope: 'unified130', folderPath });
     try {
       const result = await delete130UnifiedFolder(folderPath);
-      const nextFolders = unified130Folders.filter((f) => !(f.path === folderPath || f.path.startsWith(`${folderPath}/`)));
-      const nextFiles = unified130Files.filter((f: any) => {
-        const fp = String(f.folderPath || '');
-        return !(fp === folderPath || fp.startsWith(`${folderPath}/`));
-      });
-      setUnified130Folders(nextFolders);
-      setUnified130Files(nextFiles);
-      writeCachedUnified130Folders(nextFolders);
-
-      const cur = unified130CurrentPath || '';
-      if (cur === folderPath || cur.startsWith(`${folderPath}/`)) {
-        setUnified130CurrentPath(getParentPath(folderPath));
-      }
 
       if (result.deletedFiles.length > 0) {
         setSelected130FileIds((prev) => {
@@ -101,15 +114,16 @@ export const useUnified130Folders = ({
       }
 
       if (result.deletedFiles.length > 0) {
-        try {
-          await removeAssignedFilesFromAllStudents(result.deletedFiles);
-        } catch {
-          // ignore secondary cleanup failure
-        }
+        // Non-blocking secondary student records cleanup
+        removeAssignedFilesFromAllStudents(result.deletedFiles).catch(() => {});
       }
-      showSnackbarNotification('تم حذف المجلد وكل محتوياته', 'success');
+      showSnackbarNotification('تم حذف المجلد وكل محتوياته بنجاح', 'success');
     } catch (error: any) {
-      showSnackbarNotification(error.message || 'فشل حذف المجلد', 'error');
+      // Rollback on genuine failure
+      setUnified130Folders(prevFoldersSnapshot);
+      writeCachedUnified130Folders(prevFoldersSnapshot);
+      setUnified130Files(prevFilesSnapshot);
+      showSnackbarNotification(error.message || 'فشل حذف المجلد من الخادم، تم استعادة البيانات', 'error');
     } finally {
       setFolderDeleteLoading(null);
     }

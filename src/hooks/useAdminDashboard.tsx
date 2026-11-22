@@ -32,6 +32,8 @@ import { useAdminStatsLock } from './useAdminStatsLock';
 import { useAdminRowFlags } from './useAdminRowFlags';
 import { useAdminConfigs } from './useAdminConfigs';
 import { useAdminUsers } from './useAdminUsers';
+import { useRequestsStats } from './useRequestsStats';
+import { useHybridRequestsPagination } from './useHybridRequestsPagination';
 import { executeAutoFixPlaceholderOrders } from '../services/adminAutoFixService';
 
 interface UseAdminDashboardOptions {
@@ -190,121 +192,127 @@ export function useAdminDashboard({ onBack }: UseAdminDashboardOptions = {}) {
     checkAdmin();
   }, [student, onBack]);
 
-  // Fetch service counts summary on mount (aggregation query - 0 document reads)
+  // Safety watchdog: ensure dataReady is NEVER stuck in a loading state
   useEffect(() => {
-    if (isLoading) return;
-    let isCancelled = false;
-
-    getAllServicesCountsSummary()
-      .then((summary) => {
-        if (isCancelled) return;
-        const countsMap: Record<string, number> = {};
-        Object.entries(summary).forEach(([svcId, data]) => {
-          countsMap[svcId] = data.total;
-        });
-        setServiceTotalCounts(countsMap);
-        if (!dataReadyRef.current) {
-          setDataReady(true);
-        }
-      })
-      .catch((err) => {
-        logger.error('Failed to load services summary:', err);
-        if (!dataReadyRef.current) {
-          setDataReady(true);
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [isLoading]);
-
-  // Realtime subscription to the selected service with limit(50) pagination
-  useEffect(() => {
-    if (isLoading) return;
-
-    let cancelled = false;
-    let studentFetchTimer: number | undefined;
-    let unsubscribe: (() => void) | undefined;
-
-    const targetServiceId = selectedServiceId || '1';
-
-    unsubscribe = subscribeToServiceRequestsPageLimited(targetServiceId, 50, (requests) => {
+    const watchdog = setTimeout(() => {
       if (!dataReadyRef.current) {
-        setServiceRequests(requests);
         setDataReady(true);
-      } else {
-        startTransition(() => {
-          setServiceRequests(requests);
-        });
       }
+    }, 1500);
+    return () => clearTimeout(watchdog);
+  }, []);
 
-      latestServiceRequestsRef.current = requests;
-      if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
-      studentFetchTimer = window.setTimeout(() => {
-        if (cancelled) return;
-        const reqs = latestServiceRequestsRef.current;
-        const uniqueStudentIds = [
-          ...new Set(reqs.map((r) => r.studentId).filter(Boolean))
-        ] as string[];
-        const prev = studentsRef.current;
-        const missingIds = uniqueStudentIds.filter(
-          (id) => id && !prev[id] && !studentIdsInFlightRef.current.has(id)
-        );
-        if (missingIds.length === 0) return;
-        missingIds.forEach((id) => studentIdsInFlightRef.current.add(id));
-        void getStudentsByIds(missingIds)
-          .then(async (fetched) => {
-            if (cancelled) return;
-            missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
-            if (Object.keys(fetched).length === 0) return;
-            setStudents((current) => ({ ...current, ...fetched }));
+  // Single real-time live counter document listener (1 read total, zero full-collection scans)
+  const requestsStats = useRequestsStats();
 
-            if (!restoreToolsUnlocked) return;
+  useEffect(() => {
+    if (requestsStats.stats?.byService) {
+      const countsMap: Record<string, number> = {};
+      Object.entries(requestsStats.stats.byService).forEach(([svcId, data]) => {
+        countsMap[svcId] = data.total;
+      });
+      setServiceTotalCounts(countsMap);
+      if (!dataReadyRef.current) {
+        setDataReady(true);
+      }
+    }
+  }, [requestsStats.stats]);
 
-            const currentReqs = latestServiceRequestsRef.current;
-            const enrichWrites: Promise<void>[] = [];
-            for (const req of currentReqs) {
-              if (!req.studentId || !fetched[req.studentId]) continue;
-              if (!orderNeedsAutoFix(req)) continue;
-              const studentData = fetched[req.studentId] as unknown as Record<string, unknown>;
-              const serviceId = String(req.serviceId || '');
-              if (!serviceId) continue;
-              const merged = mergeEnrichedRequestData(
-                (req.data || {}) as Record<string, unknown>,
-                buildRestoredRequestData(studentData, serviceId)
-              );
-              enrichWrites.push(
-                setDoc(
-                  doc(db, `serviceRequests_${serviceId}`, req.id!),
-                  { data: merged, updatedAt: serverTimestamp() },
-                  { merge: true }
-                )
-              );
+  const handleInitialBatchLoaded = useCallback(() => {
+    if (!dataReadyRef.current) {
+      setDataReady(true);
+    }
+  }, []);
+
+  // Hybrid live-head (top 25 onSnapshot) + one-time cursor pagination for older requests
+  const targetServiceId = selectedServiceId || '1';
+  const {
+    combinedRequests: hybridRequests,
+    isLoadingMore: isLoadingMoreServiceRequests,
+    hasMore: hasMoreServiceRequests,
+    loadMore: handleLoadMoreServiceRequests,
+    updateLocalRequest,
+    deleteLocalRequest
+  } = useHybridRequestsPagination({
+    serviceId: isLoading ? null : targetServiceId,
+    pageSize: 25,
+    onInitialBatchLoaded: handleInitialBatchLoaded
+  });
+
+  useEffect(() => {
+    setServiceRequests(hybridRequests);
+    latestServiceRequestsRef.current = hybridRequests;
+    if (!dataReadyRef.current) {
+      setDataReady(true);
+    }
+  }, [hybridRequests]);
+
+  // Student details enrichment for loaded requests
+  useEffect(() => {
+    if (isLoading || hybridRequests.length === 0) return;
+    let cancelled = false;
+
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      const reqs = latestServiceRequestsRef.current;
+      const uniqueStudentIds = [
+        ...new Set(reqs.map((r) => r.studentId).filter(Boolean))
+      ] as string[];
+      const prev = studentsRef.current;
+      const missingIds = uniqueStudentIds.filter(
+        (id) => id && !prev[id] && !studentIdsInFlightRef.current.has(id)
+      );
+      if (missingIds.length === 0) return;
+      missingIds.forEach((id) => studentIdsInFlightRef.current.add(id));
+      void getStudentsByIds(missingIds)
+        .then(async (fetched) => {
+          if (cancelled) return;
+          missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+          if (Object.keys(fetched).length === 0) return;
+          setStudents((current) => ({ ...current, ...fetched }));
+
+          if (!restoreToolsUnlocked) return;
+
+          const currentReqs = latestServiceRequestsRef.current;
+          const enrichWrites: Promise<void>[] = [];
+          for (const req of currentReqs) {
+            if (!req.studentId || !fetched[req.studentId]) continue;
+            if (!orderNeedsAutoFix(req)) continue;
+            const studentData = fetched[req.studentId] as unknown as Record<string, unknown>;
+            const serviceId = String(req.serviceId || '');
+            if (!serviceId) continue;
+            const merged = mergeEnrichedRequestData(
+              (req.data || {}) as Record<string, unknown>,
+              buildRestoredRequestData(studentData, serviceId)
+            );
+            enrichWrites.push(
+              setDoc(
+                doc(db, `serviceRequests_${serviceId}`, req.id!),
+                { data: merged, updatedAt: serverTimestamp() },
+                { merge: true }
+              )
+            );
+          }
+          for (let i = 0; i < enrichWrites.length; i += 15) {
+            await Promise.all(enrichWrites.slice(i, i + 15));
+          }
+          for (const req of currentReqs) {
+            if (!req.id || !req.studentId || !fetched[req.studentId]) continue;
+            if (!isPlaceholderOrderData(req.data as Record<string, unknown>)) {
+              fixedRequestIdsRef.current.add(req.id);
             }
-            for (let i = 0; i < enrichWrites.length; i += 15) {
-              await Promise.all(enrichWrites.slice(i, i + 15));
-            }
-            for (const req of currentReqs) {
-              if (!req.id || !req.studentId || !fetched[req.studentId]) continue;
-              if (!isPlaceholderOrderData(req.data as Record<string, unknown>)) {
-                fixedRequestIdsRef.current.add(req.id);
-              }
-            }
-          })
-          .catch(() => {
-            missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
-          });
-      }, 550);
-    });
+          }
+        })
+        .catch(() => {
+          missingIds.forEach((id) => studentIdsInFlightRef.current.delete(id));
+        });
+    }, 550);
 
     return () => {
       cancelled = true;
-      if (studentFetchTimer !== undefined) window.clearTimeout(studentFetchTimer);
-      studentIdsInFlightRef.current.clear();
-      unsubscribe?.();
+      window.clearTimeout(timer);
     };
-  }, [isLoading, selectedServiceId, restoreToolsUnlocked]);
+  }, [isLoading, hybridRequests, restoreToolsUnlocked]);
 
   // Auto-fix orders with placeholder names
   const runAutoFixPlaceholderOrders = useCallback(async (scopeServiceId?: string | null) => {
@@ -483,7 +491,14 @@ export function useAdminDashboard({ onBack }: UseAdminDashboardOptions = {}) {
     isAutoFixingOrders,
     getStatusBadge,
     handleDeleteEPCode,
-    copyEPColumn
+    copyEPColumn,
+    isLoadingMoreServiceRequests,
+    hasMoreServiceRequests,
+    handleLoadMoreServiceRequests,
+    updateLocalRequest,
+    deleteLocalRequest,
+    requestsStats,
+    totalRequestsCount: requestsStats.totalRequestsCount
   };
 }
 

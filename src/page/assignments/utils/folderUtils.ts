@@ -1,5 +1,5 @@
 // Pure folder and path helper functions extracted from src/page/AssignmentsManagementPage.tsx
-import { AssignmentFolderMeta } from '../../../services/firebaseService';
+import type { AssignmentFolderMeta } from '../../../services/firebaseService';
 
 export const mergeFoldersByPath = (a: AssignmentFolderMeta[], b: AssignmentFolderMeta[]) => {
   const map = new Map<string, AssignmentFolderMeta>();
@@ -19,4 +19,18 @@ export const getParentPath = (path: string): string => {
 export const getPathLastName = (path: string): string => {
   const parts = getPathParts(path);
   return parts[parts.length - 1] || '';
+};
+
+/**
+ * Filters out a target folder path and all subfolders/files belonging to it
+ */
+export const filterOutFolderAndDescendants = <T extends { path?: string; folderPath?: string }>(
+  items: T[],
+  folderPath: string
+): T[] => {
+  if (!folderPath || !Array.isArray(items)) return items || [];
+  return items.filter((item) => {
+    const itemPath = String(item.path || item.folderPath || '');
+    return !(itemPath === folderPath || itemPath.startsWith(`${folderPath}/`));
+  });
 };

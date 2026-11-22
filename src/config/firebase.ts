@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import {
   getFirestore,
   initializeFirestore,
@@ -31,6 +31,10 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase services
 export const auth = getAuth(app);
+// Enforce persistent local auth state across reloads, tab switches, and browser restarts
+setPersistence(auth, browserLocalPersistence).catch(() => {
+  // Silent fallback to standard memory/session if local storage is restricted
+});
 let dbInstance: Firestore;
 try {
   dbInstance = initializeFirestore(app, {

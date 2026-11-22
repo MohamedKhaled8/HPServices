@@ -147,7 +147,11 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // مكون حماية مسارات الأدمن الرئيسي
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
-    const { isLoggedIn, isAdmin, isTelemetryAdmin } = useStudent();
+    const { isLoggedIn, isAdmin, isTelemetryAdmin, isAuthLoading } = useStudent();
+
+    if (isAuthLoading) {
+        return <LoadingDots fullScreen text="جارٍ التحقق من الصلاحيات..." />;
+    }
 
     if (!isLoggedIn) {
         return <Navigate to="/login" replace />;
@@ -167,7 +171,11 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
 
 // مكون حماية بوابة المراقبة والأمان المعزولة (Tracking Admin فقط)
 const TelemetryRoute = ({ children }: { children: React.ReactNode }) => {
-    const { isLoggedIn, isAdmin, isTelemetryAdmin } = useStudent();
+    const { isLoggedIn, isAdmin, isTelemetryAdmin, isAuthLoading } = useStudent();
+
+    if (isAuthLoading) {
+        return <LoadingDots fullScreen text="جارٍ التحقق من الصلاحيات..." />;
+    }
 
     if (!isLoggedIn) {
         return <Navigate to="/login" replace />;

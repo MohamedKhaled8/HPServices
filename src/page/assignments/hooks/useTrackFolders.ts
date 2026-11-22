@@ -10,6 +10,7 @@ import {
   mergeFoldersByPath,
   getParentPath,
   getPathLastName,
+  filterOutFolderAndDescendants,
 } from '../utils/folderUtils';
 import { writeCachedTrackFolders } from '../storage/assignmentsCache';
 
@@ -84,29 +85,39 @@ export const useTrackFolders = ({
     const folderName = getPathLastName(folderPath) || folderPath;
     const ok = window.confirm(`سيتم حذف المجلد "${folderName}" وكل ما بداخله. هل أنت متأكد؟`);
     if (!ok) return;
+
+    // Snapshot previous state for instant rollback if deletion fails
+    let prevFoldersSnapshot: Record<TrackKey, AssignmentFolderMeta[]> = trackFolders;
+    let prevFilesSnapshot: Record<TrackKey, any[]> = trackFiles;
+
+    // Optimistic removal: remove folder and nested items from UI and cache immediately
+    setTrackFolders((prev) => {
+      prevFoldersSnapshot = prev;
+      const currentList = prev[track] || [];
+      const updatedList = filterOutFolderAndDescendants(currentList, folderPath);
+      const next = { ...prev, [track]: updatedList };
+      writeCachedTrackFolders(next);
+      return next;
+    });
+
+    setTrackFiles((prev) => {
+      prevFilesSnapshot = prev;
+      const currentFiles = prev[track] || [];
+      const updatedFiles = filterOutFolderAndDescendants(currentFiles, folderPath);
+      return { ...prev, [track]: updatedFiles };
+    });
+
+    setTrackCurrentPath((p) => {
+      const cur = p[track] || '';
+      if (cur === folderPath || cur.startsWith(`${folderPath}/`)) {
+        return { ...p, [track]: getParentPath(folderPath) };
+      }
+      return p;
+    });
+
     setFolderDeleteLoading({ scope: 'track', track, folderPath });
     try {
       const result = await deleteAssignmentFolderForTrack(track, folderPath);
-
-      const nextFolders = {
-        ...trackFolders,
-        [track]: (trackFolders[track] || []).filter((f) => !(f.path === folderPath || f.path.startsWith(`${folderPath}/`)))
-      };
-      const nextFiles = {
-        ...trackFiles,
-        [track]: (trackFiles[track] || []).filter((f: any) => {
-          const fp = String(f.folderPath || '');
-          return !(fp === folderPath || fp.startsWith(`${folderPath}/`));
-        })
-      };
-      setTrackFolders(nextFolders);
-      setTrackFiles(nextFiles);
-      writeCachedTrackFolders(nextFolders);
-
-      const cur = trackCurrentPath[track] || '';
-      if (cur === folderPath || cur.startsWith(`${folderPath}/`)) {
-        setTrackCurrentPath((p) => ({ ...p, [track]: getParentPath(folderPath) }));
-      }
 
       const removedIds = new Set(result.deletedFiles);
       if (removedIds.size > 0) {
@@ -118,15 +129,16 @@ export const useTrackFolders = ({
       }
 
       if (result.deletedFiles.length > 0) {
-        try {
-          await removeAssignedFilesFromAllStudents(result.deletedFiles);
-        } catch {
-          // ignore secondary cleanup failure
-        }
+        // Non-blocking secondary student records cleanup
+        removeAssignedFilesFromAllStudents(result.deletedFiles).catch(() => {});
       }
-      showSnackbarNotification('تم حذف المجلد وكل محتوياته', 'success');
+      showSnackbarNotification('تم حذف المجلد وكل محتوياته بنجاح', 'success');
     } catch (error: any) {
-      showSnackbarNotification(error.message || 'فشل حذف المجلد', 'error');
+      // Rollback on genuine failure
+      setTrackFolders(prevFoldersSnapshot);
+      writeCachedTrackFolders(prevFoldersSnapshot);
+      setTrackFiles(prevFilesSnapshot);
+      showSnackbarNotification(error.message || 'فشل حذف المجلد من الخادم، تم استعادة البيانات', 'error');
     } finally {
       setFolderDeleteLoading(null);
     }

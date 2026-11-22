@@ -38,30 +38,20 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
 
             <div className="delete-confirm-buttons">
               <button
-                className="delete-btn-students-only"
-                onClick={() => executeDelete('students-only')}
-                disabled={isRemovingFromUsers}
-              >
-                <RotateCcw size={18} />
-                <div>
-                  <strong>سحب من حسابات الطلاب فقط (موصى به)</strong>
-                  <span>إزالة الملفات من حسابات الطلاب مع الإبقاء عليها في الداش بورد والسيرفر</span>
-                </div>
-              </button>
-
-              <button
+                type="button"
                 className="delete-btn-both"
                 onClick={() => executeDelete('both')}
                 disabled={isRemovingFromUsers}
               >
                 <Trash2 size={18} />
                 <div>
-                  <strong>حذف نهائي من الكل</strong>
+                  <strong>حذف نهائي من الكل (موصى به)</strong>
                   <span>حذف الملفات من الداش بورد + إزالتها من حسابات الطلاب</span>
                 </div>
               </button>
 
               <button
+                type="button"
                 className="delete-btn-server-only"
                 onClick={() => executeDelete('server-only')}
                 disabled={isRemovingFromUsers}
@@ -72,9 +62,23 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
                   <span>حذف الملفات من الداش بورد مع بقائها لدى الطلاب</span>
                 </div>
               </button>
+
+              <button
+                type="button"
+                className="delete-btn-students-only"
+                onClick={() => executeDelete('students-only')}
+                disabled={isRemovingFromUsers}
+              >
+                <RotateCcw size={18} />
+                <div>
+                  <strong>سحب من حسابات الطلاب فقط</strong>
+                  <span>إزالة الملفات من حسابات الطلاب مع الإبقاء عليها في الداش بورد</span>
+                </div>
+              </button>
             </div>
 
             <button
+              type="button"
               className="delete-btn-cancel"
               onClick={() => setDeleteConfirmModal(prev => ({ ...prev, open: false }))}
             >

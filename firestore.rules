@@ -33,6 +33,11 @@ service cloud.firestore {
       allow create: if (isAuthenticated() && request.resource.data.studentId == request.auth.uid) || isAdmin();
       allow delete: if isAdmin();
     }
+    match /serviceRequests_{serviceId}/{requestId} {
+      allow read, update: if (isAuthenticated() && resource.data.studentId == request.auth.uid) || isAdmin();
+      allow create: if (isAuthenticated() && request.resource.data.studentId == request.auth.uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
 
     // 4. حماية التكليفات والرفع
     match /assignments/{document=**} {
@@ -68,6 +73,10 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     match /serviceSettings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /metadata/{metadataId} {
       allow read: if true;
       allow write: if isAdmin();
     }

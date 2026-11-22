@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getAuth } from 'firebase-admin/auth';
 import {
   applySecurityHeaders,
   appendAuditLog,
@@ -9,30 +8,16 @@ import {
   sanitizeText,
   telemetryCache,
   verifyAdminRequest,
-  type TelemetrySessionRecord,
-  type DeviceInfo
+  type TelemetrySessionRecord
 } from './_shared.js';
-
-const SESSION_TTL_MS = 30 * 60 * 1000;
-const HEARTBEAT_WRITE_THROTTLE_MS = 20 * 1000;
-
-function parseDeviceInput(raw: unknown, userAgentHeader: string): DeviceInfo {
-  const input = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
-  const deviceTypeRaw = sanitizeText(input.deviceType, 16);
-  const deviceType: DeviceInfo['deviceType'] =
-    deviceTypeRaw === 'Desktop' || deviceTypeRaw === 'Mobile' || deviceTypeRaw === 'Tablet'
-      ? deviceTypeRaw
-      : 'Unknown';
-
-  return {
-    deviceName: sanitizeText(input.deviceName || 'Unknown Device', 80),
-    os: sanitizeText(input.os || 'Unknown OS', 48),
-    browser: sanitizeText(input.browser || 'Unknown Browser', 48),
-    deviceType,
-    userAgent: sanitizeText(input.userAgent || userAgentHeader, 240),
-    screenResolution: sanitizeText(input.screenResolution || '', 32)
-  };
-}
+import {
+  SESSION_TTL_MS,
+  HEARTBEAT_WRITE_THROTTLE_MS,
+  parseDeviceInput,
+  handleKeepAlive,
+  handleRevoke,
+  handleLogout
+} from './_sessionMutations.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (applySecurityHeaders(req, res)) return;
@@ -134,8 +119,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         record = snap.exists() ? (snap.val() as TelemetrySessionRecord) : null;
       }
 
+      // If missing from DB, do NOT logout; signal silent re-registration
       if (!record) {
-        return res.status(200).json({ success: true, status: 'expired', shouldLogout: false });
+        return res.status(200).json({ success: true, status: 'active', shouldLogout: false, needsReRegistration: true });
       }
 
       const now = Date.now();
@@ -143,6 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(403).json({ success: false, error: 'Session ownership mismatch' });
       }
 
+      // ONLY manual remote security revocation triggers forced logout
       if (record.status === 'revoked') {
         return res.status(200).json({
           success: true,
@@ -152,20 +139,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      if (now > record.expiresAtMs) {
-        return res.status(200).json({
-          success: true,
-          status: 'expired',
-          shouldLogout: true
-        });
-      }
-
-      if (now - record.lastSeenAtMs > HEARTBEAT_WRITE_THROTTLE_MS) {
+      // Self-heal and refresh sliding lease on active admin heartbeat
+      const newExpiresAt = now + SESSION_TTL_MS;
+      if (now - record.lastSeenAtMs > HEARTBEAT_WRITE_THROTTLE_MS || record.expiresAtMs < now + (SESSION_TTL_MS / 2)) {
         const nowIso = new Date(now).toISOString();
-        record = { ...record, lastSeenAtMs: now, lastSeenAtIso: nowIso };
-        await db.ref(`telemetry_v1/sessions/${sessionId}`).update({
+        record = {
+          ...record,
+          status: 'active',
           lastSeenAtMs: now,
-          lastSeenAtIso: nowIso
+          lastSeenAtIso: nowIso,
+          expiresAtMs: newExpiresAt
+        };
+        await db.ref(`telemetry_v1/sessions/${sessionId}`).update({
+          status: 'active',
+          lastSeenAtMs: now,
+          lastSeenAtIso: nowIso,
+          expiresAtMs: newExpiresAt
         });
         telemetryCache.set(`session:${sessionId}`, record, 5000);
         telemetryCache.invalidate('sessions:');
@@ -179,117 +168,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (action === 'keep_alive') {
-      const ctx = await verifyAdminRequest(req, ['telemetry_admin']);
-      const targetSessionId = sanitizeText(req.body?.targetSessionId, 64);
-      if (!targetSessionId) {
-        return res.status(400).json({ success: false, error: 'Missing targetSessionId' });
-      }
-
-      const snap = await db.ref(`telemetry_v1/sessions/${targetSessionId}`).get();
-      if (!snap.exists()) {
-        return res.status(404).json({ success: false, error: 'Session not found' });
-      }
-      const existing = snap.val() as TelemetrySessionRecord;
-      const now = Date.now();
-      const updated: TelemetrySessionRecord = {
-        ...existing,
-        status: 'active',
-        expiresAtMs: now + SESSION_TTL_MS,
-        lastSeenAtMs: now,
-        lastSeenAtIso: new Date(now).toISOString(),
-        keepAliveCount: (existing.keepAliveCount || 0) + 1
-      };
-
-      await db.ref(`telemetry_v1/sessions/${targetSessionId}`).set(updated);
-      telemetryCache.set(`session:${targetSessionId}`, updated, 5000);
-      telemetryCache.invalidate('sessions:');
-
-      const geo = await extractGeoInfo(req);
-      await appendAuditLog({
-        action: 'SESSION_KEPT_ALIVE',
-        category: 'session',
-        severity: 'info',
-        actorUid: ctx.uid,
-        actorRole: ctx.role,
-        message: `Extended session lease for ${existing.device?.deviceName || targetSessionId} (+30m)`,
-        ip: geo.ip,
-        metadata: { targetSessionId, targetUid: existing.uid }
-      });
-
-      return res.status(200).json({ success: true, session: updated });
-    }
-
-    if (action === 'revoke') {
-      const ctx = await verifyAdminRequest(req, ['telemetry_admin']);
-      const targetSessionId = sanitizeText(req.body?.targetSessionId, 64);
-      const revokeAllTokens = Boolean(req.body?.revokeAllTokens);
-      if (!targetSessionId) {
-        return res.status(400).json({ success: false, error: 'Missing targetSessionId' });
-      }
-
-      const snap = await db.ref(`telemetry_v1/sessions/${targetSessionId}`).get();
-      if (!snap.exists()) {
-        return res.status(404).json({ success: false, error: 'Session not found' });
-      }
-      const existing = snap.val() as TelemetrySessionRecord;
-      const now = Date.now();
-      const updated: TelemetrySessionRecord = {
-        ...existing,
-        status: 'revoked',
-        revokedAtMs: now,
-        revokedBy: ctx.uid
-      };
-
-      await db.ref(`telemetry_v1/sessions/${targetSessionId}`).set(updated);
-      telemetryCache.set(`session:${targetSessionId}`, updated, 5000);
-      telemetryCache.invalidate('sessions:');
-
-      if (revokeAllTokens && existing.uid) {
-        await getAuth().revokeRefreshTokens(existing.uid);
-      }
-
-      const geo = await extractGeoInfo(req);
-      await appendAuditLog({
-        action: 'SESSION_FORCE_REVOKED',
-        category: 'security',
-        severity: 'critical',
-        actorUid: ctx.uid,
-        actorRole: ctx.role,
-        message: `Force-revoked session ${targetSessionId} (${existing.device?.os} / ${existing.geo?.ip})`,
-        ip: geo.ip,
-        metadata: { targetSessionId, targetUid: existing.uid, revokeAllTokens }
-      });
-
-      return res.status(200).json({ success: true, session: updated });
-    }
-
-    if (action === 'logout') {
-      const ctx = await verifyAdminRequest(req, ['primary_admin', 'telemetry_admin']);
-      const sessionId = sanitizeText(req.body?.sessionId, 64);
-      if (sessionId) {
-        const now = Date.now();
-        await db.ref(`telemetry_v1/sessions/${sessionId}`).update({
-          status: 'expired',
-          lastSeenAtMs: now,
-          lastSeenAtIso: new Date(now).toISOString()
-        });
-        telemetryCache.invalidate('sessions:');
-        telemetryCache.invalidate(`session:${sessionId}`);
-        const geo = await extractGeoInfo(req);
-        await appendAuditLog({
-          action: 'ADMIN_SESSION_LOGOUT',
-          category: 'session',
-          severity: 'info',
-          actorUid: ctx.uid,
-          actorRole: ctx.role,
-          message: `${ctx.role} signed out cleanly`,
-          ip: geo.ip,
-          metadata: { sessionId }
-        });
-      }
-      return res.status(200).json({ success: true });
-    }
+    if (action === 'keep_alive') return handleKeepAlive(req, res);
+    if (action === 'revoke') return handleRevoke(req, res);
+    if (action === 'logout') return handleLogout(req, res);
 
     return res.status(400).json({ success: false, error: 'Invalid session action' });
   } catch (err: unknown) {
@@ -298,4 +179,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(status).json({ success: false, error: message });
   }
 }
-

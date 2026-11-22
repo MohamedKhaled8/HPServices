@@ -18,6 +18,7 @@ import { initializeApp } from 'firebase/app';
 import {
   collection,
   doc,
+  addDoc,
   setDoc,
   getDoc,
   getDocs,
@@ -39,6 +40,7 @@ import { auth, db, storage, firebaseConfig } from '../config/firebase';
 import { supabase, ASSIGNMENTS_BUCKET } from '../config/supabaseClient';
 import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
 import { uploadMultipleToCloudStorage, CloudProvider } from './cloudStorageService';
+import { deleteCloudStorageFilesBackground } from './cloudStorageDeletion';
 import { StudentData, ServiceRequest, ServiceRequestWorkflowStatus, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings, StatementEnrollmentConfig, DistributionReport } from '../types';
 import type { Query, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { logger } from '../utils/logger';
@@ -48,6 +50,12 @@ import { classifyAssignment, AssignmentCategory, resolveStudentSpecialization, i
 import { SERVICES } from '../constants/services';
 import { PlatformTelemetryEmitter } from '../modules/telemetry/infrastructure/emitters/PlatformTelemetryEmitter';
 import { syncStudentAssignmentsOnTrackChange, getTrackKey, trackKeyToDisplayName } from './studentTrackSyncService';
+
+import {
+  atomicIncrementNewRequest,
+  atomicUpdateStatusCount,
+  atomicDecrementRequest
+} from './requestsStatsService';
 
 export { syncStudentAssignmentsOnTrackChange, getTrackKey, trackKeyToDisplayName } from './studentTrackSyncService';
 
@@ -2069,8 +2077,10 @@ export const deleteAssignmentFolderForTrack = async (track: TrackKey, folderPath
   const [filesSnap, foldersSnap] = await Promise.all([getDocs(filesCollection), getDocs(foldersCollection)]);
 
   const fileIdsToDelete: string[] = [];
-  const deleteFilePromises: Promise<void>[] = [];
-  const deleteFolderPromises: Promise<void>[] = [];
+  const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = [];
+
+  const batch = writeBatch(db);
+  let batchCount = 0;
 
   filesSnap.docs.forEach((d) => {
     const data = d.data() as any;
@@ -2078,36 +2088,32 @@ export const deleteAssignmentFolderForTrack = async (track: TrackKey, folderPath
     const isInside = fp === target || fp.startsWith(`${target}/`);
     if (!isInside) return;
     fileIdsToDelete.push(d.id);
-    deleteFilePromises.push(
-      (async () => {
-        const storagePath = data?.storagePath as string | undefined;
-        const provider = data?.provider as string | undefined;
-        await deleteDoc(d.ref);
-        if (storagePath) {
-          try {
-            if (provider === 'supabase') {
-              const { error } = await supabase.storage.from(ASSIGNMENTS_BUCKET).remove([storagePath]);
-              if (error) logger.error('Error removing folder file from Supabase:', error);
-            } else {
-              await deleteObject(ref(storage, storagePath));
-            }
-          } catch (storageError) {
-            logger.error('Error deleting folder file from storage:', storageError);
-          }
-        }
-      })()
-    );
+    if (data?.storagePath) {
+      filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+    }
+    batch.delete(d.ref);
+    batchCount++;
   });
 
   foldersSnap.docs.forEach((d) => {
     const data = d.data() as any;
     const p = String(data.path || '');
     if (p === target || p.startsWith(`${target}/`)) {
-      deleteFolderPromises.push(deleteDoc(d.ref));
+      batch.delete(d.ref);
+      batchCount++;
     }
   });
 
-  await Promise.all([...deleteFilePromises, ...deleteFolderPromises]);
+  // 1. Commit Firestore batch FIRST so deletion is guaranteed atomic & permanent
+  if (batchCount > 0) {
+    await batch.commit();
+  }
+
+  // 2. Cloud storage file cleanup runs safely in background without blocking UI
+  if (filesToDeleteFromStorage.length > 0) {
+    deleteCloudStorageFilesBackground(filesToDeleteFromStorage);
+  }
+
   return { deletedFiles: fileIdsToDelete };
 };
 
@@ -2155,8 +2161,10 @@ export const delete130UnifiedFolder = async (folderPath: string): Promise<{ dele
   const [filesSnap, foldersSnap] = await Promise.all([getDocs(filesCollection), getDocs(foldersCollection)]);
 
   const fileIdsToDelete: string[] = [];
-  const deleteFilePromises: Promise<void>[] = [];
-  const deleteFolderPromises: Promise<void>[] = [];
+  const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = [];
+
+  const batch = writeBatch(db);
+  let batchCount = 0;
 
   filesSnap.docs.forEach((d) => {
     const data = d.data() as any;
@@ -2164,71 +2172,67 @@ export const delete130UnifiedFolder = async (folderPath: string): Promise<{ dele
     const isInside = fp === target || fp.startsWith(`${target}/`);
     if (!isInside) return;
     fileIdsToDelete.push(d.id);
-    deleteFilePromises.push(
-      (async () => {
-        const storagePath = data?.storagePath as string | undefined;
-        const provider = data?.provider as string | undefined;
-        await deleteDoc(d.ref);
-        if (storagePath) {
-          try {
-            if (provider === 'supabase') {
-              const { error } = await supabase.storage.from(ASSIGNMENTS_BUCKET).remove([storagePath]);
-              if (error) logger.error('Error removing 130 folder file from Supabase:', error);
-            } else {
-              await deleteObject(ref(storage, storagePath));
-            }
-          } catch (storageError) {
-            logger.error('Error deleting 130 folder file from storage:', storageError);
-          }
-        }
-      })()
-    );
+    if (data?.storagePath) {
+      filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+    }
+    batch.delete(d.ref);
+    batchCount++;
   });
 
   foldersSnap.docs.forEach((d) => {
     const data = d.data() as any;
     const p = String(data.path || '');
     if (p === target || p.startsWith(`${target}/`)) {
-      deleteFolderPromises.push(deleteDoc(d.ref));
+      batch.delete(d.ref);
+      batchCount++;
     }
   });
 
-  await Promise.all([...deleteFilePromises, ...deleteFolderPromises]);
+  // 1. Commit Firestore batch FIRST
+  if (batchCount > 0) {
+    await batch.commit();
+  }
+
+  // 2. Cloud storage file cleanup in background
+  if (filesToDeleteFromStorage.length > 0) {
+    deleteCloudStorageFilesBackground(filesToDeleteFromStorage);
+  }
+
   return { deletedFiles: fileIdsToDelete };
 };
 
 export const delete130UnifiedFiles = async (fileIds: string[]): Promise<void> => {
+  if (!fileIds || fileIds.length === 0) return;
   try {
     const filesCollection = collection(db, 'assignments', 'unified130', 'files');
+    const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = [];
+    const batch = writeBatch(db);
 
-    const deletePromises = fileIds.map(async (fileId) => {
-      const fileDocRef = doc(filesCollection, fileId);
-      const snap = await getDoc(fileDocRef);
-      if (!snap.exists()) return;
-
-      const data = snap.data() as any;
-      const storagePath = data?.storagePath as string | undefined;
-      const provider = data?.provider as string | undefined;
-
-      await deleteDoc(fileDocRef);
-
-      if (storagePath) {
+    await Promise.all(
+      fileIds.map(async (fileId) => {
+        const fileDocRef = doc(filesCollection, fileId);
         try {
-          if (provider === 'supabase') {
-            const { error } = await supabase.storage
-              .from(ASSIGNMENTS_BUCKET)
-              .remove([storagePath]);
-            if (error) logger.error('Error removing from Supabase:', error);
-          } else {
-            await deleteObject(ref(storage, storagePath));
+          const snap = await getDoc(fileDocRef);
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            if (data?.storagePath) {
+              filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+            }
           }
-        } catch (storageError) {
-          logger.error('Error deleting 130 file from storage:', storageError);
+        } catch {
+          // ignore getDoc error
         }
-      }
-    });
+        batch.delete(fileDocRef);
+      })
+    );
 
-    await Promise.all(deletePromises);
+    // Commit Firestore delete first
+    await batch.commit();
+
+    // Background storage cleanup
+    if (filesToDeleteFromStorage.length > 0) {
+      deleteCloudStorageFilesBackground(filesToDeleteFromStorage);
+    }
   } catch (error: any) {
     logger.error('Error deleting 130 unified files:', error);
     throw new Error(error.message || 'حدث خطأ أثناء حذف الملفات الموحدة');
@@ -2344,37 +2348,37 @@ export const deleteAssignmentFilesForTrack = async (
   track: TrackKey,
   fileIds: string[]
 ): Promise<void> => {
+  if (!fileIds || fileIds.length === 0) return;
   try {
     const filesCollection = collection(db, 'assignments', track, 'files');
+    const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = [];
+    const batch = writeBatch(db);
 
-    const deletePromises = fileIds.map(async (fileId) => {
-      const fileDocRef = doc(filesCollection, fileId);
-      const snap = await getDoc(fileDocRef);
-      if (!snap.exists()) return;
-
-      const data = snap.data() as any;
-      const storagePath = data?.storagePath as string | undefined;
-      const provider = data?.provider as string | undefined;
-
-      await deleteDoc(fileDocRef);
-
-      if (storagePath) {
+    await Promise.all(
+      fileIds.map(async (fileId) => {
+        const fileDocRef = doc(filesCollection, fileId);
         try {
-          if (provider === 'supabase') {
-            const { error } = await supabase.storage
-              .from(ASSIGNMENTS_BUCKET)
-              .remove([storagePath]);
-            if (error) logger.error('Error removing from Supabase:', error);
-          } else {
-            await deleteObject(ref(storage, storagePath));
+          const snap = await getDoc(fileDocRef);
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            if (data?.storagePath) {
+              filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+            }
           }
-        } catch (storageError) {
-          logger.error('Error deleting file from storage:', storageError);
+        } catch {
+          // ignore getDoc error
         }
-      }
-    });
+        batch.delete(fileDocRef);
+      })
+    );
 
-    await Promise.all(deletePromises);
+    // Commit Firestore batch FIRST
+    await batch.commit();
+
+    // Background storage cleanup
+    if (filesToDeleteFromStorage.length > 0) {
+      deleteCloudStorageFilesBackground(filesToDeleteFromStorage);
+    }
   } catch (error: any) {
     logger.error('Error deleting assignment files:', error);
     throw new Error(error.message || 'حدث خطأ أثناء حذف ملفات التكاليف');
@@ -2392,9 +2396,15 @@ export const removeAssignedFilesFromAllStudents = async (fileIds: string[]): Pro
 
     const fileIdSet = new Set(fileIds);
     const studentsRef = collection(db, 'students');
-    // Fetch ONLY students who currently have assigned files (assignedFile != null)
-    const q = query(studentsRef, where('assignedFile', '!=', null));
-    const studentsSnap = await getDocs(q);
+    let studentsSnap;
+    try {
+      // Fetch ONLY students who currently have assigned files (assignedFile != null)
+      const q = query(studentsRef, where('assignedFile', '!=', null));
+      studentsSnap = await getDocs(q);
+    } catch {
+      // Fallback if composite index is not yet built on assignedFile
+      studentsSnap = await getDocs(studentsRef);
+    }
 
     let updatedCount = 0;
     const batch = writeBatch(db);
@@ -3533,23 +3543,64 @@ export const updateAdminPreferences = async (config: any): Promise<void> => {
   }
 };
 
+// ============================================
+// Shared Service Config Cache & Listener Manager
+// يمنع تكرار الاشتراكات والاستعلامات لنفس الإعدادات ويحفظها في الذاكرة
+// ============================================
+const sharedConfigCache = new Map<string, any>();
+const sharedConfigListeners = new Map<string, Set<(data: any) => void>>();
+const sharedConfigUnsubscribes = new Map<string, () => void>();
+
+export function subscribeToSharedConfig<T>(
+  docId: string,
+  onUpdate: (data: T | null) => void,
+  transform?: (data: any) => T
+): () => void {
+  // إذا كانت القيمة مخزنة في الذاكرة نسلمها فوراً للمكون بدون أي ريكويست وبسرعة 0 مللي ثانية
+  if (sharedConfigCache.has(docId)) {
+    const cached = sharedConfigCache.get(docId);
+    onUpdate(cached ? (transform ? transform(cached) : cached) : null);
+  }
+
+  if (!sharedConfigListeners.has(docId)) {
+    sharedConfigListeners.set(docId, new Set());
+  }
+  const listeners = sharedConfigListeners.get(docId)!;
+  listeners.add(onUpdate);
+
+  // إذا لم يكن هناك استماع مفتوح للوثيقة، نفتح استماعاً واحداً مشتركاً فقط
+  if (!sharedConfigUnsubscribes.has(docId)) {
+    const docRef = doc(db, 'config', docId);
+    const unsub = onSnapshot(
+      docRef,
+      (docSnap) => {
+        const rawData = docSnap.exists() ? docSnap.data() : null;
+        sharedConfigCache.set(docId, rawData);
+        const transformed = rawData ? (transform ? transform(rawData) : rawData) : null;
+        listeners.forEach((listener) => {
+          try {
+            listener(transformed);
+          } catch (e) {
+            logger.error(`Error in ${docId} config listener callback:`, e);
+          }
+        });
+      },
+      (error) => {
+        logger.error(`Error in shared config subscription for ${docId}:`, error);
+      }
+    );
+    sharedConfigUnsubscribes.set(docId, unsub);
+  }
+
+  return () => {
+    listeners.delete(onUpdate);
+  };
+}
+
 export const subscribeToAdminPreferences = (
   onUpdate: (config: any) => void
 ): (() => void) => {
-  const docRef = doc(db, 'config', 'adminPreferences');
-  return onSnapshot(
-    docRef,
-    (docSnap) => {
-      if (docSnap.exists()) {
-        onUpdate(docSnap.data());
-      } else {
-        onUpdate({ serviceOrder: [], profitCosts: {} });
-      }
-    },
-    (error) => {
-      logger.error('Error in admin preferences subscription:', error);
-    }
-  );
+  return subscribeToSharedConfig('adminPreferences', onUpdate, (data) => data || { serviceOrder: [], profitCosts: {} });
 };
 
 // Search for a student by any field (Optimized to reduce Firestore Reads while guaranteeing 100% result accuracy)
@@ -4064,6 +4115,7 @@ export const addServiceRequest = async (request: ServiceRequest): Promise<string
     // Save request - only links, no base64, optimized and secure
     await setDoc(requestRef, safeRequestData);
     void incrementPlatformRequestsCount();
+    void atomicIncrementNewRequest(String(request.serviceId), request.status || 'pending');
 
     const svcName =
       SERVICES.find((s) => s.id === String(request.serviceId))?.nameAr || `خدمة #${request.serviceId}`;
@@ -4430,7 +4482,8 @@ export const fetchAllServicesRequestsOnce = async (): Promise<ServiceRequest[]> 
 export const updateServiceRequestStatus = async (
   requestId: string,
   status: ServiceRequestWorkflowStatus,
-  serviceId: string
+  serviceId: string,
+  oldStatus?: ServiceRequestWorkflowStatus
 ): Promise<void> => {
   try {
     const collectionName = `serviceRequests_${serviceId}`;
@@ -4442,6 +4495,7 @@ export const updateServiceRequestStatus = async (
       },
       { merge: true }
     );
+    void atomicUpdateStatusCount(serviceId, oldStatus, status);
     if (status === 'completed') {
       const svcName = SERVICES.find((s) => s.id === String(serviceId))?.nameAr || `خدمة #${serviceId}`;
       PlatformTelemetryEmitter.emit({
@@ -4484,11 +4538,13 @@ export const updateServiceRequestData = async (
 
 export const deleteServiceRequest = async (
   requestId: string,
-  serviceId: string
+  serviceId: string,
+  status?: ServiceRequestWorkflowStatus
 ): Promise<void> => {
   try {
     const collectionName = `serviceRequests_${serviceId}`;
     await deleteDoc(doc(db, collectionName, requestId));
+    void atomicDecrementRequest(serviceId, status || 'pending');
   } catch (error: any) {
     throw new Error(error.message || 'حدث خطأ أثناء حذف الطلب');
   }
@@ -4587,59 +4643,6 @@ export const updateBookServiceConfig = async (config: BookServiceConfig): Promis
   }
 };
 
-// ============================================
-// Shared Service Config Cache & Listener Manager
-// يمنع تكرار الاشتراكات والاستعلامات لنفس الإعدادات ويحفظها في الذاكرة
-// ============================================
-const sharedConfigCache = new Map<string, any>();
-const sharedConfigListeners = new Map<string, Set<(data: any) => void>>();
-const sharedConfigUnsubscribes = new Map<string, () => void>();
-
-function subscribeToSharedConfig<T>(
-  docId: string,
-  onUpdate: (data: T | null) => void,
-  transform?: (data: any) => T
-): () => void {
-  // إذا كانت القيمة مخزنة في الذاكرة نسلمها فوراً للمكون بدون أي ريكويست وبسرعة 0 مللي ثانية
-  if (sharedConfigCache.has(docId)) {
-    const cached = sharedConfigCache.get(docId);
-    onUpdate(cached ? (transform ? transform(cached) : cached) : null);
-  }
-
-  if (!sharedConfigListeners.has(docId)) {
-    sharedConfigListeners.set(docId, new Set());
-  }
-  const listeners = sharedConfigListeners.get(docId)!;
-  listeners.add(onUpdate);
-
-  // إذا لم يكن هناك استماع مفتوح للوثيقة، نفتح استماعاً واحداً مشتركاً فقط
-  if (!sharedConfigUnsubscribes.has(docId)) {
-    const docRef = doc(db, 'config', docId);
-    const unsub = onSnapshot(
-      docRef,
-      (docSnap) => {
-        const rawData = docSnap.exists() ? docSnap.data() : null;
-        sharedConfigCache.set(docId, rawData);
-        const transformed = rawData ? (transform ? transform(rawData) : rawData) : null;
-        listeners.forEach((listener) => {
-          try {
-            listener(transformed);
-          } catch (e) {
-            logger.error(`Error in ${docId} config listener callback:`, e);
-          }
-        });
-      },
-      (error) => {
-        logger.error(`Error in shared config subscription for ${docId}:`, error);
-      }
-    );
-    sharedConfigUnsubscribes.set(docId, unsub);
-  }
-
-  return () => {
-    listeners.delete(onUpdate);
-  };
-}
 
 export const subscribeToBookServiceConfig = (
   onUpdate: (config: BookServiceConfig | null) => void
@@ -5480,25 +5483,9 @@ export const updateServiceSettings = async (settings: ServiceSettings): Promise<
 
 export const subscribeToServiceSettings = (
   onUpdate: (settings: ServiceSettings) => void,
-  onError?: (error: any) => void
+  _onError?: (error: any) => void
 ) => {
-  try {
-    const docRef = doc(db, 'config', 'services');
-    return onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        onUpdate(docSnap.data() as ServiceSettings);
-      } else {
-        onUpdate({});
-      }
-    }, (error) => {
-      logger.error('Error subscribing to service settings:', error);
-      if (onError) onError(error);
-    });
-  } catch (error: any) {
-    logger.error('Error in service settings subscription:', error);
-    if (onError) onError(error);
-    return () => { };
-  }
+  return subscribeToSharedConfig('services', onUpdate, (data) => (data as ServiceSettings) || {});
 };
 
 /**

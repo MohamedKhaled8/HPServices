@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { getGoogleDriveAccessToken } from './googleDriveService';
 
 // ============================================
 // Cloud Storage Service - Google Drive Only
@@ -18,58 +19,6 @@ interface UploadResult {
  */
 const getNextProvider = (): CloudProvider => {
     return 'google-drive';
-};
-
-/**
- * Get Google Drive access token.
- * Prefers the secure serverless backend endpoint (/api/getDriveToken) so credentials stay hidden on the server,
- * and falls back to local direct exchange for local offline development.
- */
-const getGoogleDriveAccessToken = async (): Promise<string> => {
-    // 1. Try secure backend token dispenser
-    try {
-        const apiResponse = await fetch('/api/getDriveToken', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-        });
-        if (apiResponse.ok) {
-            const data = await apiResponse.json();
-            if (data.accessToken) {
-                return data.accessToken;
-            }
-        }
-    } catch (_) {
-        // Backend endpoint not reachable (e.g. standalone Vite dev server)
-    }
-
-    // 2. Fallback to direct client-side refresh using env vars
-    const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
-    const clientSecret = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_SECRET;
-    const refreshToken = import.meta.env.VITE_GOOGLE_DRIVE_REFRESH_TOKEN;
-
-    if (!clientId || !clientSecret || !refreshToken) {
-        throw new Error('Google Drive credentials not configured');
-    }
-
-    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            client_id: clientId,
-            client_secret: clientSecret,
-            refresh_token: refreshToken,
-            grant_type: 'refresh_token',
-        }),
-    });
-
-    if (!tokenResponse.ok) {
-        const errData = await tokenResponse.json().catch(() => ({}));
-        const errMessage = errData.error_description || errData.error || tokenResponse.statusText;
-        throw new Error(`Failed to get Google Drive access token: ${errMessage}`);
-    }
-
-    const tokenData = await tokenResponse.json();
-    return tokenData.access_token;
 };
 
 /**

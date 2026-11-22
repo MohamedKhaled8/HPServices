@@ -1,0 +1,160 @@
+/* ==========================================================================
+   HP Services - Pure Minimalist MorphingSquare Loading Indicator
+   Zero cards, zero boxes, zero borders, zero shadows - pure CSS animation
+   ========================================================================== */
+
+/* Fullscreen Minimal Backdrop */
+.hp-loader-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(248, 250, 252, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 99999;
+  border: none;
+  box-shadow: none;
+  animation: hpFadeIn 0.2s ease-out forwards;
+  will-change: opacity;
+  contain: strict;
+}
+
+/* Inline Loader Container - 100% Transparent */
+.hp-loader-inline {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  contain: layout style;
+  animation: hpFadeIn 0.2s ease-out forwards;
+}
+
+/* MorphingSquare Layout Container - Bare, Zero Box */
+.hp-morph-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  user-select: none;
+}
+
+/* Message Placement Variants */
+.hp-morph-placement-bottom,
+.hp-morph-container.flex-col {
+  flex-direction: column;
+}
+
+.hp-morph-placement-top,
+.hp-morph-container.flex-col-reverse {
+  flex-direction: column-reverse;
+}
+
+.hp-morph-placement-right,
+.hp-morph-container.flex-row {
+  flex-direction: row;
+}
+
+.hp-morph-placement-left,
+.hp-morph-container.flex-row-reverse {
+  flex-direction: row-reverse;
+}
+
+/* Morphing Square Element - Pure Solid Crisp Color, Zero Glow / Zero Shadow */
+.hp-morphing-square {
+  background: var(--primary, #2563eb);
+  box-shadow: none;
+  border: none;
+  display: block;
+  flex-shrink: 0;
+  will-change: transform, border-radius;
+  animation: hpMorphRotate 2s ease-in-out infinite;
+}
+
+/* Size Variants: sm (20px), md (40px), lg (48px) */
+.hp-morph-size-sm .hp-morphing-square {
+  width: 20px;
+  height: 20px;
+}
+
+.hp-morph-size-md .hp-morphing-square {
+  width: 40px;
+  height: 40px;
+}
+
+.hp-morph-size-lg .hp-morphing-square {
+  width: 48px;
+  height: 48px;
+}
+
+/* Pure CSS Keyframe Animation: Smooth Square-to-Circle Morph & 360deg Rotation */
+@keyframes hpMorphRotate {
+  0% {
+    border-radius: 6%;
+    transform: rotate(0deg);
+  }
+  50% {
+    border-radius: 50%;
+    transform: rotate(180deg);
+  }
+  100% {
+    border-radius: 6%;
+    transform: rotate(360deg);
+  }
+}
+
+/* Graceful Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .hp-morphing-square {
+    animation: none;
+    transform: none;
+    border-radius: 12%;
+  }
+}
+
+/* Arabic Message & Status Label */
+.hp-morph-message,
+.hp-loader-label {
+  font-family: 'Cairo', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 600;
+  color: var(--text-primary, #1e293b);
+  margin: 0;
+  text-align: center;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  animation: hpTextPulse 2s ease-in-out infinite;
+  user-select: none;
+}
+
+.hp-morph-size-sm .hp-morph-message {
+  font-size: 13px;
+}
+
+.hp-morph-size-md .hp-morph-message {
+  font-size: 14px;
+}
+
+.hp-morph-size-lg .hp-morph-message {
+  font-size: 16px;
+}
+
+/* Sub-animations */
+@keyframes hpTextPulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+
+@keyframes hpFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

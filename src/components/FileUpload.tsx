@@ -1,21 +1,23 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { UploadedFile } from '../types';
-import { Upload, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { logger } from '../utils/logger';
+import { Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { UploadSnackbar } from './common/UploadSnackbar';
+import { isValidFile, checkImageBlankness, getFileType } from './fileUploadValidation';
+import { FileUploadList } from './FileUploadList';
 import '../styles/FileUpload.css';
 
 interface FileUploadProps {
   onFilesSelected: (files: UploadedFile[]) => void;
   maxFileSize?: number;
   acceptedFormats?: string[];
-  key?: string; // Allow key prop for resetting component
-  resetTrigger?: number; // Trigger reset when this changes
+  key?: string;
+  resetTrigger?: number;
   buttonLabel?: string;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesSelected,
-  maxFileSize = 10 * 1024 * 1024, // 10 MB - Security: Reduced from 20MB for better safety
+  maxFileSize = 10 * 1024 * 1024,
   acceptedFormats = ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF'],
   resetTrigger,
   buttonLabel = 'حمل اسكرين تحويل المبلغ'
@@ -26,160 +28,36 @@ const FileUpload: React.FC<FileUploadProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Reset component when resetTrigger changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (resetTrigger !== undefined) {
       setUploadedFiles([]);
       setError('');
       setSuccess('');
       setIsProcessing(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
       onFilesSelected([]);
     }
   }, [resetTrigger, onFilesSelected]);
 
-  const getFileType = (name: string): string => {
-    const ext = name.split('.').pop()?.toUpperCase() || '';
-    return ext;
-  };
-
-  const isValidFile = (file: File): { valid: boolean; error?: string } => {
-    const ext = file.name.split('.').pop()?.toLowerCase() || '';
-    const mime = (file.type || '').toLowerCase();
-
-    // منع ملفات PDF وملفات Excel وأي ملفات غير الصور نهائياً
-    const forbiddenExtensions = ['pdf', 'xlsx', 'xls', 'xlsm', 'xlsb', 'csv', 'xltx', 'xltm'];
-    const forbiddenMimes = [
-      'application/pdf',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/csv'
-    ];
-
-    if (forbiddenExtensions.includes(ext) || forbiddenMimes.some(m => mime.includes(m))) {
-      return {
-        valid: false,
-        error: 'عذراً، غير مسموح برفع ملفات PDF أو Excel نهائياً. يُرجى رفع صور فقط (مثل JPG, PNG, WEBP).'
-      };
-    }
-
-    const fileType = getFileType(file.name);
-    const sanitizedAccepted = acceptedFormats
-      .filter(f => !['PDF', 'XLSX', 'XLS', 'CSV'].includes(f.toUpperCase()));
-    const acceptedFormatsLower = (sanitizedAccepted.length > 0 ? sanitizedAccepted : ['JPEG', 'JPG', 'PNG', 'WEBP', 'HEIC', 'HEIF', 'BMP', 'GIF'])
-      .map(f => f.toLowerCase());
-
-    // Security: Validate file type (images only)
-    if (!acceptedFormatsLower.includes(fileType.toLowerCase())) {
-      return {
-        valid: false,
-        error: `صيغة الملف غير مدعومة. مسموح برفع الصور فقط: (JPG, PNG, WEBP, إلخ)`
-      };
-    }
-
-    // Security: Validate file size
-    if (file.size > maxFileSize) {
-      return {
-        valid: false,
-        error: `حجم الملف أكبر من ${(maxFileSize / (1024 * 1024)).toFixed(0)} ميجابايت`
-      };
-    }
-
-    return { valid: true };
-  };
-
-  // فحص ما إذا كانت الصورة سوداء بالكامل (مظلمة) أو بيضاء تماماً (فارغة)
-  const checkImageBlankness = (file: File): Promise<{ isBlank: boolean; reason?: string }> => {
-    return new Promise((resolve) => {
-
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        try {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          const size = 32; // حجم مصغر لفحص فوري فائق السرعة
-          canvas.width = size;
-          canvas.height = size;
-
-          if (!ctx) return resolve({ isBlank: false });
-
-          ctx.drawImage(img, 0, 0, size, size);
-          const imgData = ctx.getImageData(0, 0, size, size).data;
-
-          let totalBrightness = 0;
-          let minBrightness = 255;
-          let maxBrightness = 0;
-          const pixelCount = imgData.length / 4;
-
-          for (let i = 0; i < imgData.length; i += 4) {
-            const b = 0.299 * imgData[i] + 0.587 * imgData[i + 1] + 0.114 * imgData[i + 2];
-            totalBrightness += b;
-            if (b < minBrightness) minBrightness = b;
-            if (b > maxBrightness) maxBrightness = b;
-          }
-
-          const avgBrightness = totalBrightness / pixelCount;
-
-          // 1. فحص إذا كانت سوداء بالكامل أو مظلمة جداً (كاميرا مغطاة أو ظلام تام)
-          if (avgBrightness < 15 && maxBrightness < 40) {
-            return resolve({
-              isBlank: true,
-              reason: 'الصورة مظلمة أو سوداء تماماً ولا يمكن قراءتها، يرجى تشغيل الإضاءة أو إعادة التقاط الصورة بوضوح.'
-            });
-          }
-
-          // 2. فحص إذا كانت بيضاء أو فارغة بالكامل (لا تحتوي على نصوص أو محتوى)
-          if (avgBrightness > 245 && minBrightness > 225) {
-            return resolve({
-              isBlank: true,
-              reason: 'الصورة بيضاء أو فارغة تماماً، يرجى التأكد من اختيار الصورة أو الإيصال الصحيح.'
-            });
-          }
-
-          resolve({ isBlank: false });
-        } catch {
-          resolve({ isBlank: false });
-        }
-      };
-
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        resolve({ isBlank: false });
-      };
-
-      img.src = url;
-    });
-  };
-
   const handleFileSelect = async (files: FileList | null) => {
     setError('');
     setSuccess('');
-
     if (!files) return;
 
     const filesArray = Array.from(files);
     const validFiles: File[] = [];
 
-    // First, validate all files for format and size
     for (const file of filesArray) {
-      const validation = isValidFile(file);
+      const validation = isValidFile(file, acceptedFormats, maxFileSize);
       if (!validation.valid) {
         setError(validation.error || 'خطأ في التحقق من الملف');
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
     }
 
     setIsProcessing(true);
 
-    // Second, validate image clarity (prevent solid black / solid white uploads)
     for (const file of filesArray) {
       const blankCheck = await checkImageBlankness(file);
       if (blankCheck.isBlank) {
@@ -188,9 +66,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
           ? `الملف "${file.name}": ${blankCheck.reason}`
           : (blankCheck.reason || 'الصورة غير واضحة، يرجى إعادة التقاط الصورة بوضوح.');
         setError(errorMsg);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
       validFiles.push(file);
@@ -207,23 +83,20 @@ const FileUpload: React.FC<FileUploadProps> = ({
           name: file.name,
           size: file.size,
           type: getFileType(file.name),
-          url: e.target?.result as string, // base64 for preview
+          url: e.target?.result as string,
           preview: e.target?.result as string,
-          file: file // Store actual file for upload
+          file: file
         };
 
         newFiles.push(uploadedFile);
         processedCount++;
 
-        // Update state and notify parent with all files (existing + new)
         setUploadedFiles(prev => {
           const updated = [...prev, uploadedFile];
-          // Notify parent immediately with updated list
           onFilesSelected(updated);
           return updated;
         });
 
-        // Show success when all files are processed
         if (processedCount === validFiles.length) {
           setIsProcessing(false);
           setSuccess(`تم تحميل ${newFiles.length} صورة بنجاح`);
@@ -239,35 +112,20 @@ const FileUpload: React.FC<FileUploadProps> = ({
       reader.readAsDataURL(file);
     });
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
-
-
 
   const removeFile = (fileId: string) => {
     setUploadedFiles(prev => {
       const updated = prev.filter(f => f.id !== fileId);
-      // Notify parent immediately with updated list
       onFilesSelected(updated);
       return updated;
     });
-    // Clear success message when removing files
     setSuccess('');
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
   return (
     <div className="file-upload-container">
-      {/* زر رفع الملفات */}
       <input
         ref={fileInputRef}
         type="file"
@@ -284,18 +142,15 @@ const FileUpload: React.FC<FileUploadProps> = ({
         className="upload-simple-button"
         disabled={isProcessing}
       >
-        {isProcessing ? (
-          <>
-            <Loader2 className="spinning-icon" size={18} />
-            جاري الرفع...
-          </>
-        ) : (
-          <>
-            <Upload size={18} />
-            {buttonLabel}
-          </>
-        )}
+        <Upload size={18} />
+        <span>{buttonLabel}</span>
       </button>
+
+      <UploadSnackbar
+        isVisible={isProcessing}
+        variant="Drive"
+        label="جاري رفع الصورة..."
+      />
 
       {error && (
         <div className="alert alert-error">
@@ -311,37 +166,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         </div>
       )}
 
-      {uploadedFiles.length > 0 && (
-        <div className="uploaded-files-simple">
-          {uploadedFiles.map((file) => (
-            <div key={file.id} className="file-item-simple">
-              <div className="file-info-simple">
-                <div className="file-icon-simple">
-                  IMG
-                </div>
-                <div className="file-details-simple">
-                  <span className="file-name-simple">{file.name}</span>
-                  <span className="file-size-simple">{formatFileSize(file.size)}</span>
-                </div>
-              </div>
-              <div className="file-actions-simple">
-                <label className="checkbox-label-simple">
-                  <input type="checkbox" />
-                  <span className="checkbox-custom-simple" />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => removeFile(file.id)}
-                  className="remove-button-simple"
-                  title="حذف"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <FileUploadList files={uploadedFiles} onRemoveFile={removeFile} />
     </div>
   );
 };

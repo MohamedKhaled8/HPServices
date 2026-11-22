@@ -3,7 +3,7 @@
  * In production mode, all logs are suppressed except for errors.
  */
 
-const isDev = import.meta.env.DEV;
+const isDev = Boolean(import.meta.env?.DEV);
 
 export const logger = {
     log: (...args: any[]) => {

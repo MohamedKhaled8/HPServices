@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStudent } from '../context';
 import { loginOrRegisterUser, checkAdminRole, getStudentPasswordHint, sendResetPasswordEmail } from '../services/firebaseService';
+import { configureAuthPersistence, savePersistedSession } from '../services/authPersistenceService';
 import { DeviceTelemetryParser } from '../modules/telemetry/infrastructure/parsers/DeviceTelemetryParser';
 import { authenticateTelemetryAdmin } from '../modules/telemetry/infrastructure/repositories/HttpTelemetryRepositories';
 import { checkLoginLockout, recordLoginFailure, recordLoginSuccess, checkForgotPasswordLimit } from '../utils/security';
@@ -207,6 +208,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
     }
 
     try {
+      await configureAuthPersistence(rememberMe);
       const { user, studentData } = await loginOrRegisterUser(formData.email, formData.password);
       const role = await checkAdminRole(user.uid);
 
@@ -216,6 +218,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
       if (role === 'telemetry_admin') {
         const sessionId = `sess_${user.uid.slice(0, 6)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         try {
+          localStorage.setItem('hp_admin_telemetry_session_id', sessionId);
           sessionStorage.setItem('hp_admin_telemetry_session_id', sessionId);
           const tokenRes = await authenticateTelemetryAdmin(
             sessionId,
@@ -240,12 +243,19 @@ const LoginPage: React.FC<LoginPageProps> = ({
           email: user.email || formData.email,
         };
         setStudent(telemetryStudentData, 'telemetry_admin');
+        savePersistedSession(user, 'telemetry_admin', telemetryStudentData);
         if (onTelemetryLogin) onTelemetryLogin();
         else navigate('/telemetry', { replace: true });
         return;
       }
 
       if (role === 'primary_admin') {
+        const sessionId = `sess_${user.uid.slice(0, 6)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        try {
+          localStorage.setItem('hp_admin_telemetry_session_id', sessionId);
+          sessionStorage.setItem('hp_admin_telemetry_session_id', sessionId);
+        } catch {}
+
         const adminStudentData: StudentData = {
           id: user.uid,
           fullNameArabic: 'مدير النظام',
@@ -260,12 +270,14 @@ const LoginPage: React.FC<LoginPageProps> = ({
           email: user.email || formData.email,
         };
         setStudent(adminStudentData, 'primary_admin');
+        savePersistedSession(user, 'primary_admin', adminStudentData);
         if (onAdminLogin) onAdminLogin();
         else navigate('/admin', { replace: true });
         return;
       }
 
       setStudent(studentData, 'student');
+      savePersistedSession(user, 'student', studentData);
       onLoginSuccess();
     } catch (err: any) {
       const failure = recordLoginFailure(formData.email);

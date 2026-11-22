@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { auth } from '../../../config/firebase';
 import { DeviceTelemetryParser } from '../infrastructure/parsers/DeviceTelemetryParser';
 import { HttpSessionRepository } from '../infrastructure/repositories/HttpTelemetryRepositories';
+import { ManageSessionUseCase } from '../domain/usecases/ManageSessionUseCase';
 
 const SESSION_STORAGE_KEY = 'hp_admin_telemetry_session_id';
 const REGISTERED_FLAG_KEY = 'hp_admin_telemetry_session_registered';
@@ -11,7 +12,10 @@ const inFlightRegistrations = new Set<string>();
 
 export function getCurrentTrackedSessionId(): string | null {
   try {
-    return sessionStorage.getItem(SESSION_STORAGE_KEY);
+    return (
+      localStorage.getItem(SESSION_STORAGE_KEY) ||
+      sessionStorage.getItem(SESSION_STORAGE_KEY)
+    );
   } catch {
     return null;
   }
@@ -34,12 +38,21 @@ export function broadcastSessionRevocation(payload: {
 
 function getOrCreateSessionId(uid: string): string {
   try {
-    const existing = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    const existing =
+      localStorage.getItem(SESSION_STORAGE_KEY) ||
+      sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (existing && existing.startsWith(`sess_${uid.slice(0, 6)}_`)) {
+      try {
+        localStorage.setItem(SESSION_STORAGE_KEY, existing);
+        sessionStorage.setItem(SESSION_STORAGE_KEY, existing);
+      } catch {}
       return existing;
     }
     const created = `sess_${uid.slice(0, 6)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    sessionStorage.setItem(SESSION_STORAGE_KEY, created);
+    try {
+      localStorage.setItem(SESSION_STORAGE_KEY, created);
+      sessionStorage.setItem(SESSION_STORAGE_KEY, created);
+    } catch {}
     return created;
   } catch {
     return `sess_${uid.slice(0, 6)}_${Date.now()}`;
@@ -48,6 +61,7 @@ function getOrCreateSessionId(uid: string): string {
 
 export function clearTrackedSessionId(): void {
   try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
     sessionStorage.removeItem(SESSION_STORAGE_KEY);
     sessionStorage.removeItem(REGISTERED_FLAG_KEY);
   } catch {
@@ -110,11 +124,17 @@ export function useAdminSessionGuard(
       if (isCancelled) return;
       try {
         const res = await repo.heartbeat(sessionId);
-        if (res.shouldLogout) {
+        if (ManageSessionUseCase.shouldTriggerLogout(res)) {
           await triggerForcedExit();
+          return;
+        }
+
+        if (ManageSessionUseCase.shouldReRegister(res)) {
+          sessionStorage.removeItem(REGISTERED_FLAG_KEY);
+          void register();
         }
       } catch {
-        // Transient network hiccup; next heartbeat retries
+        // Network drops, offline sleep, or 5xx: keep session alive locally
       }
     };
 
@@ -122,8 +142,15 @@ export function useAdminSessionGuard(
       void checkHeartbeat();
     }, HEARTBEAT_INTERVAL_MS);
 
+    let lastVisibilityCheck = 0;
     const onVisibilityChange = () => {
-      if (typeof document !== 'undefined' && !document.hidden) {
+      const now = Date.now();
+      if (
+        typeof document !== 'undefined' &&
+        !document.hidden &&
+        now - lastVisibilityCheck > 10_000
+      ) {
+        lastVisibilityCheck = now;
         void checkHeartbeat();
       }
     };

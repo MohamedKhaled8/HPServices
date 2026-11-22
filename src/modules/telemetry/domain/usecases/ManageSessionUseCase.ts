@@ -26,4 +26,12 @@ export class ManageSessionUseCase {
     if (session.status !== 'active') return 0;
     return Math.max(0, Math.floor((session.expiresAtMs - nowMs) / 1000));
   }
+
+  static shouldTriggerLogout(heartbeatResult: { shouldLogout?: boolean; status: string }): boolean {
+    return Boolean(heartbeatResult.shouldLogout && heartbeatResult.status === 'revoked');
+  }
+
+  static shouldReRegister(heartbeatResult: { status: string; needsReRegistration?: boolean }): boolean {
+    return heartbeatResult.status === 'expired' || Boolean(heartbeatResult.needsReRegistration);
+  }
 }

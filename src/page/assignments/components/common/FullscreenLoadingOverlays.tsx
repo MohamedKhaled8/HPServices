@@ -1,7 +1,7 @@
 import React from 'react';
-import { Loader2 } from 'lucide-react';
 import { TrackKey } from '../../../../services/firebaseService';
 import { getPathLastName } from '../../utils/folderUtils';
+import { UploadSnackbar } from '../../../../components/common/UploadSnackbar';
 
 export interface FullscreenLoadingOverlaysProps {
   isRemovingFromUsers: boolean;
@@ -14,34 +14,24 @@ export interface FullscreenLoadingOverlaysProps {
 
 export const FullscreenLoadingOverlays: React.FC<FullscreenLoadingOverlaysProps> = ({
   isRemovingFromUsers,
-  folderDeleteLoading
+  folderDeleteLoading,
 }) => {
-  return (
-    <>
-      {/* Removing from users loading overlay */}
-      {isRemovingFromUsers && (
-        <div className="removing-users-overlay">
-          <div className="removing-users-content">
-            <Loader2 size={40} className="spinning-loader-large" />
-            <p>جاري حذف الملفات من حسابات الطلاب...</p>
-            <span>يرجى الانتظار وعدم إغلاق الصفحة</span>
-          </div>
-        </div>
-      )}
+  const isVisible = !!folderDeleteLoading || isRemovingFromUsers;
+  let label = '';
 
-      {folderDeleteLoading && (
-        <div className="removing-users-overlay">
-          <div className="removing-users-content">
-            <Loader2 size={40} className="spinning-loader-large" />
-            <p>
-              جاري حذف المجلد{' '}
-              <strong dir="ltr">{getPathLastName(folderDeleteLoading.folderPath) || folderDeleteLoading.folderPath}</strong>
-              {folderDeleteLoading.scope === 'track' ? ' وكل محتوياته من المسار...' : ' وكل محتوياته من الـ 130...'}
-            </p>
-            <span>يرجى الانتظار — قد يستغرق ذلك بضع ثوانٍ</span>
-          </div>
-        </div>
-      )}
-    </>
+  if (folderDeleteLoading) {
+    const folderName = getPathLastName(folderDeleteLoading.folderPath) || folderDeleteLoading.folderPath;
+    label = `جاري حذف المجلد ${folderName}...`;
+  } else if (isRemovingFromUsers) {
+    label = 'جاري حذف الملفات من حسابات الطلاب...';
+  }
+
+  return (
+    <UploadSnackbar
+      isVisible={isVisible}
+      label={label}
+      variant="Drive"
+      showTimer={true}
+    />
   );
 };

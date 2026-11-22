@@ -1,0 +1,219 @@
+/* ==========================================================================
+   HP Services - Pixel-Grid LoadingState Component CSS
+   3x3 Pixel Grid: 4px cells, 1.5px gap, 1px radius (Drive/Orbit) & full circle (Dots)
+   13px Shimmering Label, 12px Monospace Timer
+   ========================================================================== */
+
+:root {
+  --hp-pixel-cell-size: 4px;
+  --hp-pixel-cell-gap: 1.5px;
+}
+
+/* Base Component Container */
+.hp-pixel-loading-state {
+  --hp-pixel-color: var(--text-primary, #0f172a);
+  --hp-text-color: var(--text-primary, #0f172a);
+  --hp-timer-color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  vertical-align: middle;
+  line-height: 1;
+  user-select: none;
+  font-family: 'Cairo', sans-serif;
+  box-sizing: border-box;
+}
+
+/* On dark theme / dark status container */
+.dark .hp-pixel-loading-state,
+.hp-pixel-loading-state.hp-pixel-on-dark,
+.hp-upload-snackbar-pill .hp-pixel-loading-state,
+.track-upload-status-badge .hp-pixel-loading-state,
+.upload-loading-state-wrapper .hp-pixel-loading-state,
+.folder-preview-upload-badge .hp-pixel-loading-state {
+  --hp-pixel-color: #ffffff;
+  --hp-text-color: #ffffff;
+  --hp-timer-color: #93c5fd;
+}
+
+/* Exact Crisp 3x3 Grid: 4px cells, 1.5px gap (15px x 15px) */
+.hp-pixel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, var(--hp-pixel-cell-size));
+  grid-template-rows: repeat(3, var(--hp-pixel-cell-size));
+  gap: var(--hp-pixel-cell-gap);
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+/* 4px Pixel Cell */
+.hp-pixel-cell {
+  width: var(--hp-pixel-cell-size);
+  height: var(--hp-pixel-cell-size);
+  background-color: var(--hp-pixel-color);
+  opacity: 0.15;
+  will-change: opacity;
+  animation-name: pixel-on;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+/* 1px radius for Drive and Orbit */
+.hp-variant-drive .hp-pixel-cell,
+.hp-variant-orbit .hp-pixel-cell,
+.hp-cell-square {
+  border-radius: 1px;
+}
+
+/* Full circle (rounded-full) for Dots */
+.hp-variant-dots .hp-pixel-cell,
+.hp-cell-dot {
+  border-radius: 9999px;
+}
+
+/* 13px Shimmering Text Label */
+.hp-pixel-label {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  background: linear-gradient(
+    90deg,
+    var(--hp-text-color) 0%,
+    var(--primary, #3b82f6) 50%,
+    var(--hp-text-color) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-text 2.6s linear infinite;
+  white-space: nowrap;
+}
+
+.dark .hp-pixel-label,
+.hp-pixel-loading-state.hp-pixel-on-dark .hp-pixel-label,
+.hp-upload-snackbar-pill .hp-pixel-label,
+.track-upload-status-badge .hp-pixel-label,
+.upload-loading-state-wrapper .hp-pixel-label,
+.folder-preview-upload-badge .hp-pixel-label {
+  background: linear-gradient(
+    90deg,
+    #ffffff 0%,
+    #93c5fd 50%,
+    #ffffff 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* 12px Clean Monospace Timer (matching screenshot) */
+.hp-pixel-timer {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--hp-timer-color);
+  line-height: 1;
+  letter-spacing: 0;
+  display: inline-block;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* ==========================================================================
+   True Floating Upload Snackbar (Viewport Portal, Centered Bottom)
+   ========================================================================== */
+
+.hp-upload-snackbar-floating {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999;
+  pointer-events: none;
+  animation: hpSnackbarSlideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  contain: layout style;
+}
+
+.hp-upload-snackbar-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 12px 20px;
+  background: #0c0e12;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  user-select: none;
+}
+
+.hp-upload-snackbar-pill .hp-pixel-loading-state {
+  gap: 12px;
+}
+
+.hp-upload-snackbar-pill .hp-pixel-label {
+  font-size: 13.5px;
+}
+
+.hp-upload-snackbar-pill .hp-pixel-timer {
+  font-size: 12.5px;
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+@keyframes hpSnackbarSlideUp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 18px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+/* Fallback badge styles for backwards compatibility */
+.track-upload-status-badge,
+.upload-loading-state-wrapper,
+.folder-preview-upload-badge {
+  display: none !important;
+}
+
+/* Keyframes */
+@keyframes pixel-on {
+  0%, 100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer-text {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Accessibility: Prefers Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .hp-pixel-cell {
+    animation: none !important;
+    opacity: 0.25 !important;
+  }
+  .hp-pixel-label {
+    animation: none !important;
+    background: none !important;
+    color: var(--hp-text-color) !important;
+    -webkit-text-fill-color: initial !important;
+  }
+}

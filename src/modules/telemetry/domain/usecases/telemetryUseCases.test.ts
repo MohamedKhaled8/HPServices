@@ -93,3 +93,44 @@ test('ManageSessionUseCase computes remaining lease and validates session ID', (
   );
 });
 
+test('expired or missing telemetry session triggers silent re-registration and prevents auto-logout', () => {
+  // Scenario 1: Expired heartbeat response (e.g. laptop slept or closed for >30m)
+  const expiredHeartbeat = { shouldLogout: false, status: 'expired' };
+  assert.equal(
+    ManageSessionUseCase.shouldTriggerLogout(expiredHeartbeat),
+    false,
+    'Expired session must NEVER trigger auto-logout'
+  );
+  assert.equal(
+    ManageSessionUseCase.shouldReRegister(expiredHeartbeat),
+    true,
+    'Expired session must automatically signal re-registration'
+  );
+
+  // Scenario 2: Server signals re-registration required
+  const needsReRegHeartbeat = { shouldLogout: false, status: 'active', needsReRegistration: true };
+  assert.equal(
+    ManageSessionUseCase.shouldTriggerLogout(needsReRegHeartbeat),
+    false,
+    'Re-registration request must not trigger logout'
+  );
+  assert.equal(
+    ManageSessionUseCase.shouldReRegister(needsReRegHeartbeat),
+    true,
+    'Session with needsReRegistration must trigger fresh registration'
+  );
+
+  // Scenario 3: Explicit remote security revocation by telemetry admin
+  const revokedHeartbeat = { shouldLogout: true, status: 'revoked' };
+  assert.equal(
+    ManageSessionUseCase.shouldTriggerLogout(revokedHeartbeat),
+    true,
+    'Only explicitly revoked session triggers forced logout'
+  );
+  assert.equal(
+    ManageSessionUseCase.shouldReRegister(revokedHeartbeat),
+    false,
+    'Revoked session must not re-register'
+  );
+});
+

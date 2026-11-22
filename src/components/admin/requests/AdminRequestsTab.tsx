@@ -16,6 +16,7 @@ import AdminRequestsBulkActions from './AdminRequestsBulkActions';
 import EditRequestModal from './EditRequestModal';
 import DocumentViewerModal from './DocumentViewerModal';
 import DefaultColumnsModal from './DefaultColumnsModal';
+import AdminRequestsPaginationBar from './AdminRequestsPaginationBar';
 import {
   REQUEST_SPREADSHEET_STANDARD_KEYS,
   workflowStatusLabelAr,
@@ -99,6 +100,17 @@ export interface AdminRequestsTabProps {
   showAlert: (title: string, message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   showConfirm: (title: string, message: string, onConfirm: () => void, confirmLabel?: string) => void;
   setToastState: React.Dispatch<React.SetStateAction<{ message: string; type: 'loading' | 'success' | 'error'; duration?: number } | null>>;
+
+  // Real-Time Pagination & Stats Extensions
+  isLoadingMoreServiceRequests?: boolean;
+  hasMoreServiceRequests?: boolean;
+  handleLoadMoreServiceRequests?: (serviceId: string) => Promise<void>;
+  updateLocalRequest?: (requestId: string, patch: Partial<ServiceRequest>) => void;
+  deleteLocalRequest?: (requestId: string) => void;
+  requestsStatsMap?: Record<string, { pending: number; total: number }>;
+  totalRequestsCount?: number;
+  syncCounters?: () => Promise<void>;
+  isSyncingCounters?: boolean;
 }
 
 export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
@@ -126,14 +138,25 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
   handleStatsLockIndicatorKeyDown,
   adminPrefs,
   showAlert,
-  setToastState
+  setToastState,
+  isLoadingMoreServiceRequests: propsIsLoadingMore,
+  hasMoreServiceRequests: propsHasMore,
+  handleLoadMoreServiceRequests: propsHandleLoadMore,
+  updateLocalRequest,
+  deleteLocalRequest,
+  requestsStatsMap,
+  totalRequestsCount,
+  syncCounters,
+  isSyncingCounters
 }) => {
   // Local state for search & pagination
   const [serviceSearchTerm, setServiceSearchTerm] = useState<string>('');
   const [requestVisibleLimits, setRequestVisibleLimits] = useState<Record<string, number>>({});
   const [serviceLastSnapshots, setServiceLastSnapshots] = useState<Record<string, any>>({});
   const [serviceHasMore, setServiceHasMore] = useState<Record<string, boolean>>({});
-  const [isLoadingMoreServiceRequests, setIsLoadingMoreServiceRequests] = useState<boolean>(false);
+  const [localIsLoadingMore, setLocalIsLoadingMore] = useState<boolean>(false);
+  const isLoadingMoreServiceRequests = propsIsLoadingMore ?? localIsLoadingMore;
+  const setIsLoadingMoreServiceRequests = setLocalIsLoadingMore;
 
   // Bulk selection & processing
   const [selectedRequestKeys, setSelectedRequestKeys] = useState<Set<string>>(new Set());
@@ -227,8 +250,12 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
     );
   }, [bookConfig?.serviceName, assignmentsConfig?.serviceName, finalReviewConfig?.serviceName]);
 
-  // Request stats & grouping
+  // Request stats & grouping (Uses real-time single counter doc map when available, with fallback)
   const requestStatsByServiceId = useMemo(() => {
+    if (requestsStatsMap) {
+      const hasAnyPositive = Object.values(requestsStatsMap).some(s => s && s.total > 0);
+      if (hasAnyPositive) return requestsStatsMap;
+    }
     const m: Record<string, { pending: number; total: number }> = {};
     for (const r of serviceRequests) {
       const sid = String(r.serviceId ?? '');
@@ -237,8 +264,26 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       m[sid].total += 1;
       if (normalizeWorkflowStatus(r.status) === 'pending') m[sid].pending += 1;
     }
-    return m;
-  }, [serviceRequests]);
+    return requestsStatsMap || m;
+  }, [requestsStatsMap, serviceRequests]);
+
+  const displayTotalCount = useMemo(() => {
+    if (typeof totalRequestsCount === 'number' && totalRequestsCount > 0) {
+      return totalRequestsCount;
+    }
+    if (requestsStatsMap) {
+      const sum = Object.values(requestsStatsMap).reduce((acc, curr) => acc + (curr?.total || 0), 0);
+      if (sum > 0) return sum;
+    }
+    if (serviceTotalCounts) {
+      const sum = Object.values(serviceTotalCounts).reduce((acc, curr) => acc + (curr || 0), 0);
+      if (sum > 0) return sum;
+    }
+    if (serviceRequests.length > 0) {
+      return serviceRequests.length;
+    }
+    return 0;
+  }, [totalRequestsCount, requestsStatsMap, serviceTotalCounts, serviceRequests.length]);
 
   const requestsByServiceId = useMemo(() => {
     const m: Record<string, ServiceRequest[]> = {};
@@ -622,9 +667,9 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
   // Request actions & handlers
   const handleStatusChange = async (requestId: string, status: ServiceRequestWorkflowStatus, serviceId: string) => {
     try {
-      await updateServiceRequestStatus(requestId, status, serviceId);
-
       const request = serviceRequests.find(r => r.id === requestId);
+      await updateServiceRequestStatus(requestId, status, serviceId, request?.status);
+      updateLocalRequest?.(requestId, { status });
       let studentName = '';
       let whatsappNumber = '';
       let nationalID = '';
@@ -1025,7 +1070,9 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       return;
     }
     try {
-      await deleteServiceRequest(requestId, serviceId);
+      const request = serviceRequests.find(r => r.id === requestId);
+      await deleteServiceRequest(requestId, serviceId, request?.status);
+      deleteLocalRequest?.(requestId);
       setToastState({ message: 'تم حذف الطلب بنجاح', type: 'success' });
     } catch (error: any) {
       setToastState({ message: error.message || 'حدث خطأ أثناء حذف الطلب', type: 'error' });
@@ -1316,6 +1363,11 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
   };
 
   const handleLoadMoreServiceRequests = async (serviceId: string) => {
+    if (propsHandleLoadMore) {
+      await propsHandleLoadMore(serviceId);
+      return;
+    }
+
     const currentVisLimit = requestVisibleLimits[serviceId] || 50;
     const pool = requestsByServiceId[serviceId] ?? [];
 
@@ -1476,9 +1528,39 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
               <span className="requests-section-heading-sync-text">جاري تحميل البيانات من السيرفر</span>
             </span>
           ) : (
-            <span className="requests-section-heading-count" title="إجمالي الطلبات عبر كل الخدمات">
-              {serviceRequests.length}
-            </span>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+              <span className="requests-section-heading-count" title="إجمالي الطلبات عبر كل الخدمات">
+                {displayTotalCount}
+              </span>
+              {syncCounters && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await syncCounters();
+                      setToastState({ message: 'تمت مزامنة العدادات بنجاح', type: 'success', duration: 2500 });
+                    } catch (err) {
+                      console.error('مزامنة العدادات error:', err);
+                      setToastState({ message: 'فشلت مزامنة العدادات', type: 'error', duration: 2500 });
+                    }
+                  }}
+                  disabled={isSyncingCounters}
+                  title="مزامنة العدادات من السيرفر"
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    backgroundColor: '#1e293b',
+                    color: '#94a3b8',
+                    border: '1px solid rgba(148,163,184,0.2)',
+                    cursor: isSyncingCounters ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isSyncingCounters ? 'جاري المزامنة...' : 'مزامنة العدادات'}
+                </button>
+              )}
+            </div>
           )}
         </h2>
 
@@ -1611,7 +1693,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
               {(() => {
                 const filteredRequests = adminRequestsFilteredSorted;
 
-                if (!dataReady) {
+                if (!dataReady && serviceRequests.length === 0) {
                   return (
                     <div className="no-requests-message" style={{ textAlign: 'center', padding: '40px 20px' }}>
                       <div className="loader-spinner" style={{ margin: '0 auto 16px', width: 36, height: 36, border: '3px solid #e2e8f0', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -1865,8 +1947,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
                       return 0;
                     });
 
-                const currentLimit = selectedServiceId ? (requestVisibleLimits[selectedServiceId] || 50) : 50;
-                const displayRequests = serviceSearchTerm.trim() ? sortedRequests : sortedRequests.slice(0, currentLimit);
+                const displayRequests = sortedRequests;
 
                 const duplicateCountByRow = computeRequestDuplicateCounts(displayRequests, students);
                 const requestsColCount = 3 + dataColumnCount + 2;
@@ -2145,38 +2226,21 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
                       setShowCustomOrderInModal={setShowCustomOrderInModal}
                     />
 
-                    {selectedServiceId && !serviceSearchTerm.trim() && (
-                      (serviceTotalCounts[selectedServiceId] != null && displayRequests.length < serviceTotalCounts[selectedServiceId]) ||
-                      (serviceHasMore[selectedServiceId] !== false) ||
-                      (sortedRequests.length > displayRequests.length)
-                    ) && (
-                      <div style={{ textAlign: 'center', margin: '24px 0 16px', display: 'flex', justifyContent: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleLoadMoreServiceRequests(selectedServiceId)}
-                          disabled={isLoadingMoreServiceRequests}
-                          style={{
-                            padding: '12px 28px',
-                            backgroundColor: isLoadingMoreServiceRequests ? '#94a3b8' : '#2563eb',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '12px',
-                            fontSize: '15px',
-                            fontWeight: 700,
-                            cursor: isLoadingMoreServiceRequests ? 'not-allowed' : 'pointer',
-                            boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            transition: 'all 0.2s ease'
-                          }}
-                        >
-                          <span>{isLoadingMoreServiceRequests ? 'جاري تحميل الدفعة التالية...' : 'تحميل المزيد (+50 طلب)'}</span>
-                          <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '20px' }}>
-                            المعروض {displayRequests.length} {serviceTotalCounts[selectedServiceId] != null ? `من أصل ${serviceTotalCounts[selectedServiceId]}` : `من أصل ${sortedRequests.length}`}
-                          </span>
-                        </button>
-                      </div>
+                    {!serviceSearchTerm.trim() && (
+                      <AdminRequestsPaginationBar
+                        isLoadingMore={isLoadingMoreServiceRequests}
+                        hasMore={propsHasMore ?? (serviceHasMore[selectedServiceId] !== false)}
+                        displayCount={displayRequests.length}
+                        totalCount={
+                          (serviceTotalCounts[selectedServiceId] && serviceTotalCounts[selectedServiceId] > 0)
+                            ? serviceTotalCounts[selectedServiceId]
+                            : (requestsStatsMap?.[selectedServiceId]?.total && requestsStatsMap[selectedServiceId].total > 0)
+                              ? requestsStatsMap[selectedServiceId].total
+                              : null
+                        }
+                        onLoadMore={() => handleLoadMoreServiceRequests(selectedServiceId)}
+                        batchSize={50}
+                      />
                     )}
                   </>
                 );

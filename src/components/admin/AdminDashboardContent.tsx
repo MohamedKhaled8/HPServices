@@ -126,6 +126,15 @@ export const AdminDashboardContent: React.FC<AdminDashboardContentProps> = ({
           showAlert={showAlert}
           showConfirm={showConfirm}
           setToastState={setToastState as any}
+          isLoadingMoreServiceRequests={dashboard.isLoadingMoreServiceRequests}
+          hasMoreServiceRequests={dashboard.hasMoreServiceRequests}
+          handleLoadMoreServiceRequests={dashboard.handleLoadMoreServiceRequests}
+          updateLocalRequest={dashboard.updateLocalRequest}
+          deleteLocalRequest={dashboard.deleteLocalRequest}
+          requestsStatsMap={dashboard.requestsStats?.serviceStatsMap}
+          totalRequestsCount={dashboard.totalRequestsCount}
+          syncCounters={dashboard.requestsStats?.syncCounters}
+          isSyncingCounters={dashboard.requestsStats?.isSyncing}
         />
       )}
 
@@ -215,6 +224,7 @@ export const AdminDashboardContent: React.FC<AdminDashboardContentProps> = ({
       {activeTab === 'statistics' && (
         <AdminStatisticsTab
           serviceRequests={serviceRequests}
+          serviceTotalCounts={dashboard.requestsStats?.serviceStatsMap}
           adminPrefs={configs.adminPrefs}
           setAdminPrefs={configs.setAdminPrefs}
           updateAdminPreferences={configs.updateAdminPreferences}

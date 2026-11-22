@@ -1,36 +1,37 @@
 import React from 'react';
+import '../../styles/LoadingIndicator.css';
+import MorphingSquare from './MorphingSquare';
+import { LoadingDotsProps, mapLoadingDotsToProps } from './morphingSquareCore.ts';
 
-interface LoadingDotsProps {
-  text?: string;
-  className?: string;
-  fullScreen?: boolean;
-}
+export type { LoadingDotsProps };
 
 export const LoadingDots: React.FC<LoadingDotsProps> = ({
   text,
   className = '',
-  fullScreen = false
+  fullScreen = false,
+  size = 'md'
 }) => {
-  const content = (
-    <div className={`modern-loader ${className}`}>
-      <div className="dots-loader" role="status" aria-label="جاري التحميل">
-        <span className="dot"></span>
-        <span className="dot"></span>
-        <span className="dot"></span>
-      </div>
-      {text && <p>{text}</p>}
-    </div>
-  );
+  const morphProps = mapLoadingDotsToProps({ text, className, size });
 
   if (fullScreen) {
     return (
-      <div className="loading-container" style={{ position: 'fixed', zIndex: 9999 }}>
-        {content}
+      <div
+        className="loading-container hp-loader-overlay"
+        style={{ position: 'fixed', zIndex: 99999 }}
+        dir="rtl"
+        role="status"
+        aria-live="polite"
+      >
+        <MorphingSquare {...morphProps} />
       </div>
     );
   }
 
-  return content;
+  return (
+    <div className="hp-loader-inline" dir="rtl">
+      <MorphingSquare {...morphProps} />
+    </div>
+  );
 };
 
 export default LoadingDots;
