@@ -12,6 +12,7 @@ export interface TracksManagementTabProps {
   setOpenedTrack: React.Dispatch<React.SetStateAction<TrackKey | null>>;
   setActiveTrackFolder: React.Dispatch<React.SetStateAction<TrackKey>>;
   trackFiles: Record<TrackKey, any[]>;
+  trackFolders?: Record<TrackKey, AssignmentFolderMeta[]>;
   selectedFileIds: Record<TrackKey, Set<string>>;
   setSelectedFileIds: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
   uploadProgress: Record<TrackKey, { current: number; total: number }>;
@@ -48,6 +49,7 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
   setOpenedTrack,
   setActiveTrackFolder,
   trackFiles,
+  trackFolders,
   selectedFileIds,
   setSelectedFileIds,
   uploadProgress,
@@ -188,6 +190,8 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                 onDeleteFolder={handleDeleteTrackFolder}
                 onRevokeFolder={handleRevokeFolderFromStudents}
                 onDeleteFile={handleDeleteSingleTrackFile}
+                allFolders={trackFolders && openedTrack ? trackFolders[openedTrack] : undefined}
+                allTrackFiles={trackFiles && openedTrack ? trackFiles[openedTrack] : undefined}
               />
             </div>
           </div>

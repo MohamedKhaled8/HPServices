@@ -1,3 +1,13 @@
+export const stripUndefined = <T extends Record<string, unknown>>(data: T): Partial<T> => {
+  const clean: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(data)) {
+    if (val !== undefined) {
+      clean[key] = val;
+    }
+  }
+  return clean as Partial<T>;
+};
+
 // Pure folder and path helper functions extracted from src/page/AssignmentsManagementPage.tsx
 import type { AssignmentFolderMeta } from '../../../services/firebaseService';
 
@@ -5,7 +15,8 @@ export const mergeFoldersByPath = (a: AssignmentFolderMeta[], b: AssignmentFolde
   const map = new Map<string, AssignmentFolderMeta>();
   [...a, ...b].forEach((f) => {
     if (!f?.path) return;
-    map.set(f.path, f);
+    const existing = map.get(f.path);
+    map.set(f.path, existing ? { ...existing, ...f } : f);
   });
   return Array.from(map.values());
 };

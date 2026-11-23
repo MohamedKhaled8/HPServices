@@ -88,7 +88,11 @@ const uploadToGoogleDrive = async (file: File): Promise<UploadResult> => {
         };
     } catch (error: any) {
         logger.error('Error uploading to Google Drive:', error);
-        throw new Error(`فشل رفع الملف على Google Drive: ${error.message}`);
+        const msg = error?.message || 'خطأ غير معروف';
+        if (msg.includes('فشل الاتصال بـ /api/getDriveToken')) {
+            throw error;
+        }
+        throw new Error(`فشل رفع الملف على Google Drive: ${msg}`);
     }
 };
 

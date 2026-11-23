@@ -1,7 +1,8 @@
-import { TrackKey } from '../../../services/firebaseService';
+import { TrackKey, AssignmentFolderMeta, AssignmentFileMeta } from '../../../services/firebaseService';
 import { FolderUploadGroup } from '../utils/folderHierarchyParser';
 
 export type UploadScope = 'track' | 'unified130';
+export type UploadStrategy = 'extract-subfolders' | 'keep-parent';
 
 export interface UploadBatchRequest {
   id: string;
@@ -10,6 +11,23 @@ export interface UploadBatchRequest {
   parentPath?: string;
   groups: FolderUploadGroup[];
   totalFiles: number;
+  uploadStrategy?: UploadStrategy;
+  parentFolderName?: string;
+  parentFolderId?: string | null;
+}
+
+export interface QueuedUploadJob {
+  jobId: string;
+  batchId: string;
+  scope: UploadScope;
+  targetTrackId?: TrackKey;
+  parentPath?: string;
+  uploadStrategy: UploadStrategy;
+  parentFolderName?: string;
+  parentFolderId?: string | null;
+  folderName: string;
+  files: File[];
+  onCompleteCallback?: (folder: AssignmentFolderMeta, files: AssignmentFileMeta[]) => void;
 }
 
 export interface UploadProgressState {
@@ -30,4 +48,6 @@ export interface InterruptedBatchMetadata {
   completedFolders: string[];
   pendingFolders: string[];
   timestamp: number;
+  uploadStrategy?: UploadStrategy;
+  parentFolderName?: string;
 }

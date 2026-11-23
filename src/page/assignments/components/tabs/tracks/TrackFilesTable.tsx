@@ -2,6 +2,7 @@ import React from 'react';
 import { TrackKey, AssignmentFolderMeta } from '../../../../../services/firebaseService';
 import { TrackFolderRow } from './TrackFolderRow';
 import { TrackFileRow } from './TrackFileRow';
+import { computeAggregateFolderCounts } from '../../../utils/folderTreeUtils';
 
 interface TrackFilesTableProps {
   openedTrack: TrackKey;
@@ -23,6 +24,8 @@ interface TrackFilesTableProps {
   onDeleteFolder: (track: TrackKey, folderPath: string) => void;
   onRevokeFolder?: (track: TrackKey, folderPath: string) => void;
   onDeleteFile: (track: TrackKey, fileId: string) => void;
+  allFolders?: AssignmentFolderMeta[];
+  allTrackFiles?: any[];
 }
 
 export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
@@ -41,6 +44,8 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
   onDeleteFolder,
   onRevokeFolder,
   onDeleteFile,
+  allFolders,
+  allTrackFiles,
 }) => {
   if (visibleFolders.length === 0 && visibleFiles.length === 0) {
     return <div className="no-items-message">لا توجد عناصر داخل هذا المجلد بعد</div>;
@@ -89,6 +94,10 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
             folderDeleteLoading.track === openedTrack &&
             folderDeleteLoading.folderPath === folder.path;
 
+          const agg = (allFolders && allTrackFiles)
+            ? computeAggregateFolderCounts(folder, allFolders, allTrackFiles)
+            : undefined;
+
           return (
             <TrackFolderRow
               key={`folder-${folder.id}`}
@@ -103,6 +112,7 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
               onNavigateToFolder={onNavigateToFolder}
               onDeleteFolder={onDeleteFolder}
               onRevokeFolder={onRevokeFolder}
+              aggregateCounts={agg}
             />
           );
         })}

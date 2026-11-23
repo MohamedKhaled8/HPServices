@@ -71,14 +71,9 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
               id: user.uid,
               fullNameArabic: role === 'telemetry_admin' ? 'مشرف المراقبة والأمان' : 'مدير النظام',
               vehicleNameEnglish: role === 'telemetry_admin' ? 'Telemetry Admin' : 'Admin',
-              whatsappNumber: '',
-              diplomaYear: '',
-              diplomaType: '',
-              track: '',
-              nationalID: '',
+              whatsappNumber: '', diplomaYear: '', diplomaType: '', track: '', nationalID: '',
               address: { governorate: '', city: '', street: '', building: '', siteNumber: '' },
-              course: '',
-              email: user.email || ''
+              course: '', email: user.email || ''
             };
             setStudent(adminData);
             savePersistedSession(user, role, adminData);
@@ -175,17 +170,24 @@ export const StudentProvider: React.FC<{ children: ReactNode }> = ({ children })
     logout: handleLogout
   };
 
-  if (isLoading) {
-    return <LoadingDots fullScreen text="جارٍ التحميل..." />;
-  }
-
-  return <StudentContext.Provider value={value}>{children}</StudentContext.Provider>;
+  return (
+    <StudentContext.Provider value={value}>
+      {isLoading ? <LoadingDots fullScreen text="جارٍ التحميل..." /> : children}
+    </StudentContext.Provider>
+  );
 };
 
-export const useStudent = () => {
+export const useStudent = (): StudentContextType => {
   const context = useContext(StudentContext);
   if (context === undefined) {
-    throw new Error('useStudent must be used within StudentProvider');
+    const cached = getPersistedSession();
+    const role = cached?.role || 'student';
+    return {
+      student: cached?.student || null, setStudent: () => {}, isLoggedIn: Boolean(cached?.student),
+      isAdmin: role === 'primary_admin', isTelemetryAdmin: role === 'telemetry_admin', adminRole: role,
+      isAuthLoading: false, serviceRequests: [], addServiceRequest: async () => {},
+      updateServiceRequest: () => {}, getServiceRequest: () => undefined, logout: async () => {}
+    };
   }
   return context;
 };

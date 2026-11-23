@@ -14,6 +14,7 @@ interface TrackFolderRowProps {
   onNavigateToFolder: (folderPath: string) => void;
   onDeleteFolder: (track: TrackKey, folderPath: string) => void;
   onRevokeFolder?: (track: TrackKey, folderPath: string) => void;
+  aggregateCounts?: { subfoldersCount: number; totalFilesCount: number; isParent: boolean };
 }
 
 export const TrackFolderRow: React.FC<TrackFolderRowProps> = ({
@@ -28,7 +29,16 @@ export const TrackFolderRow: React.FC<TrackFolderRowProps> = ({
   onNavigateToFolder,
   onDeleteFolder,
   onRevokeFolder,
+  aggregateCounts,
 }) => {
+  const isParent = Boolean(
+    folder.isParentFolder ||
+    (typeof folder.subfoldersCount === 'number' && folder.subfoldersCount > 0) ||
+    aggregateCounts?.isParent
+  );
+  const subCount = aggregateCounts?.subfoldersCount ?? folder.subfoldersCount ?? 0;
+  const fileCount = aggregateCounts?.totalFilesCount ?? filesInFolder.length ?? folder.totalFilesCount ?? 0;
+
   return (
     <tr key={`folder-${folder.id}`}>
       <td>
@@ -56,9 +66,33 @@ export const TrackFolderRow: React.FC<TrackFolderRowProps> = ({
           type="button"
           disabled={!!folderDeleteLoading || isDeletingTrack}
           onClick={() => onNavigateToFolder(folder.path)}
-          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#2563eb', fontWeight: 700 }}
+          style={{
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            color: '#2563eb',
+            fontWeight: 700,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
         >
-          📁 {folder.name}
+          <span>📁 {folder.name}</span>
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: 500,
+              color: isParent ? '#1d4ed8' : '#64748b',
+              background: isParent ? '#eff6ff' : '#f1f5f9',
+              padding: '2px 8px',
+              borderRadius: '999px',
+              border: isParent ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+            }}
+          >
+            {isParent
+              ? `${subCount > 0 ? `${subCount} مجلدات • ` : ''}${fileCount} ملف`
+              : `${fileCount} ملف`}
+          </span>
         </button>
       </td>
       <td>

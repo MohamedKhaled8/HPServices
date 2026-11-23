@@ -5,6 +5,7 @@ import {
   FolderUploadGroup,
   HierarchyParseResult,
 } from '../utils/folderHierarchyParser';
+import { UploadStrategy } from '../types/backgroundUpload.types';
 
 interface UseFolderUploadPreviewOptions {
   showSnackbarNotification: (message: string, type?: 'success' | 'error') => void;
@@ -20,6 +21,9 @@ export const useFolderUploadPreview = ({
   const [groups, setGroups] = useState<FolderUploadGroup[]>([]);
   const [folderName, setFolderName] = useState('');
   const [invalidCount, setInvalidCount] = useState(0);
+  const [rootFolderName, setRootFolderName] = useState('');
+  const [uploadStrategy, setUploadStrategy] = useState<UploadStrategy>('extract-subfolders');
+  const [parentFolderName, setParentFolderName] = useState('');
 
   const openPreview = useCallback(
     (targetScope: 'track' | 'unified130', rawFiles: File[], targetTrack?: TrackKey) => {
@@ -43,6 +47,9 @@ export const useFolderUploadPreview = ({
       setGroups(parsed.groups);
       setFolderName(parsed.groups[0]?.folderName || '');
       setInvalidCount(parsed.excludedCount);
+      setRootFolderName(parsed.rootFolderName || '');
+      setParentFolderName(parsed.rootFolderName || '');
+      setUploadStrategy('extract-subfolders');
       setIsOpen(true);
     },
     [showSnackbarNotification]
@@ -55,6 +62,9 @@ export const useFolderUploadPreview = ({
     setInvalidCount(0);
     setTrack(undefined);
     setMode('single');
+    setRootFolderName('');
+    setUploadStrategy('extract-subfolders');
+    setParentFolderName('');
   }, []);
 
   const updateGroupName = useCallback((index: number, newName: string) => {
@@ -88,7 +98,9 @@ export const useFolderUploadPreview = ({
       onConfirm: (
         scope: 'track' | 'unified130',
         confirmedGroups: FolderUploadGroup[],
-        targetTrack?: TrackKey
+        targetTrack?: TrackKey,
+        uploadStrategy?: UploadStrategy,
+        parentFolderName?: string
       ) => void
     ) => {
       const activeGroups = mode === 'single'
@@ -104,11 +116,16 @@ export const useFolderUploadPreview = ({
         return;
       }
 
-      // Capture exact targetTrack & scope, pass to background queue, close modal immediately
-      onConfirm(scope, validGroups, track);
+      onConfirm(
+        scope,
+        validGroups,
+        track,
+        uploadStrategy,
+        (parentFolderName.trim() || rootFolderName || 'مجلد رئيسي')
+      );
       closePreview();
     },
-    [mode, folderName, groups, scope, track, closePreview, showSnackbarNotification]
+    [mode, folderName, groups, scope, track, uploadStrategy, parentFolderName, rootFolderName, closePreview, showSnackbarNotification]
   );
 
   const singleFiles = groups[0]?.files || [];
@@ -123,6 +140,11 @@ export const useFolderUploadPreview = ({
     setFolderName,
     files: singleFiles,
     invalidCount,
+    rootFolderName,
+    uploadStrategy,
+    setUploadStrategy,
+    parentFolderName,
+    setParentFolderName,
     openPreview,
     closePreview,
     updateGroupName,

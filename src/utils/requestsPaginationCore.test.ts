@@ -83,7 +83,7 @@ test('single-click pagination simulator: advances cursor and loads +50 immediate
 
   // Initial live-head batch: 25 items
   const liveBatch = dbCollection.slice(0, 25);
-  let liveLastDoc: { id: string } | null = { id: liveBatch[liveBatch.length - 1].id };
+  let liveLastDoc: { id: string } | null = { id: liveBatch[liveBatch.length - 1].id! };
   let olderLastDoc: { id: string } | null = null;
   let olderRequests: ServiceRequest[] = [];
   let hasMore = totalDbItems > 25;
@@ -103,7 +103,7 @@ test('single-click pagination simulator: advances cursor and loads +50 immediate
     const next50 = hasMoreNext ? querySlice.slice(0, 50) : querySlice;
 
     olderRequests = [...olderRequests, ...next50];
-    olderLastDoc = next50.length > 0 ? { id: next50[next50.length - 1].id } : null;
+    olderLastDoc = next50.length > 0 ? { id: next50[next50.length - 1].id! } : null;
     hasMore = hasMoreNext;
   };
 

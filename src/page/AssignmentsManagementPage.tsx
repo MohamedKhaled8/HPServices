@@ -77,24 +77,40 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const { enqueueUpload, registerListener, isUploading: isBgUploading } = useBackgroundUpload();
 
   useEffect(() => {
-    return registerListener((batch, folder, files) => {
+    return registerListener((batch, folder, files, error) => {
+      if (error) {
+        showSnackbarNotification(error, 'error');
+        return;
+      }
       if (batch.scope === 'track' && batch.trackId) {
         const tr = batch.trackId;
-        trackFoldersProps.setTrackFolders((prev) => {
-          const next = { ...prev, [tr]: mergeFoldersByPath(prev[tr] || [], [folder]) };
-          writeCachedTrackFolders(next);
-          return next;
-        });
-        setTrackFiles((prev) => ({ ...prev, [tr]: [...(prev[tr] || []), ...files] }));
-        showSnackbarNotification(`تم رفع المجلد "${folder.name}" (${files.length} ملف) بنجاح`, 'success');
+        if (folder) {
+          trackFoldersProps.setTrackFolders((prev) => {
+            const next = { ...prev, [tr]: mergeFoldersByPath(prev[tr] || [], [folder]) };
+            writeCachedTrackFolders(next);
+            return next;
+          });
+        }
+        if (files && files.length > 0) {
+          setTrackFiles((prev) => ({ ...prev, [tr]: [...(prev[tr] || []), ...files] }));
+          showSnackbarNotification(`تم رفع المجلد "${folder?.name || ''}" (${files.length} ملف) بنجاح`, 'success');
+        } else if (folder?.isParentFolder) {
+          showSnackbarNotification(`تم إنشاء المجلد الرئيسي "${folder.name}"`, 'success');
+        }
       } else if (batch.scope === 'unified130') {
-        unifiedFoldersProps.setUnified130Folders((prev) => {
-          const next = mergeFoldersByPath(prev, [folder]);
-          writeCachedUnified130Folders(next);
-          return next;
-        });
-        setUnified130Files((prev) => [...prev, ...files]);
-        showSnackbarNotification(`تم رفع المجلد "${folder.name}" (${files.length} ملف) بنجاح`, 'success');
+        if (folder) {
+          unifiedFoldersProps.setUnified130Folders((prev) => {
+            const next = mergeFoldersByPath(prev, [folder]);
+            writeCachedUnified130Folders(next);
+            return next;
+          });
+        }
+        if (files && files.length > 0) {
+          setUnified130Files((prev) => [...prev, ...files]);
+          showSnackbarNotification(`تم رفع المجلد "${folder?.name || ''}" (${files.length} ملف) بنجاح`, 'success');
+        } else if (folder?.isParentFolder) {
+          showSnackbarNotification(`تم إنشاء المجلد الرئيسي "${folder.name}"`, 'success');
+        }
       }
     });
   }, [registerListener, trackFoldersProps.setTrackFolders, unifiedFoldersProps.setUnified130Folders, showSnackbarNotification]);
@@ -118,7 +134,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   };
 
   const handleConfirmFolderUpload = () => {
-    previewProps.handleConfirm((scope, confirmedGroups, targetTrack) => {
+    previewProps.handleConfirm((scope, confirmedGroups, targetTrack, uploadStrategy, parentFolderName) => {
       const parentPath = scope === 'unified130'
         ? (unifiedFoldersProps.unified130CurrentPath || '')
         : (targetTrack ? (trackFoldersProps.trackCurrentPath[targetTrack] || '') : '');
@@ -131,6 +147,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
         parentPath,
         groups: confirmedGroups,
         totalFiles,
+        uploadStrategy,
+        parentFolderName,
       });
 
       showSnackbarNotification(`بدأ رفع (${confirmedGroups.length}) مجلدات في الخلفية بنجاح`, 'success');
@@ -165,6 +183,10 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     onClose: previewProps.closePreview,
     mode: previewProps.mode,
     groups: previewProps.groups,
+    uploadStrategy: previewProps.uploadStrategy,
+    setUploadStrategy: previewProps.setUploadStrategy,
+    parentFolderName: previewProps.parentFolderName,
+    setParentFolderName: previewProps.setParentFolderName,
     onUpdateGroupName: previewProps.updateGroupName,
     onRemoveGroup: previewProps.removeGroup,
     onRemoveFileFromGroup: previewProps.removeFileFromGroup,

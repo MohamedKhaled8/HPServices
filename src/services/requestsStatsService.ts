@@ -30,46 +30,66 @@ let memoryCache: RequestsStatsDoc | null = null;
 export const loadStoredStats = (): RequestsStatsDoc | null => {
   if (memoryCache && memoryCache.total > 0) return memoryCache;
   try {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      const raw = window.sessionStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.total === 'number' && parsed.total > 0) {
-          memoryCache = parsed;
-          return parsed;
-        }
-      }
+    const raw = typeof window !== 'undefined' ? window.sessionStorage?.getItem(STORAGE_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.total > 0) return (memoryCache = parsed);
     }
   } catch {}
   return memoryCache;
 };
 
 export const persistStatsToSession = (stats: RequestsStatsDoc): void => {
+  if (!stats) return;
+  if (stats.total <= 0 && memoryCache && memoryCache.total > 0) return;
   memoryCache = stats;
   try {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
+    if (typeof window !== 'undefined' && stats.total > 0) {
+      window.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(stats));
     }
   } catch {}
 };
 
 export const fetchSingleServiceCount = async (serviceId: string): Promise<ServiceStatsCount> => {
-  const coll = collection(db, `serviceRequests_${serviceId}`);
   let total = 0;
   let pending = 0;
 
   try {
-    const totalSnap = await getCountFromServer(query(coll));
-    total = totalSnap.data().count || 0;
+    const coll = collection(db, `serviceRequests_${serviceId}`);
+    const snap = await getCountFromServer(query(coll));
+    total = snap.data().count || 0;
+    if (total > 0) {
+      const [compSnap, rejSnap] = await Promise.all([
+        getCountFromServer(query(coll, where('status', '==', 'completed'))).catch(() => null),
+        getCountFromServer(query(coll, where('status', '==', 'rejected'))).catch(() => null)
+      ]);
+      const compCount = compSnap?.data().count || 0;
+      const rejCount = rejSnap?.data().count || 0;
+      pending = Math.max(0, total - compCount - rejCount);
+    }
   } catch (err) {
-    logger.warn(`Failed to count total for serviceRequests_${serviceId}:`, err);
+    logger.warn(`Count total for serviceRequests_${serviceId}:`, err);
   }
 
   try {
-    const pendingSnap = await getCountFromServer(
-      query(coll, where('status', 'in', ['pending', 'submitted', 'in_review']))
-    );
-    pending = pendingSnap.data().count || 0;
+    const legacyColl = collection(db, 'serviceRequests');
+    const [lStrSnap, lNumSnap] = await Promise.all([
+      getCountFromServer(query(legacyColl, where('serviceId', '==', String(serviceId)))).catch(() => null),
+      !Number.isNaN(Number(serviceId))
+        ? getCountFromServer(query(legacyColl, where('serviceId', '==', Number(serviceId)))).catch(() => null)
+        : null
+    ]);
+    const lCount = (lStrSnap?.data().count || 0) + (lNumSnap?.data().count || 0);
+    if (lCount > 0) {
+      total += lCount;
+      const [lCompSnap, lRejSnap] = await Promise.all([
+        getCountFromServer(query(legacyColl, where('serviceId', '==', String(serviceId)), where('status', '==', 'completed'))).catch(() => null),
+        getCountFromServer(query(legacyColl, where('serviceId', '==', String(serviceId)), where('status', '==', 'rejected'))).catch(() => null)
+      ]);
+      const lComp = lCompSnap?.data().count || 0;
+      const lRej = lRejSnap?.data().count || 0;
+      pending += Math.max(0, lCount - lComp - lRej);
+    }
   } catch {}
 
   return { total, pending };

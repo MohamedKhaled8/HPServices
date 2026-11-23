@@ -12,6 +12,7 @@ import {
   getPathLastName,
   filterOutFolderAndDescendants,
 } from '../utils/folderUtils';
+import { getVisibleFoldersAtLevel } from '../utils/folderTreeUtils';
 import { writeCachedUnified130Folders } from '../storage/assignmentsCache';
 
 interface UseUnified130FoldersOptions {
@@ -39,7 +40,7 @@ export const useUnified130Folders = ({
 
   const getVisibleUnified130Folders = () => {
     const current = unified130CurrentPath || '';
-    return (unified130Folders || []).filter((f) => f.parentPath === current);
+    return getVisibleFoldersAtLevel(unified130Folders || [], current);
   };
 
   const handleCreateUnified130Folder = async () => {

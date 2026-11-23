@@ -80,9 +80,7 @@ export const TrackFilesActions: React.FC<TrackFilesActionsProps> = ({
       {/* 2. زر رفع فولدر كامل بالـ OS Folder Picker */}
       {onFolderUpload && (
         <UploadFolderButton
-          disabled={isUploading || isDeletingAssignments[openedTrack]}
-          isLoading={isUploading}
-          progressText={progressText}
+          disabled={isDeletingAssignments[openedTrack]}
           onFolderSelected={(files) => onFolderUpload(openedTrack, files)}
         />
       )}

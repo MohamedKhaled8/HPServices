@@ -12,6 +12,7 @@ import {
   getPathLastName,
   filterOutFolderAndDescendants,
 } from '../utils/folderUtils';
+import { getVisibleFoldersAtLevel } from '../utils/folderTreeUtils';
 import { writeCachedTrackFolders } from '../storage/assignmentsCache';
 
 interface UseTrackFoldersOptions {
@@ -48,7 +49,7 @@ export const useTrackFolders = ({
 
   const getVisibleTrackFolders = (track: TrackKey) => {
     const current = trackCurrentPath[track] || '';
-    return (trackFolders[track] || []).filter((f) => f.parentPath === current);
+    return getVisibleFoldersAtLevel(trackFolders[track] || [], current);
   };
 
   const handleCreateTrackFolder = async (track: TrackKey) => {

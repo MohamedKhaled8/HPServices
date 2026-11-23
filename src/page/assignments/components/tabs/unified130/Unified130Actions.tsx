@@ -70,8 +70,7 @@ export const Unified130Actions: React.FC<Unified130ActionsProps> = ({
       {/* 2. زر رفع فولدر كامل */}
       {onFolderUpload && (
         <UploadFolderButton
-          disabled={isUploading130 || isDeleting130}
-          isLoading={isUploading130}
+          disabled={isDeleting130}
           onFolderSelected={onFolderUpload}
         />
       )}

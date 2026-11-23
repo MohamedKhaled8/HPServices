@@ -7,11 +7,9 @@ import {
   upload130UnifiedFile,
   getCurrentUser,
 } from '../../../services/firebaseService';
+import { getGoogleDriveAccessToken } from '../../../services/googleDriveService';
 import { mergeFoldersByPath } from '../utils/folderUtils';
-import {
-  writeCachedTrackFolders,
-  writeCachedUnified130Folders,
-} from '../storage/assignmentsCache';
+import { writeCachedTrackFolders, writeCachedUnified130Folders } from '../storage/assignmentsCache';
 
 interface UseFolderUploadOptions {
   trackCurrentPath: Record<TrackKey, string>;
@@ -50,25 +48,44 @@ export const useFolderUpload = ({
     }
 
     const parentPath = trackCurrentPath[track] || '';
+    const safe = folderName.replace(/[\\/:*?"<>|]/g, '_').trim() || 'مجلد جديد';
+    const targetPath = parentPath ? `${parentPath}/${safe}` : safe;
 
     try {
       setIsUploadingAssignments((prev) => ({ ...prev, [track]: true }));
-      setUploadProgress((prev) => ({
-        ...prev,
-        [track]: { current: 0, total: validFiles.length },
-      }));
+      setUploadProgress((prev) => ({ ...prev, [track]: { current: 0, total: validFiles.length } }));
 
-      // 1. Create assignment folder
+      // 1. Verify Drive token first
+      await getGoogleDriveAccessToken();
+
+      // 2. Upload files first
+      const uploadedFiles = await uploadAssignmentFilesForTrack(
+        track,
+        validFiles,
+        user.uid,
+        targetPath,
+        (current, total) => {
+          setUploadProgress((prev) => ({ ...prev, [track]: { current, total } }));
+        }
+      );
+
+      if (!uploadedFiles || uploadedFiles.length === 0) {
+        throw new Error('لم يتم رفع أي ملف إلى Google Drive');
+      }
+
+      // 3. Create folder doc only after upload succeeds
       let createdFolder: AssignmentFolderMeta;
       try {
-        createdFolder = await createAssignmentFolderForTrack(track, folderName, parentPath);
+        createdFolder = await createAssignmentFolderForTrack(track, folderName, parentPath, {
+          totalFilesCount: uploadedFiles.length,
+        });
       } catch {
-        const safe = folderName.replace(/[\\/:*?"<>|]/g, '_').trim();
         createdFolder = {
           id: `local_${Date.now()}`,
           name: safe,
-          path: parentPath ? `${parentPath}/${safe}` : safe,
+          path: targetPath,
           parentPath,
+          totalFilesCount: uploadedFiles.length,
         };
       }
 
@@ -78,24 +95,7 @@ export const useFolderUpload = ({
         return next;
       });
 
-      // 2. Upload confirmed files
-      const uploadedFiles = await uploadAssignmentFilesForTrack(
-        track,
-        validFiles,
-        user.uid,
-        createdFolder.path,
-        (current, total) => {
-          setUploadProgress((prev) => ({
-            ...prev,
-            [track]: { current, total },
-          }));
-        }
-      );
-
-      setTrackFiles((prev) => ({
-        ...prev,
-        [track]: [...(prev[track] || []), ...uploadedFiles],
-      }));
+      setTrackFiles((prev) => ({ ...prev, [track]: [...(prev[tr(track)] || []), ...uploadedFiles] }));
 
       showSnackbarNotification(
         `تم رفع المجلد "${createdFolder.name}" بنجاح بـ (${uploadedFiles.length}) ملف`,
@@ -110,6 +110,8 @@ export const useFolderUpload = ({
     }
   };
 
+  const tr = (track: TrackKey) => track;
+
   const uploadConfirmedFolderFor130 = async (
     folderName: string,
     validFiles: File[]
@@ -120,19 +122,33 @@ export const useFolderUpload = ({
       return false;
     }
 
+    const safe = folderName.replace(/[\\/:*?"<>|]/g, '_').trim() || 'مجلد جديد';
+    const targetPath = unified130CurrentPath ? `${unified130CurrentPath}/${safe}` : safe;
+
     try {
       setIsUploading130?.(true);
+      await getGoogleDriveAccessToken();
+
+      const uploadedFiles: any[] = [];
+      for (const file of validFiles) {
+        const uploaded = await upload130UnifiedFile(file, user.uid, targetPath);
+        uploadedFiles.push(uploaded);
+      }
+
+      if (uploadedFiles.length === 0) throw new Error('لم يتم رفع أي ملف إلى Google Drive');
 
       let createdFolder: AssignmentFolderMeta;
       try {
-        createdFolder = await create130UnifiedFolder(folderName, unified130CurrentPath);
+        createdFolder = await create130UnifiedFolder(folderName, unified130CurrentPath, {
+          totalFilesCount: uploadedFiles.length,
+        });
       } catch {
-        const safe = folderName.replace(/[\\/:*?"<>|]/g, '_').trim();
         createdFolder = {
           id: `local_${Date.now()}`,
           name: safe,
-          path: unified130CurrentPath ? `${unified130CurrentPath}/${safe}` : safe,
+          path: targetPath,
           parentPath: unified130CurrentPath,
+          totalFilesCount: uploadedFiles.length,
         };
       }
 
@@ -141,12 +157,6 @@ export const useFolderUpload = ({
         writeCachedUnified130Folders(next);
         return next;
       });
-
-      const uploadedFiles: any[] = [];
-      for (const file of validFiles) {
-        const uploaded = await upload130UnifiedFile(file, user.uid, createdFolder.path);
-        uploadedFiles.push(uploaded);
-      }
 
       setUnified130Files?.((prev) => [...prev, ...uploadedFiles]);
 

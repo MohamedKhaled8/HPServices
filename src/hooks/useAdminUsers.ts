@@ -264,7 +264,7 @@ export function useAdminUsers({
       const payloadToSave: StudentData = { ...editedStudentData };
       if (syncResult && syncResult.synced) {
         payloadToSave.assignedFiles = syncResult.assignedFiles;
-        payloadToSave.assignedFile = syncResult.assignedFile;
+        payloadToSave.assignedFile = syncResult.assignedFile || undefined;
       }
 
       await updateStudentData(editedStudentData.id, payloadToSave);

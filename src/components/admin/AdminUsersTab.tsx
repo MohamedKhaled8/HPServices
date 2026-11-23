@@ -1,6 +1,10 @@
-import React, { useDeferredValue } from 'react';
+import React, { useState, useEffect, useRef, useDeferredValue } from 'react';
 import { Search, Loader2, Copy, EyeOff, Eye, ClipboardList, Edit2, Trash2, CheckSquare, Square } from 'lucide-react';
 import { StudentData } from '../../types';
+import {
+  getCachedStudentRequestCount,
+  fetchCountsForStudents
+} from '../../services/studentRequestsCountService';
 
 interface AdminUsersTabProps {
   searchTerm: string;
@@ -55,6 +59,44 @@ const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
   isLoadingMoreUsers,
   handleLoadMoreUsers,
 }) => {
+  const [loadingCountIds, setLoadingCountIds] = useState<Set<string>>(new Set());
+  const inFlightKeyRef = useRef<string>('');
+
+  const visibleStudents = displayedAdminStudents;
+  const visibleIdsKey = visibleStudents.map((s) => s.id || '').filter(Boolean).join(',');
+
+  useEffect(() => {
+    if (!visibleIdsKey) return;
+    const uncached = visibleStudents.filter(
+      (s) => s.id && getCachedStudentRequestCount(s.id) === undefined
+    );
+    if (uncached.length === 0) return;
+    if (inFlightKeyRef.current === visibleIdsKey) return;
+
+    inFlightKeyRef.current = visibleIdsKey;
+    let cancelled = false;
+    const uncachedIds = new Set(uncached.map((s) => s.id as string));
+    setLoadingCountIds((prev) => new Set([...prev, ...uncachedIds]));
+
+    fetchCountsForStudents(uncached)
+      .catch((err) => console.error('Fetch student counts error:', err))
+      .finally(() => {
+        inFlightKeyRef.current = '';
+        if (!cancelled) {
+          setLoadingCountIds((prev) => {
+            const next = new Set(prev);
+            uncachedIds.forEach((id) => next.delete(id));
+            return next;
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      inFlightKeyRef.current = '';
+    };
+  }, [visibleIdsKey]);
+
   return (
     <div className="admin-content">
       <div className="section-header">
@@ -227,7 +269,14 @@ const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                       ))
                     : displayedAdminStudents.map((student, index) => {
                     const globalIndex = usersListPage * ADMIN_USERS_PAGE_SIZE + index;
-                    const studentRequestCount = requestCountByStudentId.get(student.id || '') ?? 0;
+                    const cachedCount = student.id ? getCachedStudentRequestCount(student.id) : undefined;
+                    const isRowLoadingCount = student.id ? loadingCountIds.has(student.id) : false;
+                    const studentRequestCount = cachedCount ??
+                      (student as any).requestsCount ??
+                      (student as any).ordersCount ??
+                      (Array.isArray((student as any).requests) ? (student as any).requests.length : undefined) ??
+                      requestCountByStudentId.get(student.id || '') ??
+                      0;
                     const flagKey = `student-${student.id}`;
                     const studentFlags = toggledFlags[flagKey] || { f1: false, f2: false, f3: false };
                     const isFlagged = studentFlags.f1 || studentFlags.f2 || studentFlags.f3;
@@ -333,16 +382,29 @@ const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                         </td>
 
                         <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                          <span style={{
-                            background: studentRequestCount > 0 ? '#dbeafe' : '#f1f5f9',
-                            color: studentRequestCount > 0 ? '#1d4ed8' : '#94a3b8',
-                            padding: '4px 10px',
-                            borderRadius: '12px',
-                            fontSize: '13px',
-                            fontWeight: '700'
-                          }}>
-                            {studentRequestCount}
-                          </span>
+                          {isRowLoadingCount && cachedCount === undefined ? (
+                            <span style={{
+                              background: '#f1f5f9',
+                              color: '#94a3b8',
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '13px',
+                              fontWeight: '700'
+                            }}>
+                              ...
+                            </span>
+                          ) : (
+                            <span style={{
+                              background: studentRequestCount > 0 ? '#dbeafe' : '#f1f5f9',
+                              color: studentRequestCount > 0 ? '#1d4ed8' : '#94a3b8',
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '13px',
+                              fontWeight: '700'
+                            }}>
+                              {studentRequestCount}
+                            </span>
+                          )}
                         </td>
 
                         <td style={{ padding: '14px 10px', border: '1px solid #e2e8f0', textAlign: 'center', whiteSpace: 'nowrap' }}>

@@ -12,13 +12,12 @@ interface UploadFolderButtonProps {
 export const UploadFolderButton: React.FC<UploadFolderButtonProps> = ({
   onFolderSelected,
   disabled = false,
-  isLoading = false,
   className = '',
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = () => {
-    if (disabled || isLoading) return;
+    if (disabled) return;
     inputRef.current?.click();
   };
 
@@ -27,7 +26,6 @@ export const UploadFolderButton: React.FC<UploadFolderButtonProps> = ({
     if (fileList && fileList.length > 0) {
       onFolderSelected(Array.from(fileList));
     }
-    // Reset so same folder can be re-selected if necessary
     e.target.value = '';
   };
 
@@ -41,14 +39,17 @@ export const UploadFolderButton: React.FC<UploadFolderButtonProps> = ({
         webkitdirectory=""
         directory=""
         multiple
-        disabled={disabled || isLoading}
+        disabled={disabled}
         onChange={handleChange}
+        onClick={(e) => {
+          (e.target as HTMLInputElement).value = '';
+        }}
       />
       <button
         type="button"
         className={`track-action-btn btn-upload-folder ${className}`}
         onClick={handleClick}
-        disabled={disabled || isLoading}
+        disabled={disabled}
         title="رفع مجلد كامل بما يحتويه من ملفات وإنشاؤه تلقائياً"
       >
         <FolderUp size={16} />

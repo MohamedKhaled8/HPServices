@@ -21,6 +21,7 @@ export const createTrackTabProps = (options: {
   openedTrack: options.openedTrack,
   setOpenedTrack: options.setOpenedTrack,
   setActiveTrackFolder: options.trackFoldersProps.setActiveTrackFolder,
+  trackFolders: options.trackFoldersProps.trackFolders,
   trackFiles: options.trackFiles,
   selectedFileIds: options.selectedFileIds,
   setSelectedFileIds: options.setSelectedFileIds,
@@ -61,6 +62,7 @@ export const createUnifiedTabProps = (options: {
   recallProps: any;
 }) => ({
   unified130Files: options.unified130Files,
+  unified130Folders: options.unifiedFoldersProps.unified130Folders,
   unified130CurrentPath: options.unifiedFoldersProps.unified130CurrentPath,
   setUnified130CurrentPath: options.unifiedFoldersProps.setUnified130CurrentPath,
   newUnified130FolderName: options.unifiedFoldersProps.newUnified130FolderName,

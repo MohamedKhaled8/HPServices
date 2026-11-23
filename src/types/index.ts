@@ -4,7 +4,7 @@ export interface AssignmentFileMeta {
   id: string;
   name: string;
   url: string;
-  track: TrackKey;
+  track?: TrackKey;
   storagePath: string;
   folderPath?: string;
   uploadedAt?: any;

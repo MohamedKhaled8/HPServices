@@ -109,7 +109,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
         try {
           syncResult = await syncStudentAssignmentsOnTrackChange(
             studentId,
-            newTrack,
+            newTrack || '',
             oldTrack
           );
         } catch (syncErr: any) {
@@ -134,7 +134,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onBack }) => {
 
       if (syncResult && syncResult.synced) {
         updatedStudent.assignedFiles = syncResult.assignedFiles;
-        updatedStudent.assignedFile = syncResult.assignedFile;
+        updatedStudent.assignedFile = syncResult.assignedFile || undefined;
       }
 
       // Update in Firestore

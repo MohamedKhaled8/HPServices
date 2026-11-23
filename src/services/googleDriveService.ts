@@ -38,32 +38,65 @@ export const extractDriveFileId = (fileIdOrUrl: string): string | null => {
 export const getGoogleDriveAccessToken = async (timeoutMs = DRIVE_TIMEOUT_MS): Promise<string> => {
   return getOrFetchDriveToken(async () => {
     // 1. Try secure backend token dispenser (/api/getDriveToken)
+    let is404OrNonJson = false;
     try {
       const apiResponse = await fetchWithTimeout(
         '/api/getDriveToken',
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         },
         timeoutMs
       );
-      if (apiResponse.ok) {
-        const data = await apiResponse.json();
-        if (data.accessToken) {
-          return { accessToken: data.accessToken, expiresIn: data.expiresIn };
+
+      if (apiResponse.status === 404) {
+        is404OrNonJson = true;
+      } else {
+        const contentType = apiResponse.headers.get('content-type') || '';
+        const rawText = await apiResponse.text();
+        const isHtml =
+          rawText.trim().startsWith('<') ||
+          rawText.includes('<!DOCTYPE') ||
+          contentType.includes('text/html');
+
+        if (isHtml || !contentType.includes('application/json')) {
+          is404OrNonJson = true;
+        } else if (apiResponse.ok) {
+          try {
+            const data = JSON.parse(rawText);
+            const token = data?.accessToken || data?.access_token;
+            if (token && typeof token === 'string') {
+              return { accessToken: token, expiresIn: data.expiresIn || data.expires_in };
+            }
+            is404OrNonJson = true;
+          } catch (_) {
+            is404OrNonJson = true;
+          }
+        } else {
+          is404OrNonJson = true;
         }
       }
-    } catch (_) {
-      // Backend endpoint not reachable (e.g. standalone Vite dev server)
+    } catch (fetchErr: any) {
+      if (fetchErr?.message?.includes('404')) {
+        is404OrNonJson = true;
+      }
     }
 
-    // 2. Direct client-side refresh fallback
-    const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
-    const clientSecret = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_SECRET;
-    const refreshToken = import.meta.env.VITE_GOOGLE_DRIVE_REFRESH_TOKEN;
+    if (is404OrNonJson) {
+      throw new Error(
+        'فشل الاتصال بـ /api/getDriveToken (404) — شغّل السيرفر بـ vercel dev على localhost:3000 بدل npm run dev'
+      );
+    }
+
+    // 2. Direct client-side refresh fallback (if env vars are present)
+    const clientId = import.meta.env?.VITE_GOOGLE_DRIVE_CLIENT_ID;
+    const clientSecret = import.meta.env?.VITE_GOOGLE_DRIVE_CLIENT_SECRET;
+    const refreshToken = import.meta.env?.VITE_GOOGLE_DRIVE_REFRESH_TOKEN;
 
     if (!clientId || !clientSecret || !refreshToken) {
-      throw new Error('Google Drive credentials not configured');
+      throw new Error(
+        'فشل الاتصال بـ /api/getDriveToken (404) — شغّل السيرفر بـ vercel dev على localhost:3000 بدل npm run dev'
+      );
     }
 
     const tokenResponse = await fetchWithTimeout(

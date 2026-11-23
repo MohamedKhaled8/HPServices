@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 import { TrackKey } from '../../../../../services/firebaseService';
-import { getPathParts } from '../../../utils/folderUtils';
+import { getPathParts, getParentPath } from '../../../utils/folderUtils';
 
 interface TrackBreadcrumbsProps {
   openedTrack: TrackKey;
@@ -22,16 +22,25 @@ export const TrackBreadcrumbs: React.FC<TrackBreadcrumbsProps> = ({
   onBackToOverview,
   onNavigatePath,
 }) => {
+  const handleBack = () => {
+    if (currentPath) {
+      onNavigatePath(getParentPath(currentPath));
+    } else {
+      onBackToOverview();
+    }
+  };
+
   return (
     <div className="track-header-main">
       <div className="track-title-row">
         <button
           type="button"
           className="back-to-tracks-button"
-          onClick={onBackToOverview}
+          onClick={handleBack}
+          title={currentPath ? 'الرجوع للمستوى السابق' : 'جميع المسارات'}
         >
           <ArrowRight size={15} />
-          <span>جميع المسارات</span>
+          <span>{currentPath ? 'المستوى السابق' : 'جميع المسارات'}</span>
         </button>
         <h3 className="track-section-title">
           {TRACK_TITLES[openedTrack] || 'ملفات المسار'}

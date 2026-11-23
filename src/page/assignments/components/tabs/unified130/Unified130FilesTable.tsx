@@ -3,6 +3,7 @@ import { AssignmentFolderMeta } from '../../../../../services/firebaseService';
 import { DeleteConfirmModalState } from '../../../types/assignments.types';
 import { Unified130FolderRow } from './Unified130FolderRow';
 import { Unified130FileRow } from './Unified130FileRow';
+import { computeAggregateFolderCounts } from '../../../utils/folderTreeUtils';
 
 interface Unified130FilesTableProps {
   visibleFolders: AssignmentFolderMeta[];
@@ -20,6 +21,8 @@ interface Unified130FilesTableProps {
   onDeleteFolder: (path: string) => void;
   onRevokeFolder?: (path: string) => void;
   setDeleteConfirmModal: React.Dispatch<React.SetStateAction<DeleteConfirmModalState>>;
+  allFolders?: AssignmentFolderMeta[];
+  allUnifiedFiles?: any[];
 }
 
 export const Unified130FilesTable: React.FC<Unified130FilesTableProps> = ({
@@ -35,6 +38,8 @@ export const Unified130FilesTable: React.FC<Unified130FilesTableProps> = ({
   onDeleteFolder,
   onRevokeFolder,
   setDeleteConfirmModal,
+  allFolders,
+  allUnifiedFiles,
 }) => {
   if (visibleFolders.length === 0 && visibleFiles.length === 0) {
     return <div className="no-items-message">لا توجد عناصر داخل هذا المجلد بعد</div>;
@@ -77,6 +82,10 @@ export const Unified130FilesTable: React.FC<Unified130FilesTableProps> = ({
             folderDeleteLoading.scope === 'unified130' &&
             folderDeleteLoading.folderPath === folder.path;
 
+          const agg = (allFolders && allUnifiedFiles)
+            ? computeAggregateFolderCounts(folder, allFolders, allUnifiedFiles)
+            : undefined;
+
           return (
             <Unified130FolderRow
               key={`folder-${folder.id}`}
@@ -87,6 +96,7 @@ export const Unified130FilesTable: React.FC<Unified130FilesTableProps> = ({
               onNavigateToFolder={onNavigateToFolder}
               onDeleteFolder={onDeleteFolder}
               onRevokeFolder={onRevokeFolder}
+              aggregateCounts={agg}
             />
           );
         })}

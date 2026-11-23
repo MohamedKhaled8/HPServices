@@ -98,8 +98,11 @@ export const useTrackFiles = ({
   };
 
   const getVisibleTrackFiles = (track: TrackKey) => {
-    const current = trackCurrentPath[track] || '';
-    return (trackFiles[track] || []).filter((f) => (f.folderPath || '') === current);
+    const current = (trackCurrentPath[track] || '').trim().replace(/^\/+|\/+$/g, '');
+    return (trackFiles[track] || []).filter((f) => {
+      const fp = String(f.folderPath || f.folder || '').trim().replace(/^\/+|\/+$/g, '');
+      return fp === current;
+    });
   };
 
   return {

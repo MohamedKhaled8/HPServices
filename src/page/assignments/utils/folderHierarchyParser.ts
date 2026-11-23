@@ -9,6 +9,7 @@ export interface HierarchyParseResult {
   mode: 'single' | 'nested';
   groups: FolderUploadGroup[];
   excludedCount: number;
+  rootFolderName?: string;
 }
 
 const sanitizeFolderName = (name: string): string =>
@@ -53,9 +54,11 @@ export const parseFolderHierarchy = (rawFiles: File[]): HierarchyParseResult => 
       mode: 'single',
       groups: [{ folderName: fallbackTop, files: validFiles }],
       excludedCount,
+      rootFolderName: fallbackTop,
     };
   }
 
+  const rootFolderName = sanitizeFolderName(parsedItems[0]?.segments[0] || 'مجلد جديد');
   const groupMap = new Map<string, File[]>();
 
   for (const item of parsedItems) {
@@ -89,6 +92,7 @@ export const parseFolderHierarchy = (rawFiles: File[]): HierarchyParseResult => 
     mode: 'nested',
     groups,
     excludedCount,
+    rootFolderName,
   };
 };
 

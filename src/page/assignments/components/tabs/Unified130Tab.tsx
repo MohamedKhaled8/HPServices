@@ -7,6 +7,7 @@ import { Unified130FilesTable } from './unified130/Unified130FilesTable';
 
 export interface Unified130TabProps {
   unified130Files: any[];
+  unified130Folders?: AssignmentFolderMeta[];
   unified130CurrentPath: string;
   setUnified130CurrentPath: React.Dispatch<React.SetStateAction<string>>;
   newUnified130FolderName: string;
@@ -36,6 +37,7 @@ export interface Unified130TabProps {
 
 export const Unified130Tab: React.FC<Unified130TabProps> = ({
   unified130Files,
+  unified130Folders,
   unified130CurrentPath,
   setUnified130CurrentPath,
   newUnified130FolderName,
@@ -121,6 +123,8 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
             onDeleteFolder={handleDeleteUnified130Folder}
             onRevokeFolder={handleRevoke130FolderFromStudents}
             setDeleteConfirmModal={setDeleteConfirmModal}
+            allFolders={unified130Folders}
+            allUnifiedFiles={unified130Files}
           />
         </div>
       </div>

@@ -19,6 +19,7 @@ import DefaultColumnsModal from './DefaultColumnsModal';
 import AdminRequestsPaginationBar from './AdminRequestsPaginationBar';
 import { useRequestsSearch } from '../../../hooks/useRequestsSearch';
 import { updateSearchCacheItem, removeSearchCacheItem } from '../../../services/requestsSearchService';
+import { loadStoredStats } from '../../../services/requestsStatsService';
 import {
   REQUEST_SPREADSHEET_STANDARD_KEYS,
   workflowStatusLabelAr,
@@ -257,6 +258,16 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       const hasAnyPositive = Object.values(requestsStatsMap).some(s => s && s.total > 0);
       if (hasAnyPositive) return requestsStatsMap;
     }
+    const stored = loadStoredStats();
+    if (stored && stored.total > 0 && stored.byService) {
+      const m: Record<string, { pending: number; total: number }> = {};
+      Object.entries(stored.byService).forEach(([sid, s]) => {
+        const val = { pending: s?.pending || 0, total: s?.total || 0 };
+        m[sid] = val;
+        m[Number(sid)] = val;
+      });
+      return m;
+    }
     const m: Record<string, { pending: number; total: number }> = {};
     for (const r of serviceRequests) {
       const sid = String(r.serviceId ?? '');
@@ -276,6 +287,10 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       const sum = Object.values(requestsStatsMap).reduce((acc, curr) => acc + (curr?.total || 0), 0);
       if (sum > 0) return sum;
     }
+    const stored = loadStoredStats();
+    if (stored && stored.total > 0) {
+      return stored.total;
+    }
     if (serviceTotalCounts) {
       const sum = Object.values(serviceTotalCounts).reduce((acc, curr) => acc + (curr || 0), 0);
       if (sum > 0) return sum;
@@ -289,7 +304,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
   const requestsByServiceId = useMemo(() => {
     const m: Record<string, ServiceRequest[]> = {};
     for (const r of serviceRequests) {
-      const sid = String(r.serviceId ?? '');
+      const sid = String(r.serviceId || selectedServiceId || '');
       if (!sid) continue;
       (m[sid] ??= []).push(r);
     }
@@ -297,7 +312,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       m[sid] = dedupeRequestsByStudent(m[sid]);
     }
     return m;
-  }, [serviceRequests]);
+  }, [serviceRequests, selectedServiceId]);
 
   // Quota-safe search hook across loaded and database records
   const {
@@ -1467,10 +1482,11 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
   // Memoized filter and sort for requests
   const adminRequestsFilteredSorted = useMemo(() => {
     if (!dataReady || !selectedServiceId) return [];
-    if (selectedServiceId !== deferredRequestsServiceId) return [];
     const pool = (isSearching && searchResults !== null)
       ? searchResults
-      : (requestsByServiceId[selectedServiceId] ?? []);
+      : ((requestsByServiceId[selectedServiceId] && requestsByServiceId[selectedServiceId].length > 0)
+          ? requestsByServiceId[selectedServiceId]
+          : serviceRequests);
     const term = serviceSearchTerm.toLowerCase().trim();
 
     const filtered = (isSearching && searchResults !== null)
@@ -1538,7 +1554,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
     });
 
     return mapped.map((item) => item.req);
-  }, [dataReady, selectedServiceId, deferredRequestsServiceId, requestsByServiceId, serviceSearchTerm, students, isSearching, searchResults]);
+  }, [dataReady, selectedServiceId, deferredRequestsServiceId, requestsByServiceId, serviceRequests, serviceSearchTerm, students, isSearching, searchResults]);
 
   return (
     <div className="admin-content">

@@ -72,7 +72,11 @@ const AdminServicesFilesGrid = memo(function AdminServicesFilesGrid({
   return (
     <div className="services-files-grid">
       {SERVICES.map((service) => {
-        const q = requestStatsByServiceId[service.id];
+        const sidStr = String(service.id);
+        const sidNum = Number(service.id);
+        const q = requestStatsByServiceId[sidStr] ||
+          requestStatsByServiceId[service.id] ||
+          (!Number.isNaN(sidNum) ? (requestStatsByServiceId as Record<number, ServiceRequestStats | undefined>)[sidNum] : undefined);
         const newRequests = q?.pending ?? 0;
         const totalRequests = q?.total ?? 0;
         const isSelected = selectedServiceId === service.id;

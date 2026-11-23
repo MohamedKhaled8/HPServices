@@ -68,10 +68,13 @@ export interface AssignmentFileMeta {
   id: string;
   name: string;
   url: string;
-  track: TrackKey;
+  track?: TrackKey;
   storagePath: string;
   /** مسار مجلد افتراضي داخل التبويب (مثل: "folderA/sub") */
   folderPath?: string;
+  folderId?: string | null;
+  folderName?: string;
+  folder?: string;
   uploadedAt?: any;
 }
 
@@ -81,6 +84,10 @@ export interface AssignmentFolderMeta {
   path: string;
   parentPath: string;
   createdAt?: any;
+  parentFolderId?: string | null;
+  isParentFolder?: boolean;
+  subfoldersCount?: number;
+  totalFilesCount?: number;
 }
 
 // Auth Functions
@@ -1306,6 +1313,18 @@ const trackToKey = (track?: string | null): TrackKey | null => {
 
 // ... (code continues)
 
+const getPathLastName = (path: string): string => String(path || '').split('/').filter(Boolean).pop() || '';
+
+export const stripUndefined = <T extends Record<string, unknown>>(data: T): Partial<T> => {
+  const clean: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(data)) {
+    if (val !== undefined) {
+      clean[key] = val;
+    }
+  }
+  return clean as Partial<T>;
+};
+
 export const uploadAssignmentFilesForTrack = async (
   track: TrackKey,
   files: File[],
@@ -1341,18 +1360,21 @@ export const uploadAssignmentFilesForTrack = async (
         url: result.url,
         track,
         storagePath: result.fileId || result.url, // Store ID if available, else URL
-        folderPath,
+        folderPath: folderPath || '',
+        folder: folderPath || '',
+        folderName: folderPath ? getPathLastName(folderPath) : '',
         uploadedAt: serverTimestamp()
       };
 
-      await setDoc(fileDocRef, {
+      await setDoc(fileDocRef, stripUndefined({
         ...meta,
         adminId,
         provider: result.provider, // 'google-drive' or 'mega'
         bucket: 'cloud-storage', // Placeholder
-        folderPath,
+        folderPath: folderPath || '',
+        folder: folderPath || '',
         uploadedAt: serverTimestamp()
-      });
+      }));
 
       savedFiles.push(meta);
     }
@@ -1371,13 +1393,17 @@ export const getAssignmentFilesForTrack = async (track: TrackKey): Promise<Assig
 
     return snapshot.docs.map((d) => {
       const data = d.data() as any;
+      const fPath = typeof data.folderPath === 'string' ? data.folderPath : (typeof data.folder === 'string' ? data.folder : '');
       return {
         id: d.id,
         name: data.name,
         url: data.url,
         track: data.track as TrackKey,
         storagePath: data.storagePath,
-        folderPath: typeof data.folderPath === 'string' ? data.folderPath : '',
+        folderPath: fPath,
+        folderId: data.folderId ?? null,
+        folderName: data.folderName || data.name || '',
+        folder: fPath,
         uploadedAt: data.uploadedAt
       };
     });
@@ -1986,18 +2012,21 @@ export const upload130UnifiedFile = async (
       url: result.url,
       track: 'track1' as TrackKey, // placeholder, not relevant for 130
       storagePath: result.fileId || result.url,
-      folderPath,
+      folderPath: folderPath || '',
+      folder: folderPath || '',
+      folderName: folderPath ? getPathLastName(folderPath) : '',
       uploadedAt: serverTimestamp()
     };
 
-    await setDoc(fileDocRef, {
+    await setDoc(fileDocRef, stripUndefined({
       ...meta,
       adminId,
       provider: result.provider,
       bucket: 'cloud-storage',
-      folderPath,
+      folderPath: folderPath || '',
+      folder: folderPath || '',
       uploadedAt: serverTimestamp()
-    });
+    }));
 
     return meta;
   } catch (error: any) {
@@ -2013,13 +2042,17 @@ export const get130UnifiedFiles = async (): Promise<AssignmentFileMeta[]> => {
 
     return snapshot.docs.map((d) => {
       const data = d.data() as any;
+      const fPath = typeof data.folderPath === 'string' ? data.folderPath : (typeof data.folder === 'string' ? data.folder : '');
       return {
         id: d.id,
         name: data.name,
         url: data.url,
         track: 'track1' as TrackKey,
         storagePath: data.storagePath,
-        folderPath: typeof data.folderPath === 'string' ? data.folderPath : '',
+        folderPath: fPath,
+        folderId: data.folderId ?? null,
+        folderName: data.folderName || data.name || '',
+        folder: fPath,
         uploadedAt: data.uploadedAt
       };
     });
@@ -2032,7 +2065,8 @@ export const get130UnifiedFiles = async (): Promise<AssignmentFileMeta[]> => {
 export const createAssignmentFolderForTrack = async (
   track: TrackKey,
   name: string,
-  parentPath: string = ''
+  parentPath: string = '',
+  extraMeta?: Partial<AssignmentFolderMeta>
 ): Promise<AssignmentFolderMeta> => {
   const cleanName = String(name || '').trim();
   if (!cleanName) throw new Error('اسم المجلد مطلوب');
@@ -2044,12 +2078,16 @@ export const createAssignmentFolderForTrack = async (
     id: folderRef.id,
     name: safeName,
     path,
-    parentPath
+    parentPath: extraMeta?.parentPath ?? parentPath ?? '',
+    parentFolderId: extraMeta?.parentFolderId ?? null,
+    isParentFolder: Boolean(extraMeta?.isParentFolder),
+    subfoldersCount: typeof extraMeta?.subfoldersCount === 'number' ? extraMeta.subfoldersCount : 0,
+    totalFilesCount: typeof extraMeta?.totalFilesCount === 'number' ? extraMeta.totalFilesCount : 0,
   };
-  await setDoc(folderRef, {
+  await setDoc(folderRef, stripUndefined({
     ...folder,
     createdAt: serverTimestamp()
-  });
+  }));
   return folder;
 };
 
@@ -2062,7 +2100,11 @@ export const getAssignmentFoldersForTrack = async (track: TrackKey): Promise<Ass
       name: String(data.name || ''),
       path: String(data.path || ''),
       parentPath: String(data.parentPath || ''),
-      createdAt: data.createdAt
+      createdAt: data.createdAt,
+      parentFolderId: data.parentFolderId ?? null,
+      isParentFolder: Boolean(data.isParentFolder),
+      subfoldersCount: typeof data.subfoldersCount === 'number' ? data.subfoldersCount : undefined,
+      totalFilesCount: typeof data.totalFilesCount === 'number' ? data.totalFilesCount : undefined,
     };
   });
 };
@@ -2095,10 +2137,20 @@ export const deleteAssignmentFolderForTrack = async (track: TrackKey, folderPath
     batchCount++;
   });
 
+  const targetFolderDoc = foldersSnap.docs.find((d) => {
+    const data = d.data() as any;
+    return String(data.path || '').trim() === target;
+  });
+  const targetFolderId = targetFolderDoc?.id;
+
   foldersSnap.docs.forEach((d) => {
     const data = d.data() as any;
     const p = String(data.path || '');
-    if (p === target || p.startsWith(`${target}/`)) {
+    const isTargetOrDescendant =
+      (targetFolderId && data.parentFolderId === targetFolderId) ||
+      p === target ||
+      p.startsWith(`${target}/`);
+    if (isTargetOrDescendant) {
       batch.delete(d.ref);
       batchCount++;
     }
@@ -2117,7 +2169,11 @@ export const deleteAssignmentFolderForTrack = async (track: TrackKey, folderPath
   return { deletedFiles: fileIdsToDelete };
 };
 
-export const create130UnifiedFolder = async (name: string, parentPath: string = ''): Promise<AssignmentFolderMeta> => {
+export const create130UnifiedFolder = async (
+  name: string,
+  parentPath: string = '',
+  extraMeta?: Partial<AssignmentFolderMeta>
+): Promise<AssignmentFolderMeta> => {
   const cleanName = String(name || '').trim();
   if (!cleanName) throw new Error('اسم المجلد مطلوب');
   const safeName = cleanName.replace(/[\\/:*?"<>|]/g, '_').trim();
@@ -2128,12 +2184,16 @@ export const create130UnifiedFolder = async (name: string, parentPath: string = 
     id: folderRef.id,
     name: safeName,
     path,
-    parentPath
+    parentPath: extraMeta?.parentPath ?? parentPath ?? '',
+    parentFolderId: extraMeta?.parentFolderId ?? null,
+    isParentFolder: Boolean(extraMeta?.isParentFolder),
+    subfoldersCount: typeof extraMeta?.subfoldersCount === 'number' ? extraMeta.subfoldersCount : 0,
+    totalFilesCount: typeof extraMeta?.totalFilesCount === 'number' ? extraMeta.totalFilesCount : 0,
   };
-  await setDoc(folderRef, {
+  await setDoc(folderRef, stripUndefined({
     ...folder,
     createdAt: serverTimestamp()
-  });
+  }));
   return folder;
 };
 
@@ -2146,7 +2206,11 @@ export const get130UnifiedFolders = async (): Promise<AssignmentFolderMeta[]> =>
       name: String(data.name || ''),
       path: String(data.path || ''),
       parentPath: String(data.parentPath || ''),
-      createdAt: data.createdAt
+      createdAt: data.createdAt,
+      parentFolderId: data.parentFolderId ?? null,
+      isParentFolder: Boolean(data.isParentFolder),
+      subfoldersCount: typeof data.subfoldersCount === 'number' ? data.subfoldersCount : undefined,
+      totalFilesCount: typeof data.totalFilesCount === 'number' ? data.totalFilesCount : undefined,
     };
   });
 };
@@ -2179,10 +2243,20 @@ export const delete130UnifiedFolder = async (folderPath: string): Promise<{ dele
     batchCount++;
   });
 
+  const targetFolderDoc = foldersSnap.docs.find((d) => {
+    const data = d.data() as any;
+    return String(data.path || '').trim() === target;
+  });
+  const targetFolderId = targetFolderDoc?.id;
+
   foldersSnap.docs.forEach((d) => {
     const data = d.data() as any;
     const p = String(data.path || '');
-    if (p === target || p.startsWith(`${target}/`)) {
+    const isTargetOrDescendant =
+      (targetFolderId && data.parentFolderId === targetFolderId) ||
+      p === target ||
+      p.startsWith(`${target}/`);
+    if (isTargetOrDescendant) {
       batch.delete(d.ref);
       batchCount++;
     }
@@ -5485,7 +5559,9 @@ export const subscribeToServiceSettings = (
   onUpdate: (settings: ServiceSettings) => void,
   _onError?: (error: any) => void
 ) => {
-  return subscribeToSharedConfig('services', onUpdate, (data) => (data as ServiceSettings) || {});
+  return subscribeToSharedConfig('services', (data) => {
+    if (data) onUpdate(data as ServiceSettings);
+  }, (data) => (data as ServiceSettings) || {});
 };
 
 /**

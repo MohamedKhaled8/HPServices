@@ -49,7 +49,7 @@ export const matchesRequest = (req: ServiceRequest, queryStr: string, student?: 
   const natId = String(req.data?.national_id || student?.nationalID || '');
   if (rawQ && natId.includes(rawQ)) return true;
 
-  const phoneVal = String(req.data?.whatsapp_number || req.data?.phone_whatsapp || req.data?.phone || req.data?.phoneNumber || student?.whatsappNumber || student?.phoneNumber || '');
+  const phoneVal = String(req.data?.whatsapp_number || req.data?.phone_whatsapp || req.data?.phone || req.data?.phoneNumber || student?.whatsappNumber || (student as any)?.phoneNumber || '');
   if (normPQ && normalizePhone(phoneVal).includes(normPQ)) return true;
 
   const email = String(req.data?.email || student?.email || '').toLowerCase();

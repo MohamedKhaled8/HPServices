@@ -85,7 +85,7 @@ describe('UploadSnackbar - Portal and Visibility Logic', () => {
     const portal = createMockSnackbarPortal(true, 'جاري رفع الصورة...', 'Drive', mockBody);
     assert.equal(mockBody.children.length, 1);
 
-    portal.unmount();
+    portal.unmount?.();
     assert.equal(mockBody.children.length, 0);
 
     const inactivePortal = createMockSnackbarPortal(false, 'جاري رفع الصورة...', 'Drive', mockBody);

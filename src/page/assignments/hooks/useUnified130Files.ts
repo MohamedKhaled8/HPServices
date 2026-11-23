@@ -37,8 +37,11 @@ export const useUnified130Files = ({
   };
 
   const getVisibleUnified130Files = () => {
-    const current = unified130CurrentPath || '';
-    return (unified130Files || []).filter((f) => (f.folderPath || '') === current);
+    const current = (unified130CurrentPath || '').trim().replace(/^\/+|\/+$/g, '');
+    return (unified130Files || []).filter((f) => {
+      const fp = String(f.folderPath || f.folder || '').trim().replace(/^\/+|\/+$/g, '');
+      return fp === current;
+    });
   };
 
   return {
