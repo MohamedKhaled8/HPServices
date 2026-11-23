@@ -11,7 +11,8 @@ export interface StorageFileTarget {
 
 export const deleteCloudStorageFile = async (
   storagePath?: string,
-  provider?: string
+  provider?: string,
+  timeoutMs = 8000
 ): Promise<boolean> => {
   if (!storagePath) return true;
   try {
@@ -20,7 +21,7 @@ export const deleteCloudStorageFile = async (
       (!provider && (storagePath.includes('drive.google.com') || !storagePath.includes('/')));
 
     if (isDrive) {
-      return await deleteFromGoogleDrive(storagePath);
+      return await deleteFromGoogleDrive(storagePath, timeoutMs);
     }
 
     if (provider === 'supabase') {
@@ -45,12 +46,27 @@ export const deleteCloudStorageFile = async (
 };
 
 export const deleteCloudStorageFilesBackground = (
-  files: StorageFileTarget[]
+  files: StorageFileTarget[],
+  maxConcurrency = 3,
+  timeoutMs = 8000
 ): void => {
   if (!files || files.length === 0) return;
-  Promise.allSettled(
-    files.map((f) => deleteCloudStorageFile(f.storagePath, f.provider))
-  ).catch((err) => {
+  (async () => {
+    let index = 0;
+    const workerCount = Math.min(Math.max(1, maxConcurrency), files.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (index < files.length) {
+        const item = files[index++];
+        if (!item?.storagePath) continue;
+        try {
+          await deleteCloudStorageFile(item.storagePath, item.provider, timeoutMs);
+        } catch (err) {
+          logger.warn('Background storage file deletion caught:', err);
+        }
+      }
+    });
+    await Promise.all(workers);
+  })().catch((err) => {
     logger.warn('Background storage deletion error:', err);
   });
 };

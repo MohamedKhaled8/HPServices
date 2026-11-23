@@ -53,7 +53,6 @@ export const TrackFilesActions: React.FC<TrackFilesActionsProps> = ({
         style={{ display: 'none' }}
         multiple
         accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.bmp,.gif"
-        disabled={isUploading}
         onChange={(e) => {
           if (e.target.files && e.target.files.length > 0) {
             onFileUpload(openedTrack, Array.from(e.target.files));
@@ -65,7 +64,6 @@ export const TrackFilesActions: React.FC<TrackFilesActionsProps> = ({
         type="button"
         className="track-action-btn btn-upload"
         onClick={() => document.getElementById(`upload-input-${openedTrack}`)?.click()}
-        disabled={isUploading}
       >
         <Upload size={16} />
         <span>رفع ملفات</span>
@@ -80,7 +78,6 @@ export const TrackFilesActions: React.FC<TrackFilesActionsProps> = ({
       {/* 2. زر رفع فولدر كامل بالـ OS Folder Picker */}
       {onFolderUpload && (
         <UploadFolderButton
-          disabled={isDeletingAssignments[openedTrack]}
           onFolderSelected={(files) => onFolderUpload(openedTrack, files)}
         />
       )}

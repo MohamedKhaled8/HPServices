@@ -114,42 +114,48 @@ export const BackgroundUploadProvider: React.FC<{ children: React.ReactNode }> =
     isWorkerRunningRef.current = true;
     setIsUploading(true);
 
-    while (queueRef.current.length > 0) {
-      const job = queueRef.current[0];
-      const curIdx = completedFoldersCountRef.current + 1;
-      const total = totalFoldersCountRef.current;
-      setStatusLabel(formatProgressLabel(curIdx, total, job.folderName, 0, job.files.length));
+    try {
+      while (queueRef.current.length > 0) {
+        const job = queueRef.current[0];
+        const curIdx = completedFoldersCountRef.current + 1;
+        const total = totalFoldersCountRef.current;
+        setStatusLabel(formatProgressLabel(curIdx, total, job.folderName, 0, job.files.length));
 
-      try {
-        const { createdFolder, savedFiles } = await executeSingleUploadJob(job, parentFolderCacheRef.current, {
-          onFileProgress: (fileIdx, totalFiles) => {
-            setStatusLabel(formatProgressLabel(curIdx, totalFoldersCountRef.current, job.folderName, fileIdx, totalFiles));
-          },
-          onParentFolderCreated: (parentFolder) => { notifyListeners(job, parentFolder, []); },
-        });
+        try {
+          const { createdFolder, savedFiles } = await executeSingleUploadJob(job, parentFolderCacheRef.current, {
+            onFileProgress: (fileIdx, totalFiles) => {
+              setStatusLabel(formatProgressLabel(curIdx, totalFoldersCountRef.current, job.folderName, fileIdx, totalFiles));
+            },
+            onParentFolderCreated: (parentFolder) => { notifyListeners(job, parentFolder, []); },
+          });
 
-        queueRef.current.shift();
-        completedFoldersCountRef.current++;
-        updateStorageManifest();
-        notifyListeners(job, createdFolder, savedFiles);
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : 'فشل رفع المجلد والملفات';
-        setLastError(errMsg);
-        setStatusLabel(`⚠️ ${errMsg}`);
-        notifyListeners(job, null, [], errMsg);
-        queueRef.current.shift();
-        completedFoldersCountRef.current++;
-        updateStorageManifest();
+          queueRef.current.shift();
+          completedFoldersCountRef.current++;
+          updateStorageManifest();
+          notifyListeners(job, createdFolder, savedFiles);
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : 'فشل رفع المجلد والملفات';
+          setLastError(errMsg);
+          setStatusLabel(`⚠️ ${errMsg}`);
+          notifyListeners(job, null, [], errMsg);
+          queueRef.current.shift();
+          completedFoldersCountRef.current++;
+          updateStorageManifest();
+          if (errMsg.includes('Quota exceeded') || errMsg.includes('resource-exhausted')) {
+            queueRef.current = [];
+            break;
+          }
+        }
       }
+    } finally {
+      isWorkerRunningRef.current = false;
+      totalFoldersCountRef.current = 0;
+      completedFoldersCountRef.current = 0;
+      parentFolderCacheRef.current.clear();
+      setIsUploading(false);
+      setStatusLabel('جاري رفع المجلدات والملفات...');
+      try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
     }
-
-    isWorkerRunningRef.current = false;
-    totalFoldersCountRef.current = 0;
-    completedFoldersCountRef.current = 0;
-    parentFolderCacheRef.current.clear();
-    setIsUploading(false);
-    setStatusLabel('جاري رفع المجلدات والملفات...');
-    try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
   };
 
   const enqueueUpload = useCallback(async (batch: UploadBatchRequest): Promise<boolean> => {

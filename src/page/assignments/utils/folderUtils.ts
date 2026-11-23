@@ -45,3 +45,37 @@ export const filterOutFolderAndDescendants = <T extends { path?: string; folderP
     return !(itemPath === folderPath || itemPath.startsWith(`${folderPath}/`));
   });
 };
+
+/**
+ * Resolves the folder's id and all descendant folder ids from local folder list
+ */
+export const getFolderAndDescendantIds = (
+  folders: AssignmentFolderMeta[],
+  folderPath: string
+): string[] => {
+  if (!folderPath || !Array.isArray(folders)) return [];
+  const targetFolder = folders.find((f) => f.path === folderPath);
+  const targetId = targetFolder?.id;
+  return folders
+    .filter((f) => {
+      const p = String(f.path || '');
+      return p === folderPath || p.startsWith(`${folderPath}/`) || Boolean(targetId && f.parentFolderId === targetId);
+    })
+    .map((f) => f.id)
+    .filter(Boolean);
+};
+
+/**
+ * Returns all files located inside folderPath or any of its descendant folders
+ */
+export const getFilesInsideFolderPath = <T extends { id: string; folderPath?: string; storagePath?: string; provider?: string }>(
+  files: T[],
+  folderPath: string
+): T[] => {
+  if (!folderPath || !Array.isArray(files)) return [];
+  return files.filter((f) => {
+    const p = String(f.folderPath || '');
+    return p === folderPath || p.startsWith(`${folderPath}/`);
+  });
+};
+

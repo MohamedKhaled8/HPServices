@@ -42,7 +42,7 @@ import { CLOUDINARY_CONFIG, UPLOAD_PRESET } from '../config/cloudinary';
 import { uploadMultipleToCloudStorage, CloudProvider } from './cloudStorageService';
 import { deleteCloudStorageFilesBackground } from './cloudStorageDeletion';
 import { StudentData, ServiceRequest, ServiceRequestWorkflowStatus, UploadedFile, BookServiceConfig, FeesServiceConfig, AssignmentsServiceConfig, CertificatesServiceConfig, DigitalTransformationConfig, FinalReviewConfig, GraduationProjectConfig, AssignedFile, ServiceSettings, StatementEnrollmentConfig, DistributionReport } from '../types';
-import type { Query, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+import type { Query, QueryDocumentSnapshot, DocumentData, WriteBatch } from 'firebase/firestore';
 import { logger } from '../utils/logger';
 import { checkRateLimit } from '../utils/security';
 import { triggerWhatsAppNotification } from '../utils/whatsapp';
@@ -2109,56 +2109,105 @@ export const getAssignmentFoldersForTrack = async (track: TrackKey): Promise<Ass
   });
 };
 
-export const deleteAssignmentFolderForTrack = async (track: TrackKey, folderPath: string): Promise<{ deletedFiles: string[] }> => {
+const commitBatchWithTimeout = async (batchInstance: WriteBatch, timeoutMs: number = 15000): Promise<void> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('انتهت مهلة استجابة السيرفر أثناء المسح (15 ثانية)'));
+    }, timeoutMs);
+  });
+  try {
+    await Promise.race([batchInstance.commit(), timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
+export const deleteAssignmentFolderForTrack = async (
+  track: TrackKey,
+  folderPath: string,
+  preloadedStorageTargets?: Array<{ storagePath?: string; provider?: string }>,
+  knownFolderIds?: string[],
+  knownFiles?: Array<{ id: string; storagePath?: string; provider?: string }>
+): Promise<{ deletedFiles: string[] }> => {
   const target = String(folderPath || '').trim();
   if (!target) throw new Error('مسار المجلد غير صالح');
 
   const filesCollection = collection(db, 'assignments', track, 'files');
   const foldersCollection = collection(db, 'assignments', track, 'folders');
 
-  const [filesSnap, foldersSnap] = await Promise.all([getDocs(filesCollection), getDocs(foldersCollection)]);
-
   const fileIdsToDelete: string[] = [];
-  const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = [];
+  const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = preloadedStorageTargets ? [...preloadedStorageTargets] : [];
 
-  const batch = writeBatch(db);
+  const BATCH_CHUNK_LIMIT = 450;
+  let batch = writeBatch(db);
   let batchCount = 0;
 
-  filesSnap.docs.forEach((d) => {
-    const data = d.data() as any;
-    const fp = String(data.folderPath || '');
-    const isInside = fp === target || fp.startsWith(`${target}/`);
-    if (!isInside) return;
-    fileIdsToDelete.push(d.id);
-    if (data?.storagePath) {
-      filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+  const commitBatchIfNeeded = async () => {
+    if (batchCount >= BATCH_CHUNK_LIMIT) {
+      await commitBatchWithTimeout(batch, 15000);
+      batch = writeBatch(db);
+      batchCount = 0;
     }
-    batch.delete(d.ref);
-    batchCount++;
-  });
+  };
 
-  const targetFolderDoc = foldersSnap.docs.find((d) => {
-    const data = d.data() as any;
-    return String(data.path || '').trim() === target;
-  });
-  const targetFolderId = targetFolderDoc?.id;
-
-  foldersSnap.docs.forEach((d) => {
-    const data = d.data() as any;
-    const p = String(data.path || '');
-    const isTargetOrDescendant =
-      (targetFolderId && data.parentFolderId === targetFolderId) ||
-      p === target ||
-      p.startsWith(`${target}/`);
-    if (isTargetOrDescendant) {
+  if (knownFolderIds && knownFiles) {
+    // FAST PATH: Zero getDocs() scans when IDs are known
+    for (const f of knownFiles) {
+      fileIdsToDelete.push(f.id);
+      if (!preloadedStorageTargets && f.storagePath) {
+        filesToDeleteFromStorage.push({ storagePath: f.storagePath, provider: f.provider });
+      }
+      batch.delete(doc(filesCollection, f.id));
+      batchCount++;
+      await commitBatchIfNeeded();
+    }
+    for (const folderId of knownFolderIds) {
+      batch.delete(doc(foldersCollection, folderId));
+      batchCount++;
+      await commitBatchIfNeeded();
+    }
+  } else {
+    // Fallback path when IDs are not pre-known
+    const [filesSnap, foldersSnap] = await Promise.all([getDocs(filesCollection), getDocs(foldersCollection)]);
+    for (const d of filesSnap.docs) {
+      const data = d.data() as any;
+      const fp = String(data.folderPath || '');
+      const isInside = fp === target || fp.startsWith(`${target}/`);
+      if (!isInside) continue;
+      fileIdsToDelete.push(d.id);
+      if (!preloadedStorageTargets && data?.storagePath) {
+        filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+      }
       batch.delete(d.ref);
       batchCount++;
+      await commitBatchIfNeeded();
     }
-  });
 
-  // 1. Commit Firestore batch FIRST so deletion is guaranteed atomic & permanent
+    const targetFolderDoc = foldersSnap.docs.find((d) => {
+      const data = d.data() as any;
+      return String(data.path || '').trim() === target;
+    });
+    const targetFolderId = targetFolderDoc?.id;
+
+    for (const d of foldersSnap.docs) {
+      const data = d.data() as any;
+      const p = String(data.path || '');
+      const isTargetOrDescendant =
+        (targetFolderId && data.parentFolderId === targetFolderId) ||
+        p === target ||
+        p.startsWith(`${target}/`);
+      if (isTargetOrDescendant) {
+        batch.delete(d.ref);
+        batchCount++;
+        await commitBatchIfNeeded();
+      }
+    }
+  }
+
+  // 1. Commit remaining Firestore batch with timeout
   if (batchCount > 0) {
-    await batch.commit();
+    await commitBatchWithTimeout(batch, 15000);
   }
 
   // 2. Cloud storage file cleanup runs safely in background without blocking UI
@@ -2215,56 +2264,90 @@ export const get130UnifiedFolders = async (): Promise<AssignmentFolderMeta[]> =>
   });
 };
 
-export const delete130UnifiedFolder = async (folderPath: string): Promise<{ deletedFiles: string[] }> => {
+export const delete130UnifiedFolder = async (
+  folderPath: string,
+  preloadedStorageTargets?: Array<{ storagePath?: string; provider?: string }>,
+  knownFolderIds?: string[],
+  knownFiles?: Array<{ id: string; storagePath?: string; provider?: string }>
+): Promise<{ deletedFiles: string[] }> => {
   const target = String(folderPath || '').trim();
   if (!target) throw new Error('مسار المجلد غير صالح');
 
   const filesCollection = collection(db, 'assignments', 'unified130', 'files');
   const foldersCollection = collection(db, 'assignments', 'unified130', 'folders');
 
-  const [filesSnap, foldersSnap] = await Promise.all([getDocs(filesCollection), getDocs(foldersCollection)]);
-
   const fileIdsToDelete: string[] = [];
-  const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = [];
+  const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = preloadedStorageTargets ? [...preloadedStorageTargets] : [];
 
-  const batch = writeBatch(db);
+  const BATCH_CHUNK_LIMIT = 450;
+  let batch = writeBatch(db);
   let batchCount = 0;
 
-  filesSnap.docs.forEach((d) => {
-    const data = d.data() as any;
-    const fp = String(data.folderPath || '');
-    const isInside = fp === target || fp.startsWith(`${target}/`);
-    if (!isInside) return;
-    fileIdsToDelete.push(d.id);
-    if (data?.storagePath) {
-      filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+  const commitBatchIfNeeded = async () => {
+    if (batchCount >= BATCH_CHUNK_LIMIT) {
+      await commitBatchWithTimeout(batch, 15000);
+      batch = writeBatch(db);
+      batchCount = 0;
     }
-    batch.delete(d.ref);
-    batchCount++;
-  });
+  };
 
-  const targetFolderDoc = foldersSnap.docs.find((d) => {
-    const data = d.data() as any;
-    return String(data.path || '').trim() === target;
-  });
-  const targetFolderId = targetFolderDoc?.id;
-
-  foldersSnap.docs.forEach((d) => {
-    const data = d.data() as any;
-    const p = String(data.path || '');
-    const isTargetOrDescendant =
-      (targetFolderId && data.parentFolderId === targetFolderId) ||
-      p === target ||
-      p.startsWith(`${target}/`);
-    if (isTargetOrDescendant) {
+  if (knownFolderIds && knownFiles) {
+    // FAST PATH: Zero getDocs() scans when IDs are known
+    for (const f of knownFiles) {
+      fileIdsToDelete.push(f.id);
+      if (!preloadedStorageTargets && f.storagePath) {
+        filesToDeleteFromStorage.push({ storagePath: f.storagePath, provider: f.provider });
+      }
+      batch.delete(doc(filesCollection, f.id));
+      batchCount++;
+      await commitBatchIfNeeded();
+    }
+    for (const folderId of knownFolderIds) {
+      batch.delete(doc(foldersCollection, folderId));
+      batchCount++;
+      await commitBatchIfNeeded();
+    }
+  } else {
+    // Fallback path
+    const [filesSnap, foldersSnap] = await Promise.all([getDocs(filesCollection), getDocs(foldersCollection)]);
+    for (const d of filesSnap.docs) {
+      const data = d.data() as any;
+      const fp = String(data.folderPath || '');
+      const isInside = fp === target || fp.startsWith(`${target}/`);
+      if (!isInside) continue;
+      fileIdsToDelete.push(d.id);
+      if (!preloadedStorageTargets && data?.storagePath) {
+        filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+      }
       batch.delete(d.ref);
       batchCount++;
+      await commitBatchIfNeeded();
     }
-  });
 
-  // 1. Commit Firestore batch FIRST
+    const targetFolderDoc = foldersSnap.docs.find((d) => {
+      const data = d.data() as any;
+      return String(data.path || '').trim() === target;
+    });
+    const targetFolderId = targetFolderDoc?.id;
+
+    for (const d of foldersSnap.docs) {
+      const data = d.data() as any;
+      const p = String(data.path || '');
+      const isTargetOrDescendant =
+        (targetFolderId && data.parentFolderId === targetFolderId) ||
+        p === target ||
+        p.startsWith(`${target}/`);
+      if (isTargetOrDescendant) {
+        batch.delete(d.ref);
+        batchCount++;
+        await commitBatchIfNeeded();
+      }
+    }
+  }
+
+  // 1. Commit remaining Firestore batch with timeout
   if (batchCount > 0) {
-    await batch.commit();
+    await commitBatchWithTimeout(batch, 15000);
   }
 
   // 2. Cloud storage file cleanup in background
@@ -2275,33 +2358,52 @@ export const delete130UnifiedFolder = async (folderPath: string): Promise<{ dele
   return { deletedFiles: fileIdsToDelete };
 };
 
-export const delete130UnifiedFiles = async (fileIds: string[]): Promise<void> => {
+export const delete130UnifiedFiles = async (
+  fileIds: string[],
+  preloadedStorageTargets?: Array<{ storagePath?: string; provider?: string }>
+): Promise<void> => {
   if (!fileIds || fileIds.length === 0) return;
   try {
     const filesCollection = collection(db, 'assignments', 'unified130', 'files');
-    const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = [];
-    const batch = writeBatch(db);
+    const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = preloadedStorageTargets ? [...preloadedStorageTargets] : [];
 
-    await Promise.all(
-      fileIds.map(async (fileId) => {
-        const fileDocRef = doc(filesCollection, fileId);
-        try {
-          const snap = await getDoc(fileDocRef);
-          if (snap.exists()) {
-            const data = snap.data() as any;
-            if (data?.storagePath) {
-              filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+    if (!preloadedStorageTargets) {
+      await Promise.all(
+        fileIds.map(async (fileId) => {
+          const fileDocRef = doc(filesCollection, fileId);
+          try {
+            const snap = await getDoc(fileDocRef);
+            if (snap.exists()) {
+              const data = snap.data() as any;
+              if (data?.storagePath) {
+                filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+              }
             }
+          } catch {
+            // ignore getDoc error
           }
-        } catch {
-          // ignore getDoc error
-        }
-        batch.delete(fileDocRef);
-      })
-    );
+        })
+      );
+    }
 
-    // Commit Firestore delete first
-    await batch.commit();
+    const BATCH_CHUNK_LIMIT = 450;
+    let batch = writeBatch(db);
+    let batchCount = 0;
+
+    for (const fileId of fileIds) {
+      const fileDocRef = doc(filesCollection, fileId);
+      batch.delete(fileDocRef);
+      batchCount++;
+      if (batchCount >= BATCH_CHUNK_LIMIT) {
+        await commitBatchWithTimeout(batch, 15000);
+        batch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+
+    if (batchCount > 0) {
+      await commitBatchWithTimeout(batch, 15000);
+    }
 
     // Background storage cleanup
     if (filesToDeleteFromStorage.length > 0) {
@@ -2420,34 +2522,52 @@ export const distribute130UnifiedFiles = async (
 
 export const deleteAssignmentFilesForTrack = async (
   track: TrackKey,
-  fileIds: string[]
+  fileIds: string[],
+  preloadedStorageTargets?: Array<{ storagePath?: string; provider?: string }>
 ): Promise<void> => {
   if (!fileIds || fileIds.length === 0) return;
   try {
     const filesCollection = collection(db, 'assignments', track, 'files');
-    const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = [];
-    const batch = writeBatch(db);
+    const filesToDeleteFromStorage: Array<{ storagePath?: string; provider?: string }> = preloadedStorageTargets ? [...preloadedStorageTargets] : [];
 
-    await Promise.all(
-      fileIds.map(async (fileId) => {
-        const fileDocRef = doc(filesCollection, fileId);
-        try {
-          const snap = await getDoc(fileDocRef);
-          if (snap.exists()) {
-            const data = snap.data() as any;
-            if (data?.storagePath) {
-              filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+    if (!preloadedStorageTargets) {
+      await Promise.all(
+        fileIds.map(async (fileId) => {
+          const fileDocRef = doc(filesCollection, fileId);
+          try {
+            const snap = await getDoc(fileDocRef);
+            if (snap.exists()) {
+              const data = snap.data() as any;
+              if (data?.storagePath) {
+                filesToDeleteFromStorage.push({ storagePath: data.storagePath, provider: data.provider });
+              }
             }
+          } catch {
+            // ignore getDoc error
           }
-        } catch {
-          // ignore getDoc error
-        }
-        batch.delete(fileDocRef);
-      })
-    );
+        })
+      );
+    }
 
-    // Commit Firestore batch FIRST
-    await batch.commit();
+    const BATCH_CHUNK_LIMIT = 450;
+    let batch = writeBatch(db);
+    let batchCount = 0;
+
+    for (const fileId of fileIds) {
+      const fileDocRef = doc(filesCollection, fileId);
+      batch.delete(fileDocRef);
+      batchCount++;
+      if (batchCount >= BATCH_CHUNK_LIMIT) {
+        await commitBatchWithTimeout(batch, 15000);
+        batch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+
+    // Commit remaining Firestore batch with timeout
+    if (batchCount > 0) {
+      await commitBatchWithTimeout(batch, 15000);
+    }
 
     // Background storage cleanup
     if (filesToDeleteFromStorage.length > 0) {
@@ -2481,9 +2601,9 @@ export const removeAssignedFilesFromAllStudents = async (fileIds: string[]): Pro
     }
 
     let updatedCount = 0;
-    const batch = writeBatch(db);
+    const MAX_BATCH = 450; // Safe chunked Firestore batch limit
+    let batch = writeBatch(db);
     let batchCount = 0;
-    const MAX_BATCH = 500; // Firestore batch limit
 
     for (const studentDoc of studentsSnap.docs) {
       const data = studentDoc.data();
@@ -2513,9 +2633,9 @@ export const removeAssignedFilesFromAllStudents = async (fileIds: string[]): Pro
         updatedCount++;
         batchCount++;
 
-        // Firestore batch limit is 500
         if (batchCount >= MAX_BATCH) {
           await batch.commit();
+          batch = writeBatch(db);
           batchCount = 0;
         }
       }

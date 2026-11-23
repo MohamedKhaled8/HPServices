@@ -16,6 +16,9 @@ export interface Unified130TabProps {
   isDistributing130: boolean;
   selected130FileIds: Set<string>;
   setSelected130FileIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+  selected130FolderPaths?: Set<string>;
+  setSelected130FolderPaths?: React.Dispatch<React.SetStateAction<Set<string>>>;
+  deletingFolderPaths?: Set<string>;
   isDeleting130: boolean;
   setDeleteConfirmModal: React.Dispatch<React.SetStateAction<DeleteConfirmModalState>>;
   folderDeleteLoading: {
@@ -46,6 +49,9 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
   isDistributing130,
   selected130FileIds,
   setSelected130FileIds,
+  selected130FolderPaths,
+  setSelected130FolderPaths,
+  deletingFolderPaths,
   isDeleting130,
   setDeleteConfirmModal,
   folderDeleteLoading,
@@ -76,12 +82,13 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
     }
 
     const allSelectable = [...visibleFiles, ...allFilesInFolders];
-    const isChecked =
-      allSelectable.length > 0 &&
-      allSelectable.every((f) => selected130FileIds.has(f.id));
+    const hasAny = allSelectable.length > 0 || visibleFolders.length > 0;
+    const allFilesChecked = allSelectable.length === 0 || allSelectable.every((f) => selected130FileIds.has(f.id));
+    const allFoldersChecked = visibleFolders.length === 0 || (selected130FolderPaths ? visibleFolders.every((f) => selected130FolderPaths.has(f.path)) : false);
+    const isChecked = hasAny && allFilesChecked && (visibleFolders.length === 0 || allFoldersChecked);
 
     return { allFilesInVisibleFolders: allFilesInFolders, isAllChecked: isChecked };
-  }, [visibleFolders, visibleFiles, unified130Files, selected130FileIds]);
+  }, [visibleFolders, visibleFiles, unified130Files, selected130FileIds, selected130FolderPaths]);
 
   return (
     <div className="track-files-panel">
@@ -98,7 +105,7 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
           isDistributing130={isDistributing130}
           isDeleting130={isDeleting130}
           hasSelectionOrVisible={visibleFiles.length > 0 || allFilesInVisibleFolders.length > 0}
-          hasSelectedFiles={selected130FileIds.size > 0}
+          hasSelectedFiles={selected130FileIds.size > 0 || (selected130FolderPaths?.size || 0) > 0}
           onFileUpload={handle130FileUpload}
           onFolderUpload={handleFolderUpload}
           onCreateFolder={handleCreateUnified130Folder}
@@ -117,9 +124,13 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
             isAllChecked={isAllChecked}
             selected130FileIds={selected130FileIds}
             setSelected130FileIds={setSelected130FileIds}
+            selected130FolderPaths={selected130FolderPaths}
+            setSelected130FolderPaths={setSelected130FolderPaths}
+            deletingFolderPaths={deletingFolderPaths}
             isDeleting130={isDeleting130}
             folderDeleteLoading={folderDeleteLoading}
             onNavigateToFolder={setUnified130CurrentPath}
+            onOpenFolder={setUnified130CurrentPath}
             onDeleteFolder={handleDeleteUnified130Folder}
             onRevokeFolder={handleRevoke130FolderFromStudents}
             setDeleteConfirmModal={setDeleteConfirmModal}

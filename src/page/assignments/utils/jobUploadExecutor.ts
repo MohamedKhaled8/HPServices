@@ -140,57 +140,94 @@ export const executeSingleUploadJob = async (
     throw new Error(`فشل رفع ملفات المجلد "${job.folderName}" — لم يتم رفع أي ملف إلى Google Drive`);
   }
 
-  // 3. Create or resolve parent folder doc in Firestore (if keep-parent)
-  let parentFolder: AssignmentFolderMeta | null = null;
-  if (job.uploadStrategy === 'keep-parent') {
-    if (parentFolderCache.has(job.batchId)) {
-      parentFolder = parentFolderCache.get(job.batchId)!;
-    } else {
-      const parentName = (job.parentFolderName || 'مجلد رئيسي').trim();
-      parentFolder = await createFirestoreFolderDoc(
-        job.scope,
-        job.targetTrackId,
-        parentName,
-        job.parentPath || '',
-        { parentFolderId: null, isParentFolder: true, subfoldersCount: 0, totalFilesCount: 0 }
-      );
-      parentFolderCache.set(job.batchId, parentFolder);
-      callbacks.onParentFolderCreated?.(parentFolder);
+  // 3. Post-upload Firestore write step wrapped with 15-second timeout & quota detection
+  const isQuotaError = (err: unknown): boolean => {
+    if (!err) return false;
+    const anyErr = err as { code?: string; message?: string };
+    const code = String(anyErr.code || '');
+    const msg = String(anyErr.message || anyErr);
+    return (
+      code === 'resource-exhausted' ||
+      code.includes('resource-exhausted') ||
+      msg.includes('resource-exhausted') ||
+      msg.includes('Quota exceeded') ||
+      msg.includes('quota exceeded') ||
+      msg.includes('429')
+    );
+  };
+
+  const withTimeout = <T>(promise: Promise<T>, ms: number, timeoutMsg: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(timeoutMsg)), ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  };
+
+  const savePostUploadToFirestore = async (): Promise<{ createdFolder: AssignmentFolderMeta; savedFiles: AssignmentFileMeta[] }> => {
+    let parentFolder: AssignmentFolderMeta | null = null;
+    if (job.uploadStrategy === 'keep-parent') {
+      if (parentFolderCache.has(job.batchId)) {
+        parentFolder = parentFolderCache.get(job.batchId)!;
+      } else {
+        const parentName = (job.parentFolderName || 'مجلد رئيسي').trim();
+        parentFolder = await createFirestoreFolderDoc(
+          job.scope,
+          job.targetTrackId,
+          parentName,
+          job.parentPath || '',
+          { parentFolderId: null, isParentFolder: true, subfoldersCount: 0, totalFilesCount: 0 }
+        );
+        parentFolderCache.set(job.batchId, parentFolder);
+        callbacks.onParentFolderCreated?.(parentFolder);
+      }
     }
-  }
 
-  const parentPath = parentFolder ? parentFolder.path : (job.parentPath || '');
-  const parentFolderId = parentFolder ? parentFolder.id : null;
+    const parentPath = parentFolder ? parentFolder.path : (job.parentPath || '');
+    const parentFolderId = parentFolder ? parentFolder.id : null;
 
-  // 4. Create child folder doc in Firestore
-  const createdFolder = await createFirestoreFolderDoc(
-    job.scope,
-    job.targetTrackId,
-    job.folderName,
-    parentPath,
-    { parentFolderId, isParentFolder: false, totalFilesCount: uploadResults.length }
-  );
+    const createdFolder = await createFirestoreFolderDoc(
+      job.scope,
+      job.targetTrackId,
+      job.folderName,
+      parentPath,
+      { parentFolderId, isParentFolder: false, totalFilesCount: uploadResults.length }
+    );
 
-  // 5. Commit files to Firestore with rollback guard
-  const col = job.scope === 'unified130' ? 'unified130' : (job.targetTrackId || 'track1');
+    const col = job.scope === 'unified130' ? 'unified130' : (job.targetTrackId || 'track1');
+    try {
+      const savedFiles = await saveJobFilesToFirestore(job, createdFolder, uploadResults, user.uid);
+
+      if (parentFolder) {
+        try {
+          await updateDoc(doc(db, 'assignments', col, 'folders', parentFolder.id), stripUndefined({
+            subfoldersCount: increment(1),
+            totalFilesCount: increment(savedFiles.length),
+          }));
+          parentFolder.subfoldersCount = (parentFolder.subfoldersCount || 0) + 1;
+          parentFolder.totalFilesCount = (parentFolder.totalFilesCount || 0) + savedFiles.length;
+        } catch (_) {}
+      }
+
+      return { createdFolder, savedFiles };
+    } catch (firestoreErr) {
+      try { await deleteDoc(doc(db, 'assignments', col, 'folders', createdFolder.id)); } catch (_) {}
+      throw firestoreErr;
+    }
+  };
+
   try {
-    const savedFiles = await saveJobFilesToFirestore(job, createdFolder, uploadResults, user.uid);
-
-    if (parentFolder) {
-      try {
-        await updateDoc(doc(db, 'assignments', col, 'folders', parentFolder.id), stripUndefined({
-          subfoldersCount: increment(1),
-          totalFilesCount: increment(savedFiles.length),
-        }));
-        parentFolder.subfoldersCount = (parentFolder.subfoldersCount || 0) + 1;
-        parentFolder.totalFilesCount = (parentFolder.totalFilesCount || 0) + savedFiles.length;
-      } catch (_) {}
+    return await withTimeout(
+      savePostUploadToFirestore(),
+      15000,
+      'انتهت مهلة استجابة السيرفر أثناء حفظ بيانات الملفات (15 ثانية)'
+    );
+  } catch (err: unknown) {
+    if (isQuotaError(err)) {
+      throw new Error('انتهت الحصة اليومية لـ Firebase (Quota exceeded) — تعذّر حفظ بيانات الملفات');
     }
-
-    return { createdFolder, savedFiles };
-  } catch (firestoreErr) {
-    // Roll back created folder on save failure so no ghost folder is left
-    try { await deleteDoc(doc(db, 'assignments', col, 'folders', createdFolder.id)); } catch (_) {}
-    throw firestoreErr;
+    throw err;
   }
 };

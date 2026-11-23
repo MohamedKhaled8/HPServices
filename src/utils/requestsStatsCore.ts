@@ -11,6 +11,32 @@ export interface RequestsStatsDoc {
   updatedAt?: any;
 }
 
+let quotaExhaustedUntil: number = 0;
+
+export const isQuotaExhausted = (): boolean => Date.now() < quotaExhaustedUntil;
+export const getQuotaExhaustedUntil = (): number => quotaExhaustedUntil;
+export const setQuotaExhaustedCooldown = (durationMs: number = 60_000): void => {
+  quotaExhaustedUntil = Date.now() + durationMs;
+};
+export const resetQuotaExhausted = (): void => {
+  quotaExhaustedUntil = 0;
+};
+
+export const isQuotaError = (err: unknown): boolean => {
+  if (!err) return false;
+  const anyErr = err as { code?: string; message?: string };
+  const code = String(anyErr.code || '');
+  const msg = String(anyErr.message || anyErr);
+  return (
+    code === 'resource-exhausted' ||
+    code.includes('resource-exhausted') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('Quota exceeded') ||
+    msg.includes('quota exceeded') ||
+    msg.includes('429')
+  );
+};
+
 /**
  * Calculates sum total across all services and optional legacy collection.
  */

@@ -13,6 +13,9 @@ interface TrackFilesTableProps {
   isAllChecked: boolean;
   selectedFileIds: Record<TrackKey, Set<string>>;
   setSelectedFileIds: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
+  selectedFolderPaths?: Record<TrackKey, Set<string>>;
+  setSelectedFolderPaths?: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
+  deletingFolderPaths?: Set<string>;
   folderDeleteLoading: {
     scope: 'track' | 'unified130';
     track?: TrackKey;
@@ -21,6 +24,7 @@ interface TrackFilesTableProps {
   isDeletingAssignments: Record<TrackKey, boolean>;
   animatingDeleteIds: Record<TrackKey, Set<string>>;
   onNavigateToFolder: (folderPath: string) => void;
+  onOpenFolder?: (folderPath: string) => void;
   onDeleteFolder: (track: TrackKey, folderPath: string) => void;
   onRevokeFolder?: (track: TrackKey, folderPath: string) => void;
   onDeleteFile: (track: TrackKey, fileId: string) => void;
@@ -37,10 +41,14 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
   isAllChecked,
   selectedFileIds,
   setSelectedFileIds,
+  selectedFolderPaths,
+  setSelectedFolderPaths,
+  deletingFolderPaths,
   folderDeleteLoading,
   isDeletingAssignments,
   animatingDeleteIds,
   onNavigateToFolder,
+  onOpenFolder,
   onDeleteFolder,
   onRevokeFolder,
   onDeleteFile,
@@ -63,9 +71,19 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
                 type="checkbox"
                 checked={isAllChecked}
                 onChange={(e) => {
+                  const checked = e.target.checked;
+                  setSelectedFolderPaths?.((prev) => {
+                    const next = new Set(prev[openedTrack] || []);
+                    if (checked) {
+                      visibleFolders.forEach((f) => next.add(f.path));
+                    } else {
+                      visibleFolders.forEach((f) => next.delete(f.path));
+                    }
+                    return { ...prev, [openedTrack]: next };
+                  });
                   setSelectedFileIds((prev) => {
                     const allIds = new Set(prev[openedTrack] || []);
-                    if (e.target.checked) {
+                    if (checked) {
                       allSelectableFileIds.forEach((id) => allIds.add(id));
                     } else {
                       allSelectableFileIds.forEach((id) => allIds.delete(id));
@@ -84,15 +102,17 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
       <tbody>
         {visibleFolders.map((folder) => {
           const filesInFolder = folderFilesMap.get(folder.path) || [];
-          const isFolderChecked =
-            filesInFolder.length > 0 &&
-            filesInFolder.every((f: any) => selectedFileIds[openedTrack]?.has(f.id));
+          const isFolderChecked = Boolean(
+            selectedFolderPaths?.[openedTrack]?.has(folder.path) ||
+            (filesInFolder.length > 0 && filesInFolder.every((f: { id: string }) => selectedFileIds[openedTrack]?.has(f.id)))
+          );
 
           const deletingThis =
-            !!folderDeleteLoading &&
+            Boolean(deletingFolderPaths?.has(folder.path)) ||
+            (!!folderDeleteLoading &&
             folderDeleteLoading.scope === 'track' &&
             folderDeleteLoading.track === openedTrack &&
-            folderDeleteLoading.folderPath === folder.path;
+            folderDeleteLoading.folderPath === folder.path);
 
           const agg = (allFolders && allTrackFiles)
             ? computeAggregateFolderCounts(folder, allFolders, allTrackFiles)
@@ -106,10 +126,13 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
               filesInFolder={filesInFolder}
               isFolderChecked={isFolderChecked}
               deletingThis={deletingThis}
+              deletingFolderPaths={deletingFolderPaths}
               folderDeleteLoading={folderDeleteLoading}
               isDeletingTrack={isDeletingTrack}
               setSelectedFileIds={setSelectedFileIds}
+              setSelectedFolderPaths={setSelectedFolderPaths}
               onNavigateToFolder={onNavigateToFolder}
+              onOpenFolder={onOpenFolder || onNavigateToFolder}
               onDeleteFolder={onDeleteFolder}
               onRevokeFolder={onRevokeFolder}
               aggregateCounts={agg}

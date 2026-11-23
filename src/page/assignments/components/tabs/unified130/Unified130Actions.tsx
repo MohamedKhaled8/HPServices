@@ -43,7 +43,6 @@ export const Unified130Actions: React.FC<Unified130ActionsProps> = ({
         id="upload-input-130"
         style={{ display: 'none' }}
         accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.bmp,.gif"
-        disabled={isUploading130}
         onChange={(e) => {
           if (e.target.files && e.target.files.length > 0) {
             onFileUpload(e.target.files[0]);
@@ -55,7 +54,6 @@ export const Unified130Actions: React.FC<Unified130ActionsProps> = ({
         type="button"
         className="track-action-btn btn-upload"
         onClick={() => document.getElementById('upload-input-130')?.click()}
-        disabled={isUploading130}
       >
         <Upload size={16} />
         <span>رفع ملف</span>
@@ -70,7 +68,6 @@ export const Unified130Actions: React.FC<Unified130ActionsProps> = ({
       {/* 2. زر رفع فولدر كامل */}
       {onFolderUpload && (
         <UploadFolderButton
-          disabled={isDeleting130}
           onFolderSelected={onFolderUpload}
         />
       )}

@@ -7,6 +7,8 @@ export const createTrackTabProps = (options: {
   trackFiles: any;
   selectedFileIds: any;
   setSelectedFileIds: any;
+  selectedFolderPaths?: any;
+  setSelectedFolderPaths?: any;
   uploadProgress: any;
   isUploadingAssignments: any;
   deletionProps: any;
@@ -25,6 +27,8 @@ export const createTrackTabProps = (options: {
   trackFiles: options.trackFiles,
   selectedFileIds: options.selectedFileIds,
   setSelectedFileIds: options.setSelectedFileIds,
+  selectedFolderPaths: options.selectedFolderPaths,
+  setSelectedFolderPaths: options.setSelectedFolderPaths,
   uploadProgress: options.uploadProgress,
   isUploadingAssignments: options.isUploadingAssignments,
   isDeletingAssignments: options.deletionProps.isDeletingAssignments,
@@ -35,6 +39,7 @@ export const createTrackTabProps = (options: {
   newTrackFolderName: options.trackFoldersProps.newTrackFolderName,
   setNewTrackFolderName: options.trackFoldersProps.setNewTrackFolderName,
   setShowTierModal: options.distProps.setShowTierModal,
+  deletingFolderPaths: options.deletionProps.deletingFolderPaths,
   folderDeleteLoading: options.deletionProps.folderDeleteLoading,
   getVisibleTrackFiles: options.getVisibleTrackFiles,
   getVisibleTrackFolders: options.trackFoldersProps.getVisibleTrackFolders,
@@ -55,6 +60,8 @@ export const createUnifiedTabProps = (options: {
   distProps: any;
   selected130FileIds: any;
   setSelected130FileIds: any;
+  selected130FolderPaths?: any;
+  setSelected130FolderPaths?: any;
   deletionProps: any;
   getVisibleUnified130Files: any;
   handle130FileUpload: any;
@@ -71,8 +78,11 @@ export const createUnifiedTabProps = (options: {
   isDistributing130: options.distProps.isDistributing130,
   selected130FileIds: options.selected130FileIds,
   setSelected130FileIds: options.setSelected130FileIds,
+  selected130FolderPaths: options.selected130FolderPaths,
+  setSelected130FolderPaths: options.setSelected130FolderPaths,
   isDeleting130: options.deletionProps.isDeleting130,
   setDeleteConfirmModal: options.deletionProps.setDeleteConfirmModal,
+  deletingFolderPaths: options.deletionProps.deletingFolderPaths,
   folderDeleteLoading: options.deletionProps.folderDeleteLoading,
   getVisibleUnified130Files: options.getVisibleUnified130Files,
   getVisibleUnified130Folders: options.unifiedFoldersProps.getVisibleUnified130Folders,

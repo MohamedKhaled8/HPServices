@@ -1,6 +1,6 @@
 // LocalStorage cache helpers extracted from src/page/AssignmentsManagementPage.tsx
-import { TrackKey, AssignmentFolderMeta } from '../../../services/firebaseService';
-import { TRACK_FOLDERS_CACHE_KEY, UNIFIED130_FOLDERS_CACHE_KEY } from '../constants/assignments.constants';
+import type { TrackKey, AssignmentFolderMeta } from '../../../services/firebaseService';
+import { TRACK_FOLDERS_CACHE_KEY, UNIFIED130_FOLDERS_CACHE_KEY } from '../constants/assignments.constants.ts';
 
 export const readCachedTrackFolders = (): Record<TrackKey, AssignmentFolderMeta[]> => {
   try {
@@ -42,4 +42,27 @@ export const writeCachedUnified130Folders = (folders: AssignmentFolderMeta[]) =>
   } catch {
     // ignore localStorage quota/private mode
   }
+};
+
+export const removeCachedTrackFolders = (track: TrackKey, folderPaths: string[]) => {
+  if (!folderPaths || folderPaths.length === 0) return;
+  const current = readCachedTrackFolders();
+  const updatedTrackFolders = (current[track] || []).filter((f) => {
+    const p = f.path || '';
+    return !folderPaths.some((target) => p === target || p.startsWith(`${target}/`));
+  });
+  writeCachedTrackFolders({
+    ...current,
+    [track]: updatedTrackFolders,
+  });
+};
+
+export const removeCachedUnified130Folders = (folderPaths: string[]) => {
+  if (!folderPaths || folderPaths.length === 0) return;
+  const current = readCachedUnified130Folders();
+  const updated = current.filter((f) => {
+    const p = f.path || '';
+    return !folderPaths.some((target) => p === target || p.startsWith(`${target}/`));
+  });
+  writeCachedUnified130Folders(updated);
 };

@@ -41,16 +41,30 @@ const uploadToGoogleDrive = async (file: File): Promise<UploadResult> => {
         form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
         form.append('file', file);
 
-        const uploadResponse = await fetch(
-            'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink',
-            {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                },
-                body: form,
+        const uploadController = new AbortController();
+        const uploadTimer = setTimeout(() => uploadController.abort(), 45000);
+        let uploadResponse: Response;
+
+        try {
+            uploadResponse = await fetch(
+                'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink',
+                {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                    body: form,
+                    signal: uploadController.signal,
+                }
+            );
+        } catch (fetchErr: any) {
+            if (fetchErr?.name === 'AbortError' || uploadController.signal.aborted) {
+                throw new Error('انتهت مهلة رفع الملف إلى Google Drive (45 ثانية). يرجى التحقق من سرعة الاتصال وإعادة المحاولة');
             }
-        );
+            throw fetchErr;
+        } finally {
+            clearTimeout(uploadTimer);
+        }
 
         if (!uploadResponse.ok) {
             if (uploadResponse.status === 401) {
@@ -63,17 +77,26 @@ const uploadToGoogleDrive = async (file: File): Promise<UploadResult> => {
         const uploadData = await uploadResponse.json();
 
         // Step 3: Make file publicly accessible
-        await fetch(`https://www.googleapis.com/drive/v3/files/${uploadData.id}/permissions`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                role: 'reader',
-                type: 'anyone',
-            }),
-        });
+        const permController = new AbortController();
+        const permTimer = setTimeout(() => permController.abort(), 15000);
+        try {
+            await fetch(`https://www.googleapis.com/drive/v3/files/${uploadData.id}/permissions`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    role: 'reader',
+                    type: 'anyone',
+                }),
+                signal: permController.signal,
+            });
+        } catch (permErr: any) {
+            logger.warn('Google Drive permission update warning:', permErr?.message || permErr);
+        } finally {
+            clearTimeout(permTimer);
+        }
 
         // Generate direct download link
         const directLink = `https://drive.google.com/uc?export=download&id=${uploadData.id}`;

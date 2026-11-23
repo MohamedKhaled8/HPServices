@@ -11,9 +11,11 @@ import {
   getParentPath,
   getPathLastName,
   filterOutFolderAndDescendants,
+  getFolderAndDescendantIds,
+  getFilesInsideFolderPath,
 } from '../utils/folderUtils';
 import { getVisibleFoldersAtLevel } from '../utils/folderTreeUtils';
-import { writeCachedTrackFolders } from '../storage/assignmentsCache';
+import { writeCachedTrackFolders, removeCachedTrackFolders } from '../storage/assignmentsCache';
 
 interface UseTrackFoldersOptions {
   trackFiles: Record<TrackKey, any[]>;
@@ -25,6 +27,7 @@ interface UseTrackFoldersOptions {
     folderPath: string;
   } | null>>;
   showSnackbarNotification: (message: string, type?: 'success' | 'error') => void;
+  setDeletingFolderPaths?: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 export const useTrackFolders = ({
@@ -33,6 +36,7 @@ export const useTrackFolders = ({
   setSelectedFileIds,
   setFolderDeleteLoading,
   showSnackbarNotification,
+  setDeletingFolderPaths,
 }: UseTrackFoldersOptions) => {
   const [activeTrackFolder, setActiveTrackFolder] = useState<TrackKey>('track1');
   const [trackFolders, setTrackFolders] = useState<Record<TrackKey, AssignmentFolderMeta[]>>({
@@ -64,7 +68,7 @@ export const useTrackFolders = ({
       });
       setNewTrackFolderName('');
       showSnackbarNotification('تم إنشاء المجلد بنجاح', 'success');
-    } catch (error: any) {
+    } catch (error: unknown) {
       // fallback local-only folder حتى لا يختفي عند إعادة فتح الصفحة
       const fallback: AssignmentFolderMeta = {
         id: `local_${Date.now()}`,
@@ -78,7 +82,8 @@ export const useTrackFolders = ({
         return next;
       });
       setNewTrackFolderName('');
-      showSnackbarNotification(error.message ? `${error.message} — تم حفظ المجلد محلياً.` : 'تم حفظ المجلد محلياً.', 'error');
+      const msg = error instanceof Error ? error.message : '';
+      showSnackbarNotification(msg ? `${msg} — تم حفظ المجلد محلياً.` : 'تم حفظ المجلد محلياً.', 'error');
     }
   };
 
@@ -87,38 +92,47 @@ export const useTrackFolders = ({
     const ok = window.confirm(`سيتم حذف المجلد "${folderName}" وكل ما بداخله. هل أنت متأكد؟`);
     if (!ok) return;
 
-    // Snapshot previous state for instant rollback if deletion fails
-    let prevFoldersSnapshot: Record<TrackKey, AssignmentFolderMeta[]> = trackFolders;
-    let prevFilesSnapshot: Record<TrackKey, any[]> = trackFiles;
-
-    // Optimistic removal: remove folder and nested items from UI and cache immediately
-    setTrackFolders((prev) => {
-      prevFoldersSnapshot = prev;
-      const currentList = prev[track] || [];
-      const updatedList = filterOutFolderAndDescendants(currentList, folderPath);
-      const next = { ...prev, [track]: updatedList };
-      writeCachedTrackFolders(next);
-      return next;
-    });
-
-    setTrackFiles((prev) => {
-      prevFilesSnapshot = prev;
-      const currentFiles = prev[track] || [];
-      const updatedFiles = filterOutFolderAndDescendants(currentFiles, folderPath);
-      return { ...prev, [track]: updatedFiles };
-    });
-
-    setTrackCurrentPath((p) => {
-      const cur = p[track] || '';
-      if (cur === folderPath || cur.startsWith(`${folderPath}/`)) {
-        return { ...p, [track]: getParentPath(folderPath) };
-      }
-      return p;
-    });
-
     setFolderDeleteLoading({ scope: 'track', track, folderPath });
+    setDeletingFolderPaths?.((prev) => new Set(prev).add(folderPath));
+
     try {
-      const result = await deleteAssignmentFolderForTrack(track, folderPath);
+      const knownFolderIds = getFolderAndDescendantIds(trackFolders[track] || [], folderPath);
+      const knownFiles = getFilesInsideFolderPath(trackFiles[track] || [], folderPath);
+      const preloadedStorage = knownFiles
+        .filter((f) => f.storagePath)
+        .map((f) => ({ storagePath: f.storagePath, provider: f.provider }));
+
+      const result = await deleteAssignmentFolderForTrack(
+        track,
+        folderPath,
+        preloadedStorage,
+        knownFolderIds,
+        knownFiles
+      );
+
+      // REAL COMMIT-FIRST: Remove from state & LocalStorage ONLY AFTER Firestore succeeds
+      setTrackFolders((prev) => {
+        const currentList = prev[track] || [];
+        const updatedList = filterOutFolderAndDescendants(currentList, folderPath);
+        const next = { ...prev, [track]: updatedList };
+        writeCachedTrackFolders(next);
+        return next;
+      });
+      removeCachedTrackFolders(track, [folderPath]);
+
+      setTrackFiles((prev) => {
+        const currentFiles = prev[track] || [];
+        const updatedFiles = filterOutFolderAndDescendants(currentFiles, folderPath);
+        return { ...prev, [track]: updatedFiles };
+      });
+
+      setTrackCurrentPath((p) => {
+        const cur = p[track] || '';
+        if (cur === folderPath || cur.startsWith(`${folderPath}/`)) {
+          return { ...p, [track]: getParentPath(folderPath) };
+        }
+        return p;
+      });
 
       const removedIds = new Set(result.deletedFiles);
       if (removedIds.size > 0) {
@@ -130,18 +144,19 @@ export const useTrackFolders = ({
       }
 
       if (result.deletedFiles.length > 0) {
-        // Non-blocking secondary student records cleanup
-        removeAssignedFilesFromAllStudents(result.deletedFiles).catch(() => {});
+        void removeAssignedFilesFromAllStudents(result.deletedFiles).catch(console.error);
       }
       showSnackbarNotification('تم حذف المجلد وكل محتوياته بنجاح', 'success');
-    } catch (error: any) {
-      // Rollback on genuine failure
-      setTrackFolders(prevFoldersSnapshot);
-      writeCachedTrackFolders(prevFoldersSnapshot);
-      setTrackFiles(prevFilesSnapshot);
-      showSnackbarNotification(error.message || 'فشل حذف المجلد من الخادم، تم استعادة البيانات', 'error');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'فشل حذف المجلد من الخادم';
+      showSnackbarNotification(msg, 'error');
     } finally {
       setFolderDeleteLoading(null);
+      setDeletingFolderPaths?.((prev) => {
+        const next = new Set(prev);
+        next.delete(folderPath);
+        return next;
+      });
     }
   };
 

@@ -11,9 +11,11 @@ import {
   getParentPath,
   getPathLastName,
   filterOutFolderAndDescendants,
+  getFolderAndDescendantIds,
+  getFilesInsideFolderPath,
 } from '../utils/folderUtils';
 import { getVisibleFoldersAtLevel } from '../utils/folderTreeUtils';
-import { writeCachedUnified130Folders } from '../storage/assignmentsCache';
+import { writeCachedUnified130Folders, removeCachedUnified130Folders } from '../storage/assignmentsCache';
 
 interface UseUnified130FoldersOptions {
   unified130Files: any[];
@@ -25,6 +27,7 @@ interface UseUnified130FoldersOptions {
     folderPath: string;
   } | null>>;
   showSnackbarNotification: (message: string, type?: 'success' | 'error') => void;
+  setDeletingFolderPaths?: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 export const useUnified130Folders = ({
@@ -33,6 +36,7 @@ export const useUnified130Folders = ({
   setSelected130FileIds,
   setFolderDeleteLoading,
   showSnackbarNotification,
+  setDeletingFolderPaths,
 }: UseUnified130FoldersOptions) => {
   const [unified130Folders, setUnified130Folders] = useState<AssignmentFolderMeta[]>([]);
   const [unified130CurrentPath, setUnified130CurrentPath] = useState('');
@@ -55,7 +59,7 @@ export const useUnified130Folders = ({
       });
       setNewUnified130FolderName('');
       showSnackbarNotification('تم إنشاء المجلد بنجاح', 'success');
-    } catch (error: any) {
+    } catch (error: unknown) {
       const safe = folderName.replace(/[\\/:*?"<>|]/g, '_').trim();
       const fallback: AssignmentFolderMeta = {
         id: `local_${Date.now()}`,
@@ -69,7 +73,8 @@ export const useUnified130Folders = ({
         return next;
       });
       setNewUnified130FolderName('');
-      showSnackbarNotification(error.message ? `${error.message} — تم حفظ المجلد محلياً.` : 'تم حفظ المجلد محلياً.', 'error');
+      const msg = error instanceof Error ? error.message : '';
+      showSnackbarNotification(msg ? `${msg} — تم حفظ المجلد محلياً.` : 'تم حفظ المجلد محلياً.', 'error');
     }
   };
 
@@ -78,33 +83,40 @@ export const useUnified130Folders = ({
     const ok = window.confirm(`سيتم حذف المجلد "${folderName}" وكل ما بداخله. هل أنت متأكد؟`);
     if (!ok) return;
 
-    let prevFoldersSnapshot: AssignmentFolderMeta[] = unified130Folders;
-    let prevFilesSnapshot: any[] = unified130Files;
-
-    // Optimistic removal: remove folder and nested items from UI and cache immediately
-    setUnified130Folders((prev) => {
-      prevFoldersSnapshot = prev;
-      const nextFolders = filterOutFolderAndDescendants(prev, folderPath);
-      writeCachedUnified130Folders(nextFolders);
-      return nextFolders;
-    });
-
-    setUnified130Files((prev) => {
-      prevFilesSnapshot = prev;
-      return filterOutFolderAndDescendants(prev, folderPath);
-    });
-
-    setUnified130CurrentPath((cur) => {
-      const c = cur || '';
-      if (c === folderPath || c.startsWith(`${folderPath}/`)) {
-        return getParentPath(folderPath);
-      }
-      return c;
-    });
-
     setFolderDeleteLoading({ scope: 'unified130', folderPath });
+    setDeletingFolderPaths?.((prev) => new Set(prev).add(folderPath));
+
     try {
-      const result = await delete130UnifiedFolder(folderPath);
+      const knownFolderIds = getFolderAndDescendantIds(unified130Folders, folderPath);
+      const knownFiles = getFilesInsideFolderPath(unified130Files, folderPath);
+      const preloadedStorage = knownFiles
+        .filter((f) => f.storagePath)
+        .map((f) => ({ storagePath: f.storagePath, provider: f.provider }));
+
+      const result = await delete130UnifiedFolder(
+        folderPath,
+        preloadedStorage,
+        knownFolderIds,
+        knownFiles
+      );
+
+      // REAL COMMIT-FIRST: Remove from state & LocalStorage ONLY AFTER Firestore succeeds
+      setUnified130Folders((prev) => {
+        const nextFolders = filterOutFolderAndDescendants(prev, folderPath);
+        writeCachedUnified130Folders(nextFolders);
+        return nextFolders;
+      });
+      removeCachedUnified130Folders([folderPath]);
+
+      setUnified130Files((prev) => filterOutFolderAndDescendants(prev, folderPath));
+
+      setUnified130CurrentPath((cur) => {
+        const c = cur || '';
+        if (c === folderPath || c.startsWith(`${folderPath}/`)) {
+          return getParentPath(folderPath);
+        }
+        return c;
+      });
 
       if (result.deletedFiles.length > 0) {
         setSelected130FileIds((prev) => {
@@ -112,21 +124,19 @@ export const useUnified130Folders = ({
           result.deletedFiles.forEach((id) => s.delete(id));
           return s;
         });
-      }
-
-      if (result.deletedFiles.length > 0) {
-        // Non-blocking secondary student records cleanup
-        removeAssignedFilesFromAllStudents(result.deletedFiles).catch(() => {});
+        void removeAssignedFilesFromAllStudents(result.deletedFiles).catch(console.error);
       }
       showSnackbarNotification('تم حذف المجلد وكل محتوياته بنجاح', 'success');
-    } catch (error: any) {
-      // Rollback on genuine failure
-      setUnified130Folders(prevFoldersSnapshot);
-      writeCachedUnified130Folders(prevFoldersSnapshot);
-      setUnified130Files(prevFilesSnapshot);
-      showSnackbarNotification(error.message || 'فشل حذف المجلد من الخادم، تم استعادة البيانات', 'error');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'فشل حذف المجلد من الخادم';
+      showSnackbarNotification(msg, 'error');
     } finally {
       setFolderDeleteLoading(null);
+      setDeletingFolderPaths?.((prev) => {
+        const next = new Set(prev);
+        next.delete(folderPath);
+        return next;
+      });
     }
   };
 

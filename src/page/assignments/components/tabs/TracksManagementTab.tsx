@@ -15,6 +15,8 @@ export interface TracksManagementTabProps {
   trackFolders?: Record<TrackKey, AssignmentFolderMeta[]>;
   selectedFileIds: Record<TrackKey, Set<string>>;
   setSelectedFileIds: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
+  selectedFolderPaths?: Record<TrackKey, Set<string>>;
+  setSelectedFolderPaths?: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
   uploadProgress: Record<TrackKey, { current: number; total: number }>;
   isUploadingAssignments: Record<TrackKey, boolean>;
   isDeletingAssignments: Record<TrackKey, boolean>;
@@ -25,6 +27,7 @@ export interface TracksManagementTabProps {
   newTrackFolderName: string;
   setNewTrackFolderName: React.Dispatch<React.SetStateAction<string>>;
   setShowTierModal: React.Dispatch<React.SetStateAction<boolean>>;
+  deletingFolderPaths?: Set<string>;
   folderDeleteLoading: {
     scope: 'track' | 'unified130';
     track?: TrackKey;
@@ -52,6 +55,8 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
   trackFolders,
   selectedFileIds,
   setSelectedFileIds,
+  selectedFolderPaths,
+  setSelectedFolderPaths,
   uploadProgress,
   isUploadingAssignments,
   isDeletingAssignments,
@@ -62,6 +67,7 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
   newTrackFolderName,
   setNewTrackFolderName,
   setShowTierModal,
+  deletingFolderPaths,
   folderDeleteLoading,
   getVisibleTrackFiles,
   getVisibleTrackFolders,
@@ -112,16 +118,17 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
 
     const allSelectable = [...visibleFiles, ...allFilesInFolders];
     const selectableIds = Array.from(new Set(allSelectable.map((f: any) => f.id)));
-    const allChecked =
-      selectableIds.length > 0 &&
-      selectableIds.every((id) => selectedFileIds[openedTrack]?.has(id));
+    const hasAny = selectableIds.length > 0 || visibleFolders.length > 0;
+    const allFilesChecked = selectableIds.length === 0 || selectableIds.every((id) => selectedFileIds[openedTrack]?.has(id));
+    const allFoldersChecked = visibleFolders.length === 0 || (selectedFolderPaths ? visibleFolders.every((f) => selectedFolderPaths[openedTrack]?.has(f.path)) : false);
+    const allChecked = hasAny && allFilesChecked && (visibleFolders.length === 0 || allFoldersChecked);
 
     return {
       folderFilesMap: map,
       allSelectableFileIds: selectableIds,
       isAllChecked: allChecked,
     };
-  }, [openedTrack, trackFiles, visibleFolders, visibleFiles, selectedFileIds]);
+  }, [openedTrack, trackFiles, visibleFolders, visibleFiles, selectedFileIds, selectedFolderPaths]);
 
   return (
     <div className="track-folders-section">
@@ -160,7 +167,7 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
               isDistributingAssignments={isDistributingAssignments}
               isDeletingAssignments={isDeletingAssignments}
               hasSelectionOrVisible={allSelectableFileIds.length > 0}
-              hasSelectedFiles={!!selectedFileIds[openedTrack]?.size}
+              hasSelectedFiles={!!selectedFileIds[openedTrack]?.size || !!(selectedFolderPaths && selectedFolderPaths[openedTrack]?.size)}
               onFileUpload={handleFileUpload}
               onFolderUpload={handleFolderUpload}
               onCreateFolder={handleCreateTrackFolder}
@@ -181,10 +188,16 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                 isAllChecked={isAllChecked}
                 selectedFileIds={selectedFileIds}
                 setSelectedFileIds={setSelectedFileIds}
+                selectedFolderPaths={selectedFolderPaths}
+                setSelectedFolderPaths={setSelectedFolderPaths}
+                deletingFolderPaths={deletingFolderPaths}
                 folderDeleteLoading={folderDeleteLoading}
                 isDeletingAssignments={isDeletingAssignments}
                 animatingDeleteIds={animatingDeleteIds}
                 onNavigateToFolder={(folderPath) =>
+                  setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: folderPath }))
+                }
+                onOpenFolder={(folderPath) =>
                   setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: folderPath }))
                 }
                 onDeleteFolder={handleDeleteTrackFolder}

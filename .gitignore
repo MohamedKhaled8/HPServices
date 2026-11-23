@@ -18,3 +18,5 @@ pnpm-debug.log*
 ADMIN_CREDENTIALS.local.txt
 telemetry_logs/
 backend_service/telemetry_logs/
+
+graphify-out/

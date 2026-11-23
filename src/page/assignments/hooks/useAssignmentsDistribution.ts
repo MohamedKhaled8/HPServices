@@ -20,6 +20,10 @@ interface UseAssignmentsDistributionOptions {
   getVisibleUnified130Files: () => any[];
   setAssignmentsMessage: (msg: string | null) => void;
   showSnackbarNotification: (message: string, type?: 'success' | 'error') => void;
+  trackCurrentPath?: Record<TrackKey, string>;
+  unified130CurrentPath?: string;
+  trackFiles?: Record<TrackKey, any[]>;
+  unified130Files?: any[];
 }
 
 export const useAssignmentsDistribution = ({
@@ -33,6 +37,10 @@ export const useAssignmentsDistribution = ({
   getVisibleUnified130Files,
   setAssignmentsMessage,
   showSnackbarNotification,
+  trackCurrentPath,
+  unified130CurrentPath,
+  trackFiles,
+  unified130Files,
 }: UseAssignmentsDistributionOptions) => {
   const [showTierModal, setShowTierModal] = useState(false);
   const [distributionReport, setDistributionReport] = useState<DistributionReport | null>(null);
@@ -116,10 +124,28 @@ export const useAssignmentsDistribution = ({
       setTimeout(() => setShowPaperPlane(false), 1500);
 
       const selectedIds = Array.from(selectedFileIds[targetTrack] || []);
-      const visibleIds = getVisibleTrackFiles(targetTrack).map((f: any) => f.id);
-      const ids = selectedIds.length > 0 ? selectedIds : visibleIds;
+      let ids: string[] = [];
+      if (selectedIds.length > 0) {
+        ids = selectedIds;
+      } else {
+        const curPath = (trackCurrentPath?.[targetTrack] || '').trim().replace(/^\/+|\/+$/g, '');
+        if (curPath && trackFiles?.[targetTrack]) {
+          const prefix = `${curPath}/`;
+          ids = trackFiles[targetTrack]
+            .filter((f: any) => {
+              const fp = String(f.folderPath || f.folder || '').trim().replace(/^\/+|\/+$/g, '');
+              return fp === curPath || fp.startsWith(prefix);
+            })
+            .map((f: any) => f.id);
+        } else {
+          ids = getVisibleTrackFiles(targetTrack).map((f: any) => f.id);
+        }
+      }
+
       if (ids.length === 0) {
-        throw new Error('لا توجد ملفات داخل المجلد الحالي للإرسال');
+        showSnackbarNotification('المجلد المحدد فارغ ولا يحتوي على ملفات للتوزيع', 'error');
+        setIsDistributingAssignments(false);
+        return;
       }
 
       // Initial progress banner
@@ -211,10 +237,28 @@ export const useAssignmentsDistribution = ({
       setTimeout(() => setShowPaperPlane(false), 1500);
 
       const selectedIds = Array.from(selected130FileIds);
-      const visibleIds = getVisibleUnified130Files().map((f: any) => f.id);
-      const ids = selectedIds.length > 0 ? selectedIds : visibleIds;
+      let ids: string[] = [];
+      if (selectedIds.length > 0) {
+        ids = selectedIds;
+      } else {
+        const curPath = (unified130CurrentPath || '').trim().replace(/^\/+|\/+$/g, '');
+        if (curPath && unified130Files) {
+          const prefix = `${curPath}/`;
+          ids = unified130Files
+            .filter((f: any) => {
+              const fp = String(f.folderPath || f.folder || '').trim().replace(/^\/+|\/+$/g, '');
+              return fp === curPath || fp.startsWith(prefix);
+            })
+            .map((f: any) => f.id);
+        } else {
+          ids = getVisibleUnified130Files().map((f: any) => f.id);
+        }
+      }
+
       if (ids.length === 0) {
-        throw new Error('لا توجد ملفات داخل المجلد الحالي للإرسال');
+        showSnackbarNotification('المجلد المحدد فارغ ولا يحتوي على ملفات للتوزيع', 'error');
+        setIsDistributing130(false);
+        return;
       }
 
       updateProgress({

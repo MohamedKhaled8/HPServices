@@ -32,6 +32,7 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const [openedTrack, setOpenedTrack] = useState<TrackKey | null>(null);
   const [trackFiles, setTrackFiles] = useState<Record<TrackKey, any[]>>({ track1: [], track2: [], track3: [] });
   const [selectedFileIds, setSelectedFileIds] = useState<Record<TrackKey, Set<string>>>({ track1: new Set(), track2: new Set(), track3: new Set() });
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState<Record<TrackKey, Set<string>>>({ track1: new Set(), track2: new Set(), track3: new Set() });
   const [uploadProgress, setUploadProgress] = useState<Record<TrackKey, { current: number; total: number }>>({
     track1: { current: 0, total: 0 }, track2: { current: 0, total: 0 }, track3: { current: 0, total: 0 }
   });
@@ -39,21 +40,35 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
   const [unified130Files, setUnified130Files] = useState<any[]>([]);
   const [isUploading130, setIsUploading130] = useState(false);
   const [selected130FileIds, setSelected130FileIds] = useState<Set<string>>(new Set());
+  const [selected130FolderPaths, setSelected130FolderPaths] = useState<Set<string>>(new Set());
 
   const { assignmentsMessage, setAssignmentsMessage, showSnackbar, snackbarMessage, snackbarType, showSnackbarNotification } =
     useAssignmentsNotifications();
   const configProps = useAssignmentsConfig({ setAssignmentsMessage });
-  const deletionProps = useAssignmentsDeletion({
-    selectedFileIds, setSelectedFileIds, selected130FileIds, setSelected130FileIds,
-    setTrackFiles, setUnified130Files, trackFiles, unified130Files, setAssignmentsMessage, showSnackbarNotification,
-  });
+
+  const [folderDeleteLoading, setFolderDeleteLoading] = useState<{
+    scope: 'track' | 'unified130';
+    track?: TrackKey;
+    folderPath: string;
+  } | null>(null);
+  const [deletingFolderPaths, setDeletingFolderPaths] = useState<Set<string>>(new Set());
+
   const unifiedFoldersProps = useUnified130Folders({
     unified130Files, setUnified130Files, setSelected130FileIds,
-    setFolderDeleteLoading: deletionProps.setFolderDeleteLoading, showSnackbarNotification,
+    setFolderDeleteLoading, setDeletingFolderPaths, showSnackbarNotification,
   });
   const trackFoldersProps = useTrackFolders({
     trackFiles, setTrackFiles, setSelectedFileIds,
-    setFolderDeleteLoading: deletionProps.setFolderDeleteLoading, showSnackbarNotification,
+    setFolderDeleteLoading, setDeletingFolderPaths, showSnackbarNotification,
+  });
+  const deletionProps = useAssignmentsDeletion({
+    selectedFileIds, setSelectedFileIds, selected130FileIds, setSelected130FileIds,
+    selectedFolderPaths, setSelectedFolderPaths, selected130FolderPaths, setSelected130FolderPaths,
+    setTrackFiles, setUnified130Files, trackFiles, unified130Files,
+    setTrackFolders: trackFoldersProps.setTrackFolders, setUnified130Folders: unifiedFoldersProps.setUnified130Folders,
+    trackFolders: trackFoldersProps.trackFolders, unified130Folders: unifiedFoldersProps.unified130Folders,
+    folderDeleteLoading, setFolderDeleteLoading, deletingFolderPaths, setDeletingFolderPaths,
+    setAssignmentsMessage, showSnackbarNotification,
   });
   const recallProps = useAssignmentsRecall({ showSnackbarNotification });
   const { handleFileUpload, getVisibleTrackFiles } = useTrackFiles({
@@ -124,6 +139,9 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
     openedTrack, activeTrackFolder: trackFoldersProps.activeTrackFolder,
     selectedFileIds, setSelectedFileIds, selected130FileIds, setSelected130FileIds,
     getVisibleTrackFiles, getVisibleUnified130Files, setAssignmentsMessage, showSnackbarNotification,
+    trackCurrentPath: trackFoldersProps.trackCurrentPath,
+    unified130CurrentPath: unifiedFoldersProps.unified130CurrentPath,
+    trackFiles, unified130Files,
   });
 
   const handleBack = () => {
@@ -157,7 +175,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
   const trackProps = createTrackTabProps({
     trackView, setTrackView, openedTrack, setOpenedTrack, trackFoldersProps, trackFiles,
-    selectedFileIds, setSelectedFileIds, uploadProgress, isUploadingAssignments, deletionProps,
+    selectedFileIds, setSelectedFileIds, selectedFolderPaths, setSelectedFolderPaths,
+    uploadProgress, isUploadingAssignments, deletionProps,
     distProps, getVisibleTrackFiles, handleFileUpload,
     handleFolderUploadForTrack: (t: TrackKey, f: File[]) => previewProps.openPreview('track', f, t),
     recallProps,
@@ -165,7 +184,8 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
   const unifiedProps = createUnifiedTabProps({
     unified130Files, unifiedFoldersProps, isUploading130, distProps, selected130FileIds,
-    setSelected130FileIds, deletionProps, getVisibleUnified130Files, handle130FileUpload,
+    setSelected130FileIds, selected130FolderPaths, setSelected130FolderPaths, deletionProps,
+    getVisibleUnified130Files, handle130FileUpload,
     handleFolderUploadFor130: (f: File[]) => previewProps.openPreview('unified130', f),
     recallProps,
   });

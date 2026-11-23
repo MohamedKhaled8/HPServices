@@ -2,12 +2,27 @@ import React from 'react';
 import { X, RotateCcw, Loader2 } from 'lucide-react';
 import { AssignmentFolderMeta } from '../../../../../services/firebaseService';
 
+interface Unified130FolderRowFileItem {
+  id: string;
+  name?: string;
+  folderPath?: string;
+}
+
 interface Unified130FolderRowProps {
   folder: AssignmentFolderMeta;
-  deletingThis: boolean;
-  folderDeleteLoading: any;
-  isDeleting130: boolean;
-  onNavigateToFolder: (path: string) => void;
+  filesInFolder?: Unified130FolderRowFileItem[];
+  isFolderChecked?: boolean;
+  deletingThis?: boolean;
+  deletingFolderPaths?: Set<string>;
+  folderDeleteLoading?: {
+    scope: 'track' | 'unified130';
+    folderPath: string;
+  } | null;
+  isDeleting130?: boolean;
+  setSelected130FolderPaths?: React.Dispatch<React.SetStateAction<Set<string>>>;
+  setSelected130FileIds?: React.Dispatch<React.SetStateAction<Set<string>>>;
+  onNavigateToFolder?: (path: string) => void;
+  onOpenFolder?: (path: string) => void;
   onDeleteFolder: (path: string) => void;
   onRevokeFolder?: (path: string) => void;
   aggregateCounts?: { subfoldersCount: number; totalFilesCount: number; isParent: boolean };
@@ -15,10 +30,14 @@ interface Unified130FolderRowProps {
 
 export const Unified130FolderRow: React.FC<Unified130FolderRowProps> = ({
   folder,
-  deletingThis,
-  folderDeleteLoading,
-  isDeleting130,
+  filesInFolder,
+  isFolderChecked,
+  deletingThis = false,
+  deletingFolderPaths,
+  setSelected130FolderPaths,
+  setSelected130FileIds,
   onNavigateToFolder,
+  onOpenFolder,
   onDeleteFolder,
   onRevokeFolder,
   aggregateCounts,
@@ -29,20 +48,63 @@ export const Unified130FolderRow: React.FC<Unified130FolderRowProps> = ({
     aggregateCounts?.isParent
   );
   const subCount = aggregateCounts?.subfoldersCount ?? folder.subfoldersCount ?? 0;
-  const fileCount = aggregateCounts?.totalFilesCount ?? folder.totalFilesCount ?? 0;
+  const fileCount = aggregateCounts?.totalFilesCount ?? filesInFolder?.length ?? folder.totalFilesCount ?? 0;
+
+  const handleOpen = onOpenFolder || onNavigateToFolder;
+  const isDeletingThis = Boolean(deletingThis || deletingFolderPaths?.has(folder.path));
 
   return (
-    <tr key={`folder-${folder.id}`}>
-      <td>{/* Folder checkbox placeholder */}</td>
+    <tr
+      key={`folder-${folder.id}`}
+      style={{
+        opacity: isDeletingThis ? 0.5 : 1,
+        transition: 'opacity 0.2s ease',
+      }}
+    >
+      <td>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={Boolean(isFolderChecked)}
+            disabled={isDeletingThis}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setSelected130FolderPaths?.((prev) => {
+                const next = new Set(prev);
+                if (checked) next.add(folder.path);
+                else next.delete(folder.path);
+                return next;
+              });
+              if (setSelected130FileIds && filesInFolder) {
+                setSelected130FileIds((prev) => {
+                  const next = new Set(prev);
+                  if (checked) {
+                    filesInFolder.forEach((f) => next.add(f.id));
+                  } else {
+                    filesInFolder.forEach((f) => next.delete(f.id));
+                  }
+                  return next;
+                });
+              }
+            }}
+          />
+          <span className="checkbox-custom" />
+        </label>
+      </td>
       <td>
         <button
           type="button"
-          disabled={!!folderDeleteLoading || isDeleting130}
-          onClick={() => onNavigateToFolder(folder.path)}
+          disabled={isDeletingThis}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isDeletingThis && handleOpen) {
+              handleOpen(folder.path);
+            }
+          }}
           style={{
             border: 'none',
             background: 'none',
-            cursor: 'pointer',
+            cursor: isDeletingThis ? 'not-allowed' : 'pointer',
             color: '#2563eb',
             fontWeight: 700,
             display: 'inline-flex',
@@ -74,11 +136,13 @@ export const Unified130FolderRow: React.FC<Unified130FolderRowProps> = ({
             <button
               type="button"
               className="icon-button revoke"
-              disabled={!!folderDeleteLoading || isDeleting130}
+              disabled={isDeletingThis}
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                onRevokeFolder(folder.path);
+                if (!isDeletingThis) {
+                  onRevokeFolder(folder.path);
+                }
               }}
               title="سحب محتويات هذا المجلد من الطلاب (مع إبقائه في الداش بورد)"
             >
@@ -88,15 +152,17 @@ export const Unified130FolderRow: React.FC<Unified130FolderRowProps> = ({
           <button
             type="button"
             className="icon-button delete"
-            disabled={!!folderDeleteLoading || isDeleting130}
+            disabled={isDeletingThis}
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
-              onDeleteFolder(folder.path);
+              if (!isDeletingThis) {
+                onDeleteFolder(folder.path);
+              }
             }}
             title="حذف المجلد نهائياً"
           >
-            {deletingThis ? <Loader2 size={16} className="spinning-loader-small" /> : <X size={16} />}
+            {isDeletingThis ? <Loader2 size={16} className="spinning-loader-small" /> : <X size={16} />}
           </button>
         </div>
       </td>

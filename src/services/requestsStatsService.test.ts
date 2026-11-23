@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import {
   calculateTotalFromServices,
   resolveDisplayTotalCount,
-  executeStatsSyncWithFallback
+  executeStatsSyncWithFallback,
+  isQuotaError,
+  isQuotaExhausted,
+  setQuotaExhaustedCooldown,
+  resetQuotaExhausted
 } from '../utils/requestsStatsCore.ts';
 import type { ServiceStatsCount, RequestsStatsDoc } from '../utils/requestsStatsCore.ts';
 
@@ -90,4 +94,21 @@ test('manual sync ("مزامنة العدادات"): forces fresh recount and up
   const res = await executeStatsSyncWithFallback(mockRecount);
   assert.equal(recountExecuted, true);
   assert.equal(res.stats.total, 540);
+});
+
+test('quota circuit-breaker: detects resource-exhausted error, activates cooldown, and resets cleanly', () => {
+  resetQuotaExhausted();
+  assert.equal(isQuotaExhausted(), false);
+
+  const quotaError = new Error('429 Quota exceeded: resource-exhausted');
+  (quotaError as any).code = 'resource-exhausted';
+
+  assert.equal(isQuotaError(quotaError), true);
+  assert.equal(isQuotaError(new Error('Normal network glitch')), false);
+
+  setQuotaExhaustedCooldown(60_000);
+  assert.equal(isQuotaExhausted(), true, 'Circuit breaker should be active during cooldown window');
+
+  resetQuotaExhausted();
+  assert.equal(isQuotaExhausted(), false, 'Resetting circuit breaker clears cooldown immediately');
 });

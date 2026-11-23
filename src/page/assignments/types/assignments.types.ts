@@ -14,6 +14,7 @@ import {
 export interface DeleteConfirmModalState {
   open: boolean;
   fileIds: string[];
+  folderPaths?: string[];
   source: 'track' | 'unified130' | 'single-track';
   track?: TrackKey;
   singleFileId?: string;

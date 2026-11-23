@@ -2,16 +2,29 @@ import React from 'react';
 import { X, RotateCcw, Loader2 } from 'lucide-react';
 import { TrackKey, AssignmentFolderMeta } from '../../../../../services/firebaseService';
 
+interface TrackFolderRowFileItem {
+  id: string;
+  name?: string;
+  folderPath?: string;
+}
+
 interface TrackFolderRowProps {
   openedTrack: TrackKey;
   folder: AssignmentFolderMeta;
-  filesInFolder: any[];
+  filesInFolder: TrackFolderRowFileItem[];
   isFolderChecked: boolean;
-  deletingThis: boolean;
-  folderDeleteLoading: any;
-  isDeletingTrack: boolean;
+  deletingThis?: boolean;
+  deletingFolderPaths?: Set<string>;
+  folderDeleteLoading?: {
+    scope: 'track' | 'unified130';
+    track?: TrackKey;
+    folderPath: string;
+  } | null;
+  isDeletingTrack?: boolean;
   setSelectedFileIds: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
-  onNavigateToFolder: (folderPath: string) => void;
+  setSelectedFolderPaths?: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
+  onNavigateToFolder?: (folderPath: string) => void;
+  onOpenFolder?: (folderPath: string) => void;
   onDeleteFolder: (track: TrackKey, folderPath: string) => void;
   onRevokeFolder?: (track: TrackKey, folderPath: string) => void;
   aggregateCounts?: { subfoldersCount: number; totalFilesCount: number; isParent: boolean };
@@ -22,11 +35,12 @@ export const TrackFolderRow: React.FC<TrackFolderRowProps> = ({
   folder,
   filesInFolder,
   isFolderChecked,
-  deletingThis,
-  folderDeleteLoading,
-  isDeletingTrack,
+  deletingThis = false,
+  deletingFolderPaths,
   setSelectedFileIds,
+  setSelectedFolderPaths,
   onNavigateToFolder,
+  onOpenFolder,
   onDeleteFolder,
   onRevokeFolder,
   aggregateCounts,
@@ -39,20 +53,37 @@ export const TrackFolderRow: React.FC<TrackFolderRowProps> = ({
   const subCount = aggregateCounts?.subfoldersCount ?? folder.subfoldersCount ?? 0;
   const fileCount = aggregateCounts?.totalFilesCount ?? filesInFolder.length ?? folder.totalFilesCount ?? 0;
 
+  const handleOpen = onOpenFolder || onNavigateToFolder;
+  const isDeletingThis = Boolean(deletingThis || deletingFolderPaths?.has(folder.path));
+
   return (
-    <tr key={`folder-${folder.id}`}>
+    <tr
+      key={`folder-${folder.id}`}
+      style={{
+        opacity: isDeletingThis ? 0.5 : 1,
+        transition: 'opacity 0.2s ease',
+      }}
+    >
       <td>
         <label className="checkbox-label">
           <input
             type="checkbox"
             checked={isFolderChecked}
+            disabled={isDeletingThis}
             onChange={(e) => {
+              const checked = e.target.checked;
+              setSelectedFolderPaths?.((prev) => {
+                const next = new Set(prev[openedTrack] || []);
+                if (checked) next.add(folder.path);
+                else next.delete(folder.path);
+                return { ...prev, [openedTrack]: next };
+              });
               setSelectedFileIds((prev) => {
                 const allIds = new Set(prev[openedTrack] || []);
-                if (e.target.checked) {
-                  filesInFolder.forEach((f: any) => allIds.add(f.id));
+                if (checked) {
+                  filesInFolder.forEach((f) => allIds.add(f.id));
                 } else {
-                  filesInFolder.forEach((f: any) => allIds.delete(f.id));
+                  filesInFolder.forEach((f) => allIds.delete(f.id));
                 }
                 return { ...prev, [openedTrack]: allIds };
               });
@@ -64,12 +95,17 @@ export const TrackFolderRow: React.FC<TrackFolderRowProps> = ({
       <td>
         <button
           type="button"
-          disabled={!!folderDeleteLoading || isDeletingTrack}
-          onClick={() => onNavigateToFolder(folder.path)}
+          disabled={isDeletingThis}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isDeletingThis && handleOpen) {
+              handleOpen(folder.path);
+            }
+          }}
           style={{
             border: 'none',
             background: 'none',
-            cursor: 'pointer',
+            cursor: isDeletingThis ? 'not-allowed' : 'pointer',
             color: '#2563eb',
             fontWeight: 700,
             display: 'inline-flex',
@@ -101,11 +137,13 @@ export const TrackFolderRow: React.FC<TrackFolderRowProps> = ({
             <button
               type="button"
               className="icon-button revoke"
-              disabled={!!folderDeleteLoading || isDeletingTrack}
+              disabled={isDeletingThis}
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                onRevokeFolder(openedTrack, folder.path);
+                if (!isDeletingThis) {
+                  onRevokeFolder(openedTrack, folder.path);
+                }
               }}
               title="سحب محتويات هذا المجلد من الطلاب (مع إبقائه في الداش بورد)"
             >
@@ -115,15 +153,17 @@ export const TrackFolderRow: React.FC<TrackFolderRowProps> = ({
           <button
             type="button"
             className="icon-button delete"
-            disabled={!!folderDeleteLoading || isDeletingTrack}
+            disabled={isDeletingThis}
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
-              onDeleteFolder(openedTrack, folder.path);
+              if (!isDeletingThis) {
+                onDeleteFolder(openedTrack, folder.path);
+              }
             }}
             title="حذف المجلد نهائياً"
           >
-            {deletingThis ? <Loader2 size={16} className="spinning-loader-small" /> : <X size={16} />}
+            {isDeletingThis ? <Loader2 size={16} className="spinning-loader-small" /> : <X size={16} />}
           </button>
         </div>
       </td>
