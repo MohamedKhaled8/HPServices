@@ -1,4 +1,6 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
   "headers": [
     {
       "source": "/index.html",
@@ -19,7 +21,7 @@
       "destination": "/api/$1"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/|src/|@vite/|@react-refresh|@fs/|@id/|node_modules/|assets/|images/|favicon|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]

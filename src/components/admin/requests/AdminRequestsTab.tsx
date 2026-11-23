@@ -17,6 +17,8 @@ import EditRequestModal from './EditRequestModal';
 import DocumentViewerModal from './DocumentViewerModal';
 import DefaultColumnsModal from './DefaultColumnsModal';
 import AdminRequestsPaginationBar from './AdminRequestsPaginationBar';
+import { useRequestsSearch } from '../../../hooks/useRequestsSearch';
+import { updateSearchCacheItem, removeSearchCacheItem } from '../../../services/requestsSearchService';
 import {
   REQUEST_SPREADSHEET_STANDARD_KEYS,
   workflowStatusLabelAr,
@@ -149,8 +151,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
   syncCounters,
   isSyncingCounters
 }) => {
-  // Local state for search & pagination
-  const [serviceSearchTerm, setServiceSearchTerm] = useState<string>('');
+  // Local state for pagination
   const [requestVisibleLimits, setRequestVisibleLimits] = useState<Record<string, number>>({});
   const [serviceLastSnapshots, setServiceLastSnapshots] = useState<Record<string, any>>({});
   const [serviceHasMore, setServiceHasMore] = useState<Record<string, boolean>>({});
@@ -297,6 +298,22 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
     }
     return m;
   }, [serviceRequests]);
+
+  // Quota-safe search hook across loaded and database records
+  const {
+    searchTerm: serviceSearchTerm,
+    setSearchTerm: setServiceSearchTerm,
+    clearSearch,
+    isSearching,
+    isDbSearching,
+    searchResults,
+    matchCount
+  } = useRequestsSearch({
+    activeServiceId: selectedServiceId,
+    loadedRequests: selectedServiceId ? (requestsByServiceId[selectedServiceId] ?? []) : serviceRequests,
+    students,
+    hasMore: propsHasMore ?? (selectedServiceId ? serviceHasMore[selectedServiceId] !== false : false)
+  });
 
   // Codes indexes & lookup
   const dtCodesIndex = useMemo(() => {
@@ -670,6 +687,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       const request = serviceRequests.find(r => r.id === requestId);
       await updateServiceRequestStatus(requestId, status, serviceId, request?.status);
       updateLocalRequest?.(requestId, { status });
+      updateSearchCacheItem({ id: requestId, status, serviceId } as ServiceRequest);
       let studentName = '';
       let whatsappNumber = '';
       let nationalID = '';
@@ -1073,6 +1091,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       const request = serviceRequests.find(r => r.id === requestId);
       await deleteServiceRequest(requestId, serviceId, request?.status);
       deleteLocalRequest?.(requestId);
+      removeSearchCacheItem(requestId, serviceId);
       setToastState({ message: 'تم حذف الطلب بنجاح', type: 'success' });
     } catch (error: any) {
       setToastState({ message: error.message || 'حدث خطأ أثناء حذف الطلب', type: 'error' });
@@ -1449,10 +1468,14 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
   const adminRequestsFilteredSorted = useMemo(() => {
     if (!dataReady || !selectedServiceId) return [];
     if (selectedServiceId !== deferredRequestsServiceId) return [];
-    const pool = requestsByServiceId[selectedServiceId] ?? [];
+    const pool = (isSearching && searchResults !== null)
+      ? searchResults
+      : (requestsByServiceId[selectedServiceId] ?? []);
     const term = serviceSearchTerm.toLowerCase().trim();
 
-    const filtered = pool.filter((request) => {
+    const filtered = (isSearching && searchResults !== null)
+      ? pool
+      : pool.filter((request) => {
       if (!term) return true;
       const termNorm = normalizeArabicText(term);
       const studentData = students[request.studentId];
@@ -1515,7 +1538,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
     });
 
     return mapped.map((item) => item.req);
-  }, [dataReady, selectedServiceId, deferredRequestsServiceId, requestsByServiceId, serviceSearchTerm, students]);
+  }, [dataReady, selectedServiceId, deferredRequestsServiceId, requestsByServiceId, serviceSearchTerm, students, isSearching, searchResults]);
 
   return (
     <div className="admin-content">
@@ -1678,7 +1701,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
 
             <div className="requests-list-container">
               <div className="search-bar" style={{ marginBottom: '25px' }}>
-                <div className="search-input-wrapper">
+                <div className="search-input-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <Search size={20} className="search-icon" />
                   <input
                     type="text"
@@ -1686,8 +1709,48 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
                     value={serviceSearchTerm}
                     onChange={(e) => setServiceSearchTerm(e.target.value)}
                     className="search-input"
+                    style={{ paddingLeft: serviceSearchTerm ? '38px' : undefined }}
                   />
+                  {serviceSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={clearSearch}
+                      title="إلغاء البحث"
+                      aria-label="إلغاء البحث"
+                      style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#94a3b8',
+                        borderRadius: '50%'
+                      }}
+                    >
+                      <X size={18} />
+                    </button>
+                  )}
                 </div>
+                {isSearching && (
+                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#64748b' }}>
+                    {isDbSearching ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#3b82f6', fontWeight: 600 }}>
+                        <Loader2 size={14} className="animate-spin" />
+                        <span>جاري البحث في جميع السجلات...</span>
+                      </span>
+                    ) : (
+                      <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                        نتائج البحث: {matchCount} طلب
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {(() => {

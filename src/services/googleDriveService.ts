@@ -1,6 +1,9 @@
 import { logger } from '../utils/logger.ts';
+import { getOrFetchDriveToken, invalidateDriveToken } from './driveTokenCache.ts';
 
 const DRIVE_TIMEOUT_MS = 8000;
+
+export { invalidateDriveToken };
 
 export const fetchWithTimeout = async (
   url: string,
@@ -33,58 +36,60 @@ export const extractDriveFileId = (fileIdOrUrl: string): string | null => {
 };
 
 export const getGoogleDriveAccessToken = async (timeoutMs = DRIVE_TIMEOUT_MS): Promise<string> => {
-  // 1. Try secure backend token dispenser (/api/getDriveToken)
-  try {
-    const apiResponse = await fetchWithTimeout(
-      '/api/getDriveToken',
+  return getOrFetchDriveToken(async () => {
+    // 1. Try secure backend token dispenser (/api/getDriveToken)
+    try {
+      const apiResponse = await fetchWithTimeout(
+        '/api/getDriveToken',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+        timeoutMs
+      );
+      if (apiResponse.ok) {
+        const data = await apiResponse.json();
+        if (data.accessToken) {
+          return { accessToken: data.accessToken, expiresIn: data.expiresIn };
+        }
+      }
+    } catch (_) {
+      // Backend endpoint not reachable (e.g. standalone Vite dev server)
+    }
+
+    // 2. Direct client-side refresh fallback
+    const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
+    const clientSecret = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_SECRET;
+    const refreshToken = import.meta.env.VITE_GOOGLE_DRIVE_REFRESH_TOKEN;
+
+    if (!clientId || !clientSecret || !refreshToken) {
+      throw new Error('Google Drive credentials not configured');
+    }
+
+    const tokenResponse = await fetchWithTimeout(
+      'https://oauth2.googleapis.com/token',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }),
       },
       timeoutMs
     );
-    if (apiResponse.ok) {
-      const data = await apiResponse.json();
-      if (data.accessToken) {
-        return data.accessToken;
-      }
+
+    if (!tokenResponse.ok) {
+      const errData = await tokenResponse.json().catch(() => ({}));
+      const errMessage = errData.error_description || errData.error || tokenResponse.statusText;
+      throw new Error(`Failed to get Google Drive access token: ${errMessage}`);
     }
-  } catch (_) {
-    // Backend endpoint not reachable (e.g. standalone Vite dev server)
-  }
 
-  // 2. Direct client-side refresh fallback
-  const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
-  const clientSecret = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_SECRET;
-  const refreshToken = import.meta.env.VITE_GOOGLE_DRIVE_REFRESH_TOKEN;
-
-  if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('Google Drive credentials not configured');
-  }
-
-  const tokenResponse = await fetchWithTimeout(
-    'https://oauth2.googleapis.com/token',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    },
-    timeoutMs
-  );
-
-  if (!tokenResponse.ok) {
-    const errData = await tokenResponse.json().catch(() => ({}));
-    const errMessage = errData.error_description || errData.error || tokenResponse.statusText;
-    throw new Error(`Failed to get Google Drive access token: ${errMessage}`);
-  }
-
-  const tokenData = await tokenResponse.json();
-  return tokenData.access_token;
+    const tokenData = await tokenResponse.json();
+    return { accessToken: tokenData.access_token, expiresIn: tokenData.expires_in };
+  });
 };
 
 export const deleteFromGoogleDrive = async (

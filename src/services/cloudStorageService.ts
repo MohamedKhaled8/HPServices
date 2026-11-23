@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger';
-import { getGoogleDriveAccessToken } from './googleDriveService';
+import { getGoogleDriveAccessToken, invalidateDriveToken } from './googleDriveService';
 
 // ============================================
 // Cloud Storage Service - Google Drive Only
@@ -53,6 +53,9 @@ const uploadToGoogleDrive = async (file: File): Promise<UploadResult> => {
         );
 
         if (!uploadResponse.ok) {
+            if (uploadResponse.status === 401) {
+                invalidateDriveToken();
+            }
             const errorData = await uploadResponse.json();
             throw new Error(`Google Drive upload failed: ${errorData.error?.message || 'Unknown error'}`);
         }
