@@ -26,41 +26,60 @@ export const STANDARD_SPECIALIZATIONS = [
   'عام / أخرى'
 ] as const;
 
+export type StandardSpecialization = (typeof STANDARD_SPECIALIZATIONS)[number];
+
+const ALL_SPECIALIZATIONS_TOKENS = new Set(['all', 'الكل', 'جميع التخصصات']);
+
+const cleanSpecializationText = (raw: string): string =>
+  raw
+    .trim().toLowerCase()
+    .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+    .replace(/[\u064B-\u065F\u0670]/g, '').replace(/[-_/\\,.]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const CANONICAL_BY_CLEAN = new Map<string, StandardSpecialization>(
+  STANDARD_SPECIALIZATIONS.map((spec) => [cleanSpecializationText(spec), spec])
+);
+
+const EMPTY_SPEC_TOKENS = new Set(['', 'اخرى', 'اخري', 'other', 'عام', 'اختر التخصص', 'اختر']);
+
+const SPECIALIZATION_RULES: ReadonlyArray<
+  readonly [StandardSpecialization, ReadonlyArray<string>, ((c: string) => boolean)?]
+> = [
+  ['شريعة ودراسات إسلامية', ['شريع', 'اصول دين', 'دراسات اسلام', 'تربيه اسلام', 'تربيه دين', 'فقه', 'عقيده', 'تفسير', 'قران', 'اسلامي', 'اسلاميه']],
+  ['علم نفس واجتماع', ['نفس', 'علم اجتماع'], (c) => !c.includes('دراسات') && c.includes('اجتماع')],
+  ['تاريخ وجغرافيا', ['تاريخ', 'جغرافيا']],
+  ['دراسات اجتماعية', ['دراسات']],
+  ['فلسفة ومنطق', ['فلسف', 'منطق']],
+  ['لغة عربية', ['عرب', 'arabic']],
+  ['لغة إنجليزية', ['انجليز', 'انقليز', 'english']],
+  ['لغة فرنسية', ['فرنس', 'french']],
+  ['تعليم ابتدائي / طفولة', ['طفول', 'ابتدائ', 'رياض اطفال', 'معلم فصل']],
+  ['تربية رياضية', ['بدن', 'تربيه رياض', 'رياضه']],
+  ['زراعي / صناعي', ['زراع', 'صناع']],
+  ['تربية فنية', ['تربيه فنيه', 'فنيه', 'فنون', 'رسم']],
+  ['تربية موسيقية', ['موسيق']],
+  ['مواد تجارية', ['تجار', 'محاسب', 'اداره اعمال']],
+  ['حاسب آلي وتكنولوجيا تعليم', ['حاسب', 'تكنولوج', 'كمبيوتر'], (c) => /\bit\b/.test(c)],
+  ['رياضيات', ['رياض', 'حساب', 'جبر', 'هندسه', 'math']],
+  ['علوم', ['كيمياء', 'فيزياء', 'احياء', 'بيولوج', 'علوم', 'science']]
+];
+
 /**
- * دالة تطبيع موحدة للتخصصات لمعالجة الفروق اللفظية والإملائية
- * مثل: (عربي = لغة عربية)، (انجليزي = لغة إنجليزية)، (دراسات = دراسات اجتماعية)
+ * دالة تطبيع موحدة للتخصصات تُرجع تصنيفاً قياسياً واحداً فقط من القائمة المعتمدة (18 تخصصاً)
  */
-export const normalizeSpecialization = (raw?: string | null): string => {
+export const normalizeSpecialization = (raw?: string | null): StandardSpecialization => {
   if (!raw) return 'عام / أخرى';
-  const clean = raw.trim().toLowerCase()
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ة/g, 'ه')
-    .replace(/ى/g, 'ي')
-    .replace(/[\-_/\\,.]/g, ' ')
-    .replace(/\s+/g, ' ');
+  const clean = cleanSpecializationText(raw);
+  if (EMPTY_SPEC_TOKENS.has(clean)) return 'عام / أخرى';
 
-  if (!clean || clean === 'اخرى' || clean === 'اخري' || clean === 'other' || clean === 'اختر التخصص' || clean === 'اختر') {
-    return 'عام / أخرى';
-  }
+  const exactCanonical = CANONICAL_BY_CLEAN.get(clean);
+  if (exactCanonical) return exactCanonical;
 
-  if (clean.includes('عرب')) return 'لغة عربية';
-  if (clean.includes('انجليز') || clean.includes('انقليز') || clean.includes('english')) return 'لغة إنجليزية';
-  if (clean.includes('رياض') || clean.includes('حساب') || clean.includes('جبر') || clean.includes('هندسه') || clean.includes('math')) return 'رياضيات';
-  if (clean.includes('كيمياء') || clean.includes('فيزياء') || clean.includes('احياء') || clean.includes('بيولوج') || clean.includes('علوم') || clean.includes('science')) return 'علوم';
-  if (clean.includes('دراسات') || clean.includes('تاريخ') || clean.includes('جغرافيا') || clean.includes('اجتماع')) return 'دراسات اجتماعية';
-  if (clean.includes('حاسب') || clean.includes('تكنولوج') || clean.includes('كمبيوتر') || clean.includes('it')) return 'حاسب آلي وتكنولوجيا تعليم';
-  if (clean.includes('نفس')) return 'علم نفس واجتماع';
-  if (clean.includes('فلسف') || clean.includes('منطق')) return 'فلسفة ومنطق';
-  if (clean.includes('فرنس') || clean.includes('french')) return 'لغة فرنسية';
-  if (clean.includes('فن') || clean.includes('رسم')) return 'تربية فنية';
-  if (clean.includes('موسيق')) return 'تربية موسيقية';
-  if (clean.includes('بدن') || clean.includes('تربيه رياض') || clean.includes('رياضه')) return 'تربية رياضية';
-  if (clean.includes('تجار') || clean.includes('محاسب') || clean.includes('اداره اعمال')) return 'مواد تجارية';
-  if (clean.includes('زراع') || clean.includes('صناع')) return 'زراعي / صناعي';
-  if (clean.includes('طفول') || clean.includes('ابتدائ') || clean.includes('رياض اطفال')) return 'تعليم ابتدائي / طفولة';
-  if (clean.includes('شريع') || clean.includes('اصول دين') || clean.includes('اسلام')) return 'شريعة ودراسات إسلامية';
-
-  return raw.trim();
+  const matchedRule = SPECIALIZATION_RULES.find(
+    ([, keywords, extraMatch]) =>
+      keywords.some((kw) => clean.includes(kw)) || Boolean(extraMatch?.(clean))
+  );
+  return matchedRule ? matchedRule[0] : 'عام / أخرى';
 };
 
 /**
@@ -71,57 +90,45 @@ export const normalizeSpecialization = (raw?: string | null): string => {
  */
 export const resolveStudentSpecialization = (
   student: Partial<StudentData> | null | undefined,
-  requestData?: any
-): string => {
+  requestData?: Record<string, unknown> | null
+): StandardSpecialization => {
   if (!student && !requestData) return 'عام / أخرى';
 
-  const fromReq = requestData?.educational_specialization || requestData?.specialization;
-  if (fromReq && typeof fromReq === 'string' && fromReq.trim() && !fromReq.includes('اختر')) {
+  const fromReq = requestData?.educational_specialization ?? requestData?.specialization;
+  if (typeof fromReq === 'string' && fromReq.trim() && !fromReq.includes('اختر')) {
     const normalizedReq = normalizeSpecialization(fromReq);
     if (normalizedReq !== 'عام / أخرى') return normalizedReq;
   }
 
-  if (student?.course && typeof student.course === 'string' && student.course.trim()) {
-    const normalizedCourse = normalizeSpecialization(student.course);
-    if (normalizedCourse !== 'عام / أخرى') return normalizedCourse;
-  }
-
-  if (student?.educational_specialization && typeof student.educational_specialization === 'string' && student.educational_specialization.trim()) {
-    const normalizedEdu = normalizeSpecialization(student.educational_specialization);
-    if (normalizedEdu !== 'عام / أخرى') return normalizedEdu;
-  }
-
-  if (student?.department && typeof student.department === 'string' && student.department.trim()) {
-    const normalizedDept = normalizeSpecialization(student.department);
-    if (normalizedDept !== 'عام / أخرى') return normalizedDept;
+  const candidates = [student?.course, student?.educational_specialization, student?.department];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      const normalized = normalizeSpecialization(candidate);
+      if (normalized !== 'عام / أخرى') return normalized;
+    }
   }
 
   return 'عام / أخرى';
 };
 
 /**
- * التحقق مما إذا كان تخصص الطالب يطابق أحد التخصصات المستهدفة
+ * التحقق الصارم مما إذا كان التخصص القياسي للطالب يطابق أحد التخصصات المستهدفة بالمساواة التامة
  */
 export const isSpecializationMatch = (
   studentSpecialization: string,
   targetSpecializations?: string[]
 ): boolean => {
   if (!targetSpecializations || targetSpecializations.length === 0) return true;
-  if (targetSpecializations.includes('all') || targetSpecializations.includes('الكل') || targetSpecializations.includes('جميع التخصصات')) {
+  if (targetSpecializations.some((t) => ALL_SPECIALIZATIONS_TOKENS.has(t.trim().toLowerCase()))) {
     return true;
   }
 
-  const normStudent = normalizeSpecialization(studentSpecialization);
+  const studentCanonical = normalizeSpecialization(studentSpecialization);
+  const selectedCanonicalSet = new Set<StandardSpecialization>(
+    targetSpecializations.map((target) => normalizeSpecialization(target))
+  );
 
-  return targetSpecializations.some((target) => {
-    if (target === 'all' || target === 'الكل' || target === 'جميع التخصصات') return true;
-    const normTarget = normalizeSpecialization(target);
-    return (
-      normStudent === normTarget ||
-      normStudent.includes(normTarget) ||
-      normTarget.includes(normStudent)
-    );
-  });
+  return selectedCanonicalSet.has(studentCanonical);
 };
 
 /**

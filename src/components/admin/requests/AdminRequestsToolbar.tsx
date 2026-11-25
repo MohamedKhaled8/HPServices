@@ -3,6 +3,7 @@ import { FileText, CheckSquare, X } from 'lucide-react';
 
 export interface AdminRequestsToolbarProps {
   displayCount: number;
+  totalCount?: number | null;
   requestsSort: { colId: string; dir: 'asc' | 'desc' } | null;
   handleRequestsSort: (colId: string, dir: 'asc' | 'desc') => void;
   hasUnsavedLayout: boolean;
@@ -19,6 +20,7 @@ export interface AdminRequestsToolbarProps {
 
 export const AdminRequestsToolbar: React.FC<AdminRequestsToolbarProps> = ({
   displayCount,
+  totalCount,
   requestsSort,
   handleRequestsSort,
   hasUnsavedLayout,
@@ -46,8 +48,12 @@ export const AdminRequestsToolbar: React.FC<AdminRequestsToolbarProps> = ({
         }}
       >
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="pagination-info" style={{ color: '#64748b', fontSize: '14px' }}>
-            إجمالي طلبات الخدمة: {displayCount} طلب
+          <div className="pagination-info" style={{ color: '#64748b', fontSize: '14px', fontWeight: 600 }}>
+            {totalCount != null && totalCount > 0
+              ? `المعروض ${displayCount} من أصل ${totalCount} طلب`
+              : totalCount === 0 && displayCount === 0
+                ? 'المعروض 0 من أصل 0 طلب'
+                : `المعروض ${displayCount} طلب`}
           </div>
           {requestsSort ? (
             <button
@@ -66,9 +72,9 @@ export const AdminRequestsToolbar: React.FC<AdminRequestsToolbarProps> = ({
                 gap: '4px',
                 fontWeight: 600
               }}
-              title="اضغط للرجوع للترتيب الافتراضي للموقع"
+              title="اضغط للرجوع للترتيب الافتراضي (الجديدة والأحدث أولاً)"
             >
-              ↩️ إرجاع للترتيب الأساسي (القديم: أبجدياً بالاسم)
+              ↩️ إرجاع للترتيب الافتراضي (الجديدة والأحدث أولاً)
             </button>
           ) : null}
         </div>

@@ -182,3 +182,47 @@ test('Cache mutation helpers update and delete items cleanly', () => {
   removeSearchCacheItem('m1', '1');
   assert.equal(getSearchSessionCacheSize().queries, 0);
 });
+
+test('Filtered search passes statusFilter and date range to DB query and sorts newest-first', async () => {
+  invalidateSearchCache();
+  let capturedFilter: any = null;
+
+  setDbFetchers(
+    undefined,
+    undefined,
+    async (params) => {
+      capturedFilter = params;
+      return [
+        {
+          id: 'p_old',
+          serviceId: '5',
+          status: 'pending',
+          data: { full_name_arabic: 'محمد علي' },
+          createdAt: '2026-11-20T10:00:00.000Z'
+        } as unknown as ServiceRequest,
+        {
+          id: 'p_new',
+          serviceId: '5',
+          status: 'pending',
+          data: { full_name_arabic: 'محمد أحمد' },
+          createdAt: '2026-11-25T10:00:00.000Z'
+        } as unknown as ServiceRequest
+      ];
+    }
+  );
+
+  const results = await searchRequests({
+    serviceId: '5',
+    query: 'محمد',
+    loadedRequests: [],
+    hasMore: true,
+    statusFilter: 'new',
+    dateFrom: '2026-11-01',
+    dateTo: '2026-11-25'
+  });
+
+  assert.equal(capturedFilter?.statusFilter, 'new');
+  assert.equal(capturedFilter?.dateFrom, '2026-11-01');
+  assert.equal(capturedFilter?.dateTo, '2026-11-25');
+  assert.deepEqual(results.map((r) => r.id), ['p_new', 'p_old']);
+});

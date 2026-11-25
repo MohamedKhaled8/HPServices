@@ -5,6 +5,8 @@ import {
   create130UnifiedFolder,
   delete130UnifiedFolder,
   removeAssignedFilesFromAllStudents,
+  renameAssignmentFolderInFirestore,
+  syncStudentAssignedFilesOnFolderRename,
 } from '../../../services/firebaseService';
 import {
   mergeFoldersByPath,
@@ -15,12 +17,24 @@ import {
   getFilesInsideFolderPath,
 } from '../utils/folderUtils';
 import { getVisibleFoldersAtLevel } from '../utils/folderTreeUtils';
-import { writeCachedUnified130Folders, removeCachedUnified130Folders } from '../storage/assignmentsCache';
+import {
+  writeCachedUnified130Folders,
+  removeCachedUnified130Folders,
+  renameCachedUnified130Folder,
+} from '../storage/assignmentsCache';
+import {
+  validateFolderName,
+  computeRenamedPath,
+  resolveRenameTargets,
+  cascadeFolderRenameState,
+} from '../utils/folderRenameExecutor';
 
 interface UseUnified130FoldersOptions {
   unified130Files: any[];
   setUnified130Files: React.Dispatch<React.SetStateAction<any[]>>;
   setSelected130FileIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+  setSelected130FolderPaths?: React.Dispatch<React.SetStateAction<Set<string>>>;
+  selected130FolderPaths?: Set<string>;
   setFolderDeleteLoading: React.Dispatch<React.SetStateAction<{
     scope: 'track' | 'unified130';
     track?: TrackKey;
@@ -34,6 +48,8 @@ export const useUnified130Folders = ({
   unified130Files,
   setUnified130Files,
   setSelected130FileIds,
+  setSelected130FolderPaths,
+  selected130FolderPaths,
   setFolderDeleteLoading,
   showSnackbarNotification,
   setDeletingFolderPaths,
@@ -41,6 +57,7 @@ export const useUnified130Folders = ({
   const [unified130Folders, setUnified130Folders] = useState<AssignmentFolderMeta[]>([]);
   const [unified130CurrentPath, setUnified130CurrentPath] = useState('');
   const [newUnified130FolderName, setNewUnified130FolderName] = useState('');
+  const [renamingFolderPaths, setRenamingFolderPaths] = useState<Set<string>>(new Set());
 
   const getVisibleUnified130Folders = () => {
     const current = unified130CurrentPath || '';
@@ -100,7 +117,6 @@ export const useUnified130Folders = ({
         knownFiles
       );
 
-      // REAL COMMIT-FIRST: Remove from state & LocalStorage ONLY AFTER Firestore succeeds
       setUnified130Folders((prev) => {
         const nextFolders = filterOutFolderAndDescendants(prev, folderPath);
         writeCachedUnified130Folders(nextFolders);
@@ -140,6 +156,78 @@ export const useUnified130Folders = ({
     }
   };
 
+  const handleRenameUnified130Folder = async (folder: AssignmentFolderMeta, newName: string): Promise<boolean> => {
+    const siblings = unified130Folders || [];
+    const validation = validateFolderName(newName, folder, siblings);
+    if (!validation.isValid) {
+      showSnackbarNotification(validation.error || 'اسم المجلد غير صالح', 'error');
+      return false;
+    }
+
+    const cleanName = validation.cleanName;
+    const oldPath = (folder.path || '').trim();
+    const newPath = computeRenamedPath(cleanName, folder.parentPath);
+
+    setRenamingFolderPaths((prev) => new Set(prev).add(oldPath));
+
+    try {
+      const currentFiles = unified130Files || [];
+      const { descendantFolders, affectedFiles } = resolveRenameTargets(folder, siblings, currentFiles);
+
+      await renameAssignmentFolderInFirestore({
+        scope: 'unified130',
+        targetFolder: folder,
+        newName: cleanName,
+        descendantFolders,
+        affectedFiles,
+      });
+
+      const {
+        updatedFolders,
+        updatedFiles,
+        updatedSelectedFolderPaths,
+        updatedCurrentPath,
+      } = cascadeFolderRenameState({
+        oldPath,
+        newPath,
+        newName: cleanName,
+        folders: siblings,
+        files: currentFiles,
+        selectedFolderPaths: selected130FolderPaths,
+        currentPath: unified130CurrentPath || '',
+      });
+
+      setUnified130Folders(updatedFolders);
+      writeCachedUnified130Folders(updatedFolders);
+      renameCachedUnified130Folder(oldPath, newPath, cleanName);
+
+      setUnified130Files(updatedFiles);
+
+      if (setSelected130FolderPaths && updatedSelectedFolderPaths) {
+        setSelected130FolderPaths(updatedSelectedFolderPaths);
+      }
+
+      if (updatedCurrentPath !== undefined) {
+        setUnified130CurrentPath(updatedCurrentPath);
+      }
+
+      void syncStudentAssignedFilesOnFolderRename(oldPath, newPath, cleanName).catch(console.error);
+
+      showSnackbarNotification('تمت إعادة تسمية المجلد بنجاح', 'success');
+      return true;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'فشل إعادة تسمية المجلد في الخادم';
+      showSnackbarNotification(msg, 'error');
+      return false;
+    } finally {
+      setRenamingFolderPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(oldPath);
+        return next;
+      });
+    }
+  };
+
   return {
     unified130Folders,
     setUnified130Folders,
@@ -147,9 +235,10 @@ export const useUnified130Folders = ({
     setUnified130CurrentPath,
     newUnified130FolderName,
     setNewUnified130FolderName,
+    renamingFolderPaths,
     getVisibleUnified130Folders,
     handleCreateUnified130Folder,
     handleDeleteUnified130Folder,
+    handleRenameUnified130Folder,
   };
 };
-

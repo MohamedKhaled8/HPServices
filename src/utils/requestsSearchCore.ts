@@ -1,19 +1,49 @@
 import type { ServiceRequest, StudentData } from '../types/index.ts';
-import { mergeAndDeduplicateRequests } from './requestsPaginationCore.ts';
+import {
+  mergeAndDeduplicateRequests,
+  matchesStatusAndDateFilter,
+  sortRequestsByPriorityAndDate,
+  type RequestStatusFilter
+} from './requestsPaginationCore.ts';
 
 export type DbFetchBatchFn = (serviceId: string, maxLimit: number) => Promise<ServiceRequest[]>;
+export type DbFetchFilteredBatchFn = (params: {
+  serviceId: string;
+  statusFilter: RequestStatusFilter;
+  dateFrom?: string;
+  dateTo?: string;
+  maxLimit: number;
+}) => Promise<ServiceRequest[]>;
 export type DbGetDocFn = (serviceId: string, docId: string) => Promise<ServiceRequest | null>;
 
 let activeFetchBatch: DbFetchBatchFn = async () => [];
+let activeFetchFilteredBatch: DbFetchFilteredBatchFn | null = null;
 let activeGetDoc: DbGetDocFn = async () => null;
 
-export const setDbFetchers = (fetchBatch?: DbFetchBatchFn, getDocFn?: DbGetDocFn): void => {
-  if (fetchBatch) activeFetchBatch = fetchBatch;
+export const setDbFetchers = (
+  fetchBatch?: DbFetchBatchFn,
+  getDocFn?: DbGetDocFn,
+  fetchFilteredBatch?: DbFetchFilteredBatchFn
+): void => {
+  if (fetchBatch) {
+    activeFetchBatch = fetchBatch;
+    // Reset custom filtered fetcher when tests override fetchBatch without passing fetchFilteredBatch
+    activeFetchFilteredBatch = fetchFilteredBatch ?? null;
+  } else if (fetchFilteredBatch) {
+    activeFetchFilteredBatch = fetchFilteredBatch;
+  }
   if (getDocFn) activeGetDoc = getDocFn;
 };
 
 const serviceCache = new Map<string, ServiceRequest[]>();
 const allServicesQueryCache = new Map<string, ServiceRequest[]>();
+
+const buildServiceCacheKey = (
+  serviceId: string,
+  statusFilter: RequestStatusFilter = 'all',
+  dateFrom?: string,
+  dateTo?: string
+): string => `${serviceId}__${statusFilter}__${dateFrom || ''}__${dateTo || ''}`;
 
 export const normalizeArabic = (text: string): string => {
   if (!text) return '';
@@ -58,9 +88,23 @@ export const matchesRequest = (req: ServiceRequest, queryStr: string, student?: 
   return req.serviceId === rawQ;
 };
 
-export const filterRequests = (requests: ServiceRequest[], queryStr: string, students?: Record<string, StudentData>): ServiceRequest[] => {
-  if (!queryStr || queryStr.trim().length === 0) return requests;
-  return requests.filter((r) => matchesRequest(r, queryStr, students?.[r.studentId]));
+export const filterRequests = (
+  requests: ServiceRequest[],
+  queryStr: string,
+  students?: Record<string, StudentData>,
+  statusFilter: RequestStatusFilter = 'all',
+  dateFrom?: string,
+  dateTo?: string
+): ServiceRequest[] => {
+  const preFiltered =
+    statusFilter !== 'all' || dateFrom || dateTo
+      ? requests.filter((r) => matchesStatusAndDateFilter(r, statusFilter, dateFrom, dateTo))
+      : requests;
+  if (!queryStr || queryStr.trim().length === 0) {
+    return sortRequestsByPriorityAndDate(preFiltered, statusFilter);
+  }
+  const matched = preFiltered.filter((r) => matchesRequest(r, queryStr, students?.[r.studentId]));
+  return sortRequestsByPriorityAndDate(matched, statusFilter);
 };
 
 export interface SearchRequestsParams {
@@ -69,38 +113,73 @@ export interface SearchRequestsParams {
   loadedRequests: ServiceRequest[];
   students?: Record<string, StudentData>;
   hasMore?: boolean;
+  statusFilter?: RequestStatusFilter;
+  dateFrom?: string;
+  dateTo?: string;
 }
+
+const fetchServicePoolForSearch = async (
+  serviceId: string,
+  statusFilter: RequestStatusFilter,
+  dateFrom: string | undefined,
+  dateTo: string | undefined,
+  maxLimit: number
+): Promise<ServiceRequest[]> => {
+  if (activeFetchFilteredBatch) {
+    return activeFetchFilteredBatch({ serviceId, statusFilter, dateFrom, dateTo, maxLimit });
+  }
+  const raw = await activeFetchBatch(serviceId, maxLimit);
+  return raw.filter((r) => matchesStatusAndDateFilter(r, statusFilter, dateFrom, dateTo));
+};
 
 export const searchRequests = async ({
   serviceId,
   query: queryStr,
   loadedRequests,
   students,
-  hasMore = false
+  hasMore = false,
+  statusFilter = 'all',
+  dateFrom,
+  dateTo
 }: SearchRequestsParams): Promise<ServiceRequest[]> => {
   const qTrim = queryStr.trim();
-  if (qTrim.length < 2) return filterRequests(loadedRequests, qTrim, students);
+  if (qTrim.length < 2) {
+    return filterRequests(loadedRequests, qTrim, students, statusFilter, dateFrom, dateTo);
+  }
 
   if (!hasMore && loadedRequests.length > 0 && serviceId && serviceId !== 'all') {
-    return filterRequests(loadedRequests, qTrim, students);
+    return filterRequests(loadedRequests, qTrim, students, statusFilter, dateFrom, dateTo);
   }
 
   if (serviceId && serviceId !== 'all') {
-    if (serviceCache.has(serviceId)) {
-      return filterRequests(serviceCache.get(serviceId)!, qTrim, students);
+    const cacheKey = buildServiceCacheKey(serviceId, statusFilter, dateFrom, dateTo);
+    if (serviceCache.has(cacheKey)) {
+      return filterRequests(serviceCache.get(cacheKey)!, qTrim, students, statusFilter, dateFrom, dateTo);
     }
     let idDocReq: ServiceRequest | null = null;
     if (/^[a-zA-Z0-9_-]{12,40}$/.test(qTrim)) {
       try { idDocReq = await activeGetDoc(serviceId, qTrim); } catch (_) {}
     }
-    const fetched = await activeFetchBatch(serviceId, 350);
-    if (idDocReq && !fetched.some((r) => r.id === idDocReq!.id)) fetched.unshift(idDocReq);
-    const combined = mergeAndDeduplicateRequests(loadedRequests, fetched);
-    serviceCache.set(serviceId, combined);
-    return filterRequests(combined, qTrim, students);
+    const fetched = await fetchServicePoolForSearch(serviceId, statusFilter, dateFrom, dateTo, 2500);
+    if (
+      idDocReq &&
+      matchesStatusAndDateFilter(idDocReq, statusFilter, dateFrom, dateTo) &&
+      !fetched.some((r) => r.id === idDocReq!.id)
+    ) {
+      fetched.unshift(idDocReq);
+    }
+    const scopedLoaded = loadedRequests.filter((r) =>
+      matchesStatusAndDateFilter(r, statusFilter, dateFrom, dateTo)
+    );
+    const combined = sortRequestsByPriorityAndDate(
+      mergeAndDeduplicateRequests(scopedLoaded, fetched),
+      statusFilter
+    );
+    serviceCache.set(cacheKey, combined);
+    return filterRequests(combined, qTrim, students, statusFilter, dateFrom, dateTo);
   }
 
-  const normKey = normalizeArabic(qTrim);
+  const normKey = `${normalizeArabic(qTrim)}__${statusFilter}__${dateFrom || ''}__${dateTo || ''}`;
   if (allServicesQueryCache.has(normKey)) return allServicesQueryCache.get(normKey)!;
 
   const allActiveIds = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
@@ -108,47 +187,76 @@ export const searchRequests = async ({
   const uncachedServiceIds: string[] = [];
 
   for (const sid of allActiveIds) {
-    if (serviceCache.has(sid)) allResults.push(...filterRequests(serviceCache.get(sid)!, qTrim, students));
-    else uncachedServiceIds.push(sid);
+    const cacheKey = buildServiceCacheKey(sid, statusFilter, dateFrom, dateTo);
+    if (serviceCache.has(cacheKey)) {
+      allResults.push(...filterRequests(serviceCache.get(cacheKey)!, qTrim, students, statusFilter, dateFrom, dateTo));
+    } else {
+      uncachedServiceIds.push(sid);
+    }
   }
 
   if (uncachedServiceIds.length > 0) {
-    const batchResults = await Promise.all(uncachedServiceIds.map((sid) => activeFetchBatch(sid, 30)));
+    const batchResults = await Promise.all(
+      uncachedServiceIds.map((sid) =>
+        fetchServicePoolForSearch(sid, statusFilter, dateFrom, dateTo, 250)
+      )
+    );
     batchResults.forEach((docs, idx) => {
       const sid = uncachedServiceIds[idx];
-      serviceCache.set(sid, docs);
-      allResults.push(...filterRequests(docs, qTrim, students));
+      const cacheKey = buildServiceCacheKey(sid, statusFilter, dateFrom, dateTo);
+      serviceCache.set(cacheKey, docs);
+      allResults.push(...filterRequests(docs, qTrim, students, statusFilter, dateFrom, dateTo));
     });
   }
 
-  const mergedAll = mergeAndDeduplicateRequests(loadedRequests.filter((r) => matchesRequest(r, qTrim, students?.[r.studentId])), allResults);
+  const mergedAll = sortRequestsByPriorityAndDate(
+    mergeAndDeduplicateRequests(
+      filterRequests(loadedRequests, qTrim, students, statusFilter, dateFrom, dateTo),
+      allResults
+    ),
+    statusFilter
+  );
   allServicesQueryCache.set(normKey, mergedAll);
   return mergedAll;
 };
 
 export const invalidateSearchCache = (serviceId?: string): void => {
-  if (serviceId) serviceCache.delete(serviceId);
-  else serviceCache.clear();
+  if (serviceId) {
+    for (const key of Array.from(serviceCache.keys())) {
+      if (key === serviceId || key.startsWith(`${serviceId}__`)) {
+        serviceCache.delete(key);
+      }
+    }
+  } else {
+    serviceCache.clear();
+  }
   allServicesQueryCache.clear();
 };
 
 export const updateSearchCacheItem = (request: ServiceRequest): void => {
   const sid = String(request.serviceId || '');
-  if (sid && serviceCache.has(sid)) {
-    const cached = serviceCache.get(sid)!;
-    const idx = cached.findIndex((r) => r.id === request.id);
-    if (idx >= 0) cached[idx] = { ...cached[idx], ...request };
-    else cached.unshift(request);
+  if (sid) {
+    for (const [key, cached] of serviceCache.entries()) {
+      if (key === sid || key.startsWith(`${sid}__`)) {
+        const idx = cached.findIndex((r) => r.id === request.id);
+        if (idx >= 0) cached[idx] = { ...cached[idx], ...request };
+        else cached.unshift(request);
+      }
+    }
   }
   allServicesQueryCache.clear();
 };
 
 export const removeSearchCacheItem = (requestId: string, serviceId?: string): void => {
-  if (serviceId && serviceCache.has(serviceId)) {
-    serviceCache.set(serviceId, serviceCache.get(serviceId)!.filter((r) => r.id !== requestId));
+  if (serviceId) {
+    for (const [key, list] of serviceCache.entries()) {
+      if (key === serviceId || key.startsWith(`${serviceId}__`)) {
+        serviceCache.set(key, list.filter((r) => r.id !== requestId));
+      }
+    }
   } else {
-    for (const [sid, list] of serviceCache.entries()) {
-      serviceCache.set(sid, list.filter((r) => r.id !== requestId));
+    for (const [key, list] of serviceCache.entries()) {
+      serviceCache.set(key, list.filter((r) => r.id !== requestId));
     }
   }
   allServicesQueryCache.clear();

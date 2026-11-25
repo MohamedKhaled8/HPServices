@@ -39,6 +39,8 @@ export interface TracksManagementTabProps {
   handleDeleteSelected: (track: TrackKey) => void;
   handleDeleteSingleTrackFile: (track: TrackKey, fileId: string) => void;
   handleDeleteTrackFolder: (track: TrackKey, folderPath: string) => Promise<void>;
+  handleRenameTrackFolder?: (track: TrackKey, folder: AssignmentFolderMeta, newName: string) => Promise<boolean>;
+  renamingFolderPaths?: Set<string>;
   handleRevokeFolderFromStudents?: (track: TrackKey, folderPath: string) => void;
   handleFileUpload: (track: TrackKey, files: File[]) => Promise<void>;
   handleFolderUpload?: (track: TrackKey, files: File[]) => Promise<void>;
@@ -75,6 +77,8 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
   handleDeleteSelected,
   handleDeleteSingleTrackFile,
   handleDeleteTrackFolder,
+  handleRenameTrackFolder,
+  renamingFolderPaths,
   handleRevokeFolderFromStudents,
   handleFileUpload,
   handleFolderUpload,
@@ -201,6 +205,8 @@ export const TracksManagementTab: React.FC<TracksManagementTabProps> = ({
                   setTrackCurrentPath((prev) => ({ ...prev, [openedTrack]: folderPath }))
                 }
                 onDeleteFolder={handleDeleteTrackFolder}
+                onRenameFolder={handleRenameTrackFolder}
+                renamingFolderPaths={renamingFolderPaths}
                 onRevokeFolder={handleRevokeFolderFromStudents}
                 onDeleteFile={handleDeleteSingleTrackFile}
                 allFolders={trackFolders && openedTrack ? trackFolders[openedTrack] : undefined}

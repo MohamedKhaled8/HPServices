@@ -55,10 +55,12 @@ const AssignmentsManagementPage: React.FC<AssignmentsManagementPageProps> = ({ o
 
   const unifiedFoldersProps = useUnified130Folders({
     unified130Files, setUnified130Files, setSelected130FileIds,
+    setSelected130FolderPaths, selected130FolderPaths,
     setFolderDeleteLoading, setDeletingFolderPaths, showSnackbarNotification,
   });
   const trackFoldersProps = useTrackFolders({
     trackFiles, setTrackFiles, setSelectedFileIds,
+    setSelectedFolderPaths, selectedFolderPaths,
     setFolderDeleteLoading, setDeletingFolderPaths, showSnackbarNotification,
   });
   const deletionProps = useAssignmentsDeletion({

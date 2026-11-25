@@ -1,13 +1,21 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { ServiceRequest, StudentData } from '../types';
 import { filterRequests, searchRequests } from '../services/requestsSearchService';
-import { mergeAndDeduplicateRequests } from '../utils/requestsPaginationCore';
+import {
+  mergeAndDeduplicateRequests,
+  sortRequestsByPriorityAndDate,
+  type RequestStatusFilter
+} from '../utils/requestsPaginationCore';
 
 export interface UseRequestsSearchOptions {
   activeServiceId: string | null;
   loadedRequests: ServiceRequest[];
   students?: Record<string, StudentData>;
   hasMore?: boolean;
+  statusFilter?: RequestStatusFilter;
+  dateFrom?: string;
+  dateTo?: string;
+  pageSize?: number;
   debounceMs?: number;
 }
 
@@ -19,6 +27,8 @@ export interface UseRequestsSearchResult {
   isDbSearching: boolean;
   searchResults: ServiceRequest[] | null;
   matchCount: number;
+  hasMoreSearchResults: boolean;
+  loadMoreSearchResults: () => void;
 }
 
 export function useRequestsSearch({
@@ -26,39 +36,58 @@ export function useRequestsSearch({
   loadedRequests,
   students,
   hasMore = false,
-  debounceMs = 500
+  statusFilter = 'all',
+  dateFrom = '',
+  dateTo = '',
+  pageSize = 50,
+  debounceMs = 400
 }: UseRequestsSearchOptions): UseRequestsSearchResult {
   const [searchTerm, setSearchTermState] = useState<string>('');
   const [dbResults, setDbResults] = useState<ServiceRequest[] | null>(null);
   const [isDbSearching, setIsDbSearching] = useState<boolean>(false);
-  const prevServiceIdRef = useRef<string | null>(activeServiceId);
+  const [visibleLimit, setVisibleLimit] = useState<number>(pageSize);
+  const filterKeyRef = useRef<string>('');
+  const searchGenRef = useRef<number>(0);
 
-  // Reset or adjust when active service tab switches
+  const currentFilterKey = `${activeServiceId || ''}__${statusFilter}__${dateFrom}__${dateTo}`;
+
+  // Reset pagination & stale results cleanly whenever filters or search term change
   useEffect(() => {
-    if (prevServiceIdRef.current !== activeServiceId) {
-      prevServiceIdRef.current = activeServiceId;
+    if (filterKeyRef.current !== currentFilterKey) {
+      filterKeyRef.current = currentFilterKey;
       setDbResults(null);
       setIsDbSearching(false);
     }
-  }, [activeServiceId]);
+    setVisibleLimit(pageSize);
+  }, [currentFilterKey, searchTerm, pageSize]);
 
   const isQueryValid = searchTerm.trim().length >= 2;
 
-  // Instant local-first filtering (0ms, 0 reads)
+  // Instant local-first filtering on already-loaded items
   const localResults = useMemo(() => {
     if (!isQueryValid) return null;
-    return filterRequests(loadedRequests, searchTerm, students);
-  }, [isQueryValid, loadedRequests, searchTerm, students]);
+    return filterRequests(
+      loadedRequests,
+      searchTerm,
+      students,
+      statusFilter,
+      dateFrom || undefined,
+      dateTo || undefined
+    );
+  }, [isQueryValid, loadedRequests, searchTerm, students, statusFilter, dateFrom, dateTo]);
 
   useEffect(() => {
+    const gen = ++searchGenRef.current;
+
     if (!isQueryValid) {
       setDbResults(null);
       setIsDbSearching(false);
       return;
     }
 
-    // Skip Firestore if everything in this scope is already loaded
+    // Skip Firestore if everything in this filtered scope is already loaded
     if (!hasMore && activeServiceId && activeServiceId !== 'all') {
+      setDbResults(null);
       setIsDbSearching(false);
       return;
     }
@@ -73,14 +102,17 @@ export function useRequestsSearch({
           query: searchTerm,
           loadedRequests,
           students,
-          hasMore
+          hasMore,
+          statusFilter,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined
         });
-        if (!isCancelled) {
+        if (!isCancelled && searchGenRef.current === gen) {
           setDbResults(fullMatches);
           setIsDbSearching(false);
         }
-      } catch (err) {
-        if (!isCancelled) {
+      } catch {
+        if (!isCancelled && searchGenRef.current === gen) {
           setIsDbSearching(false);
         }
       }
@@ -90,21 +122,37 @@ export function useRequestsSearch({
       isCancelled = true;
       clearTimeout(timer);
     };
-  }, [isQueryValid, searchTerm, activeServiceId, loadedRequests, students, hasMore, debounceMs]);
+  }, [isQueryValid, searchTerm, activeServiceId, loadedRequests, students, hasMore, statusFilter, dateFrom, dateTo, debounceMs]);
 
-  const searchResults = useMemo(() => {
+  const allSearchResults = useMemo(() => {
     if (!isQueryValid) return null;
-    if (dbResults !== null) {
-      return mergeAndDeduplicateRequests(localResults || [], dbResults);
-    }
-    return localResults;
-  }, [isQueryValid, localResults, dbResults]);
+    const combined =
+      dbResults !== null
+        ? mergeAndDeduplicateRequests(localResults || [], dbResults)
+        : (localResults || []);
+    return sortRequestsByPriorityAndDate(combined, statusFilter);
+  }, [isQueryValid, localResults, dbResults, statusFilter]);
+
+  const paginatedSearchResults = useMemo(() => {
+    if (!allSearchResults) return null;
+    return allSearchResults.slice(0, visibleLimit);
+  }, [allSearchResults, visibleLimit]);
+
+  const matchCount = allSearchResults?.length ?? 0;
+  const hasMoreSearchResults = Boolean(
+    paginatedSearchResults && allSearchResults && paginatedSearchResults.length < allSearchResults.length
+  );
+
+  const loadMoreSearchResults = useCallback(() => {
+    setVisibleLimit((prev) => prev + pageSize);
+  }, [pageSize]);
 
   const clearSearch = useCallback(() => {
     setSearchTermState('');
     setDbResults(null);
     setIsDbSearching(false);
-  }, []);
+    setVisibleLimit(pageSize);
+  }, [pageSize]);
 
   const setSearchTerm = useCallback((term: string) => {
     setSearchTermState(term);
@@ -116,7 +164,9 @@ export function useRequestsSearch({
     clearSearch,
     isSearching: isQueryValid,
     isDbSearching,
-    searchResults,
-    matchCount: searchResults?.length ?? 0
+    searchResults: paginatedSearchResults,
+    matchCount,
+    hasMoreSearchResults,
+    loadMoreSearchResults
   };
 }

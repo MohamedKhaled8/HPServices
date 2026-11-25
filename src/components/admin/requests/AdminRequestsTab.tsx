@@ -21,6 +21,11 @@ import { useRequestsSearch } from '../../../hooks/useRequestsSearch';
 import { updateSearchCacheItem, removeSearchCacheItem } from '../../../services/requestsSearchService';
 import { loadStoredStats } from '../../../services/requestsStatsService';
 import {
+  mergeAndDeduplicateRequests,
+  sortRequestsByPriorityAndDate,
+  type RequestStatusFilter
+} from '../../../utils/requestsPaginationCore';
+import {
   REQUEST_SPREADSHEET_STANDARD_KEYS,
   workflowStatusLabelAr,
   workflowStatusRank,
@@ -53,7 +58,6 @@ import {
   prepareAutomationPostBody,
   parseAutomationApiJsonResponse
 } from '../../../utils/automationApi';
-import { dedupeRequestsByStudent } from '../../../services/cloudinaryRestoreService';
 import { triggerWhatsAppNotification } from '../../../utils/whatsapp';
 import type {
   ServiceRequest,
@@ -107,6 +111,16 @@ export interface AdminRequestsTabProps {
   // Real-Time Pagination & Stats Extensions
   isLoadingMoreServiceRequests?: boolean;
   hasMoreServiceRequests?: boolean;
+  isLoadingRequests?: boolean;
+  filteredTotalMatchingCount?: number | null;
+  activeServiceStatusCounts?: { all: number | null; new: number | null };
+  requestStatusFilter?: RequestStatusFilter;
+  setRequestStatusFilter?: React.Dispatch<React.SetStateAction<RequestStatusFilter>>;
+  requestDateFrom?: string;
+  setRequestDateFrom?: React.Dispatch<React.SetStateAction<string>>;
+  requestDateTo?: string;
+  setRequestDateTo?: React.Dispatch<React.SetStateAction<string>>;
+  resetRequestFilters?: () => void;
   handleLoadMoreServiceRequests?: (serviceId: string) => Promise<void>;
   updateLocalRequest?: (requestId: string, patch: Partial<ServiceRequest>) => void;
   deleteLocalRequest?: (requestId: string) => void;
@@ -144,14 +158,35 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
   setToastState,
   isLoadingMoreServiceRequests: propsIsLoadingMore,
   hasMoreServiceRequests: propsHasMore,
+  isLoadingRequests: propsIsLoadingRequests,
+  filteredTotalMatchingCount: propsFilteredTotalCount,
+  activeServiceStatusCounts: propsStatusCounts,
+  requestStatusFilter: propsStatusFilter,
+  setRequestStatusFilter: propsSetStatusFilter,
+  requestDateFrom: propsDateFrom,
+  setRequestDateFrom: propsSetDateFrom,
+  requestDateTo: propsDateTo,
+  setRequestDateTo: propsSetDateTo,
+  resetRequestFilters: propsResetFilters,
   handleLoadMoreServiceRequests: propsHandleLoadMore,
   updateLocalRequest,
   deleteLocalRequest,
   requestsStatsMap,
-  totalRequestsCount,
-  syncCounters,
-  isSyncingCounters
+  totalRequestsCount
 }) => {
+  // Local fallback filter state when rendered standalone
+  const [localStatusFilter, setLocalStatusFilter] = useState<RequestStatusFilter>('all');
+  const [localDateFrom, setLocalDateFrom] = useState<string>('');
+  const [localDateTo, setLocalDateTo] = useState<string>('');
+  const statusFilter = propsStatusFilter ?? localStatusFilter;
+  const setStatusFilter = propsSetStatusFilter ?? setLocalStatusFilter;
+  const dateFrom = propsDateFrom ?? localDateFrom;
+  const setDateFrom = propsSetDateFrom ?? setLocalDateFrom;
+  const dateTo = propsDateTo ?? localDateTo;
+  const setDateTo = propsSetDateTo ?? setLocalDateTo;
+  const isLoadingRequests = propsIsLoadingRequests ?? false;
+  const [isHeaderNewHovered, setIsHeaderNewHovered] = useState(false);
+
   // Local state for pagination
   const [requestVisibleLimits, setRequestVisibleLimits] = useState<Record<string, number>>({});
   const [serviceLastSnapshots, setServiceLastSnapshots] = useState<Record<string, any>>({});
@@ -244,6 +279,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
 
   // Service name resolution helper
   const getServiceName = useCallback((serviceId: string): string => {
+    if (serviceId === 'all') return 'جميع الخدمات';
     return getServiceNameHelper(
       serviceId,
       bookConfig?.serviceName,
@@ -309,7 +345,8 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       (m[sid] ??= []).push(r);
     }
     for (const sid of Object.keys(m)) {
-      m[sid] = dedupeRequestsByStudent(m[sid]);
+      // Deduplicate strictly by exact Firestore doc.id so distinct/restored requests for the same student are never hidden
+      m[sid] = mergeAndDeduplicateRequests(m[sid], []);
     }
     return m;
   }, [serviceRequests, selectedServiceId]);
@@ -322,12 +359,23 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
     isSearching,
     isDbSearching,
     searchResults,
-    matchCount
+    matchCount,
+    hasMoreSearchResults,
+    loadMoreSearchResults
   } = useRequestsSearch({
     activeServiceId: selectedServiceId,
-    loadedRequests: selectedServiceId ? (requestsByServiceId[selectedServiceId] ?? []) : serviceRequests,
+    loadedRequests:
+      selectedServiceId === 'all'
+        ? serviceRequests
+        : selectedServiceId
+          ? (requestsByServiceId[selectedServiceId] ?? [])
+          : serviceRequests,
     students,
-    hasMore: propsHasMore ?? (selectedServiceId ? serviceHasMore[selectedServiceId] !== false : false)
+    hasMore: propsHasMore ?? (selectedServiceId ? serviceHasMore[selectedServiceId] !== false : false),
+    statusFilter,
+    dateFrom,
+    dateTo,
+    pageSize: 50
   });
 
   // Codes indexes & lookup
@@ -355,7 +403,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
 
   // Auto count loader effect
   useEffect(() => {
-    if (!selectedServiceId) return;
+    if (!selectedServiceId || selectedServiceId === 'all') return;
     if (serviceTotalCounts[selectedServiceId] !== undefined) return;
 
     void getServiceRequestsCount(selectedServiceId).then(count => {
@@ -363,11 +411,11 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
     });
   }, [selectedServiceId, serviceTotalCounts, setServiceTotalCounts]);
 
-  // Reset selection on service change
+  // Reset selection on service or filter change
   useEffect(() => {
     setSelectedRequestKeys(new Set());
     setLastSelectedRequestRowIndex(null);
-  }, [selectedServiceId]);
+  }, [selectedServiceId, statusFilter, dateFrom, dateTo]);
 
   // Auto scroll to requests section on select
   useEffect(() => {
@@ -1479,14 +1527,14 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
     }
   }, [setSelectedServiceId]);
 
-  // Memoized filter and sort for requests
+  // Memoized filter and sort for requests (server-side filtered, deterministic newest-first)
   const adminRequestsFilteredSorted = useMemo(() => {
     if (!dataReady || !selectedServiceId) return [];
     const pool = (isSearching && searchResults !== null)
       ? searchResults
-      : ((requestsByServiceId[selectedServiceId] && requestsByServiceId[selectedServiceId].length > 0)
-          ? requestsByServiceId[selectedServiceId]
-          : serviceRequests);
+      : selectedServiceId === 'all'
+        ? serviceRequests
+        : (requestsByServiceId[selectedServiceId] ?? []);
     const term = serviceSearchTerm.toLowerCase().trim();
 
     const filtered = (isSearching && searchResults !== null)
@@ -1534,27 +1582,8 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
       return false;
     });
 
-    const mapped = filtered.map((req) => {
-      const name = (
-        req.data?.full_name_arabic ||
-        req.data?.full_name ||
-        students[req.studentId]?.fullNameArabic ||
-        ''
-      ).toLowerCase();
-      const isCompleted = normalizeWorkflowStatus(req.status) === 'completed';
-      const time = req.createdAt ? new Date(req.createdAt).getTime() : 0;
-      return { req, name, isCompleted, time };
-    });
-
-    mapped.sort((a, b) => {
-      if (a.isCompleted !== b.isCompleted) {
-        return a.isCompleted ? 1 : -1;
-      }
-      return b.time - a.time;
-    });
-
-    return mapped.map((item) => item.req);
-  }, [dataReady, selectedServiceId, deferredRequestsServiceId, requestsByServiceId, serviceRequests, serviceSearchTerm, students, isSearching, searchResults]);
+    return sortRequestsByPriorityAndDate(filtered, statusFilter);
+  }, [dataReady, selectedServiceId, requestsByServiceId, serviceRequests, serviceSearchTerm, students, isSearching, searchResults, statusFilter]);
 
   return (
     <div className="admin-content">
@@ -1567,38 +1596,52 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
               <span className="requests-section-heading-sync-text">جاري تحميل البيانات من السيرفر</span>
             </span>
           ) : (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span className="requests-section-heading-count" title="إجمالي الطلبات عبر كل الخدمات">
                 {displayTotalCount}
               </span>
-              {syncCounters && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await syncCounters();
-                      setToastState({ message: 'تمت مزامنة العدادات بنجاح', type: 'success', duration: 2500 });
-                    } catch (err) {
-                      console.error('مزامنة العدادات error:', err);
-                      setToastState({ message: 'فشلت مزامنة العدادات', type: 'error', duration: 2500 });
-                    }
-                  }}
-                  disabled={isSyncingCounters}
-                  title="مزامنة العدادات من السيرفر"
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: '8px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    backgroundColor: '#1e293b',
-                    color: '#94a3b8',
-                    border: '1px solid rgba(148,163,184,0.2)',
-                    cursor: isSyncingCounters ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {isSyncingCounters ? 'جاري المزامنة...' : 'مزامنة العدادات'}
-                </button>
-              )}
+              {(() => {
+                const isSpecificService = Boolean(selectedServiceId && selectedServiceId !== 'all');
+                const isNewActive = selectedServiceId !== null && statusFilter === 'new';
+                const buttonLabel = isSpecificService ? 'الطلبات الجديدة لهذه الخدمة' : 'الطلبات الجديدة';
+                return (
+                  <button
+                    type="button"
+                    onMouseEnter={() => setIsHeaderNewHovered(true)}
+                    onMouseLeave={() => setIsHeaderNewHovered(false)}
+                    onClick={() => {
+                      if (selectedServiceId) {
+                        setStatusFilter((prev) => (prev === 'new' ? 'all' : 'new'));
+                      } else {
+                        setSelectedServiceId('all');
+                        setStatusFilter('new');
+                      }
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '4px 14px',
+                      minHeight: '32px',
+                      borderRadius: '999px',
+                      fontSize: '0.875rem',
+                      fontWeight: isNewActive ? 600 : 500,
+                      lineHeight: 1.4,
+                      backgroundColor: isNewActive
+                        ? '#2563eb'
+                        : isHeaderNewHovered
+                          ? '#f8fafc'
+                          : '#ffffff',
+                      color: isNewActive ? '#ffffff' : '#334155',
+                      border: isNewActive ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease'
+                    }}
+                  >
+                    {buttonLabel}
+                  </button>
+                );
+              })()}
             </div>
           )}
         </h2>
@@ -1699,11 +1742,20 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
             <div className="selected-service-header">
               <h3>
                 {getServiceName(selectedServiceId)}
-                {serviceTotalCounts[selectedServiceId] != null && (
-                  <span style={{ fontSize: '14px', backgroundColor: '#e2e8f0', color: '#0f172a', padding: '4px 12px', borderRadius: '12px', marginRight: '12px', fontWeight: 700 }}>
-                    إجمالي طلبات الخدمة: {serviceTotalCounts[selectedServiceId]} طلب
-                  </span>
-                )}
+                {(() => {
+                  const headerCount =
+                    statusFilter === 'all' && !dateFrom && !dateTo
+                      ? (propsFilteredTotalCount ?? (selectedServiceId !== 'all' ? serviceTotalCounts[selectedServiceId] : displayTotalCount))
+                      : propsFilteredTotalCount;
+                  if (headerCount == null) return null;
+                  return (
+                    <span style={{ fontSize: '14px', backgroundColor: '#e2e8f0', color: '#0f172a', padding: '4px 12px', borderRadius: '12px', marginRight: '12px', fontWeight: 700 }}>
+                      {statusFilter === 'all' && !dateFrom && !dateTo
+                        ? `إجمالي طلبات الخدمة: ${headerCount} طلب`
+                        : `إجمالي المطابق: ${headerCount} طلب`}
+                    </span>
+                  );
+                })()}
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <button
@@ -1716,6 +1768,212 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
             </div>
 
             <div className="requests-list-container">
+              {/* Server-side Status, Service & Date Range Filters */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '16px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px'
+                }}
+              >
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                  {(
+                    [
+                      { key: 'all', label: 'الكل', count: propsStatusCounts?.all ?? null },
+                      { key: 'new', label: 'جديدة فقط', count: propsStatusCounts?.new ?? null },
+                      { key: 'submitted', label: 'تم التقديم', count: null },
+                      { key: 'receipt_sent', label: 'تم إرسال الإيصال', count: null },
+                      { key: 'completed', label: 'مكتمل', count: null },
+                      { key: 'rejected', label: 'مرفوض', count: null }
+                    ] as { key: RequestStatusFilter; label: string; count: number | null }[]
+                  ).map(({ key, label, count }) => {
+                    const isActive = statusFilter === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setStatusFilter(key)}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '999px',
+                          fontSize: '13px',
+                          fontWeight: isActive ? 600 : 500,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          border: isActive ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                          background: isActive ? '#2563eb' : '#ffffff',
+                          color: isActive ? '#ffffff' : '#334155',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span>{label}</span>
+                        {count !== null && (
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              padding: '1px 7px',
+                              borderRadius: '12px',
+                              background: isActive ? 'rgba(255,255,255,0.22)' : '#f1f5f9',
+                              color: isActive ? '#ffffff' : '#0f172a'
+                            }}
+                          >
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                  <select
+                    aria-label="تصفية حسب الخدمة"
+                    value={selectedServiceId}
+                    onChange={(e) => setSelectedServiceId(e.target.value)}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: '#ffffff',
+                      color: '#0f172a',
+                      fontSize: '13px',
+                      fontWeight: 600
+                    }}
+                  >
+                    <option value="all">جميع الخدمات</option>
+                    {SERVICES.map((svc) => (
+                      <option key={svc.id} value={svc.id}>
+                        {getServiceName(svc.id)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#475569', fontWeight: 600 }}>
+                    <span>من:</span>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      style={{
+                        padding: '5px 8px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        fontSize: '12px',
+                        color: '#0f172a'
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#475569', fontWeight: 600 }}>
+                    <span>إلى:</span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      style={{
+                        padding: '5px 8px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        fontSize: '12px',
+                        color: '#0f172a'
+                      }}
+                    />
+                  </label>
+
+                  {(statusFilter !== 'all' || dateFrom || dateTo || serviceSearchTerm.trim()) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (propsResetFilters) {
+                          propsResetFilters();
+                        } else {
+                          setStatusFilter('all');
+                          setDateFrom('');
+                          setDateTo('');
+                        }
+                        clearSearch();
+                      }}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid #fecaca',
+                        background: '#fef2f2',
+                        color: '#dc2626',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      مسح الفلاتر
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {selectedServiceId === 'all' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginBottom: '14px'
+                  }}
+                >
+                  {SERVICES.map((svc) => {
+                    const stat = requestStatsByServiceId[svc.id];
+                    const chipCount = statusFilter === 'new' ? (stat?.pending ?? 0) : (stat?.total ?? 0);
+                    if (chipCount <= 0) return null;
+                    return (
+                      <button
+                        key={svc.id}
+                        type="button"
+                        onClick={() => setSelectedServiceId(svc.id)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 10px',
+                          borderRadius: '999px',
+                          border: '1px solid #e2e8f0',
+                          background: '#ffffff',
+                          color: '#334155',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                        title={`الانتقال إلى ${getServiceName(svc.id)}`}
+                      >
+                        <span>{getServiceName(svc.id)}</span>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            padding: '0 6px',
+                            borderRadius: '999px',
+                            background: '#eff6ff',
+                            color: '#1d4ed8'
+                          }}
+                        >
+                          {chipCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="search-bar" style={{ marginBottom: '25px' }}>
                 <div className="search-input-wrapper" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <Search size={20} className="search-icon" />
@@ -1772,7 +2030,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
               {(() => {
                 const filteredRequests = adminRequestsFilteredSorted;
 
-                if (!dataReady && serviceRequests.length === 0) {
+                if ((!dataReady && serviceRequests.length === 0) || (isLoadingRequests && filteredRequests.length === 0)) {
                   return (
                     <div className="no-requests-message" style={{ textAlign: 'center', padding: '40px 20px' }}>
                       <div className="loader-spinner" style={{ margin: '0 auto 16px', width: 36, height: 36, border: '3px solid #e2e8f0', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -1791,9 +2049,10 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
                 }
 
                 if (filteredRequests.length === 0) {
+                  const hasActiveFilters = statusFilter !== 'all' || Boolean(dateFrom) || Boolean(dateTo) || Boolean(serviceSearchTerm.trim());
                   return (
                     <div className="no-requests-message">
-                      <p>لا توجد طلبات لهذه الخدمة</p>
+                      <p>{hasActiveFilters ? 'لا توجد طلبات مطابقة للفلاتر المحددة' : 'لا توجد طلبات لهذه الخدمة'}</p>
                     </div>
                   );
                 }
@@ -1821,7 +2080,18 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
                 // Define columns based on Service ID
                 let columns: { id: string; label: string; getValue: (r: any) => string }[] = [];
 
-                const colName = { id: 'name', label: 'الاسم', getValue: (r: any) => r.data?.full_name_arabic || r.data?.full_name || students[r.studentId]?.fullNameArabic || '-' };
+                const colName = {
+                  id: 'name',
+                  label: 'الاسم',
+                  getValue: (r: any) => {
+                    const direct = r.data?.full_name_arabic || r.data?.full_name || students[r.studentId]?.fullNameArabic;
+                    if (direct) return direct;
+                    const sn = r.data?.student_names || r.data?.names;
+                    if (Array.isArray(sn) && sn.length > 0) return sn.join(', ');
+                    if (typeof sn === 'string' && sn.trim()) return sn.replace(/\n/g, ', ');
+                    return '-';
+                  }
+                };
                 const colNationalId = { id: 'national_id', label: 'الرقم القومي', getValue: (r: any) => r.data?.national_id || students[r.studentId]?.nationalID || '-' };
                 const colWhatsapp = { id: 'whatsapp', label: 'الواتساب', getValue: (r: any) => r.data?.whatsapp_number || r.data?.phone_whatsapp || students[r.studentId]?.whatsappNumber || '-' };
                 const colEmail = { id: 'email', label: 'الإيميل', getValue: (r: any) => r.data?.email || students[r.studentId]?.email || '-' };
@@ -1929,7 +2199,15 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
                     columns = [colName, colWhatsapp, colRequestType, colDestination, colTotalPrice];
                     break;
                   default:
-                    columns = [colName, colNationalId, colWhatsapp, colEmail];
+                    columns = selectedServiceId === 'all'
+                      ? [
+                          { id: 'service_name', label: 'الخدمة', getValue: (r: any) => getServiceName(String(r.serviceId || '')) },
+                          colName,
+                          colNationalId,
+                          colWhatsapp,
+                          colEmail
+                        ]
+                      : [colName, colNationalId, colWhatsapp, colEmail];
                     if (hasAddress) columns.push(colAddress);
                     if (hasDiploma) columns.push(colDiplomaType);
                     if (hasTrack) columns.push(colTrack);
@@ -2194,11 +2472,32 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
 
                 displayRequestsRef.current = displayRequests;
                 const selectedReqsList = serviceRequests.filter(r => selectedRequestKeys.has(`${r.serviceId}_${r.id}`));
+                const isFilteredView = statusFilter !== 'all' || Boolean(dateFrom) || Boolean(dateTo);
+                const activeHasMore = propsHasMore ?? (serviceHasMore[selectedServiceId] !== false);
+                const rawTotalCount = isSearching
+                  ? matchCount
+                  : (propsFilteredTotalCount !== undefined && propsFilteredTotalCount !== null)
+                    ? propsFilteredTotalCount
+                    : isFilteredView
+                      ? null
+                      : selectedServiceId === 'all'
+                        ? (totalRequestsCount ?? null)
+                        : (serviceTotalCounts[selectedServiceId] && serviceTotalCounts[selectedServiceId] > 0)
+                          ? serviceTotalCounts[selectedServiceId]
+                          : (requestsStatsMap?.[selectedServiceId]?.total && requestsStatsMap[selectedServiceId].total > 0)
+                            ? requestsStatsMap[selectedServiceId].total
+                            : null;
+                const activeTotalCount = isSearching
+                  ? matchCount
+                  : activeHasMore && rawTotalCount != null && rawTotalCount <= displayRequests.length
+                    ? null
+                    : rawTotalCount;
 
                 return (
                   <>
                     <AdminRequestsToolbar
                       displayCount={displayRequests.length}
+                      totalCount={activeTotalCount}
                       requestsSort={requestsSort}
                       handleRequestsSort={handleRequestsSort}
                       hasUnsavedLayout={hasUnsavedLayout}
@@ -2273,6 +2572,7 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
                         });
                       }}
                       getStatusBadge={getStatusBadge}
+                      getServiceName={getServiceName}
                       translateKey={translateKey}
                     />
 
@@ -2305,18 +2605,21 @@ export const AdminRequestsTab: React.FC<AdminRequestsTabProps> = ({
                       setShowCustomOrderInModal={setShowCustomOrderInModal}
                     />
 
-                    {!serviceSearchTerm.trim() && (
+                    {isSearching ? (
+                      <AdminRequestsPaginationBar
+                        isLoadingMore={isDbSearching}
+                        hasMore={hasMoreSearchResults}
+                        displayCount={displayRequests.length}
+                        totalCount={matchCount}
+                        onLoadMore={loadMoreSearchResults}
+                        batchSize={50}
+                      />
+                    ) : (
                       <AdminRequestsPaginationBar
                         isLoadingMore={isLoadingMoreServiceRequests}
-                        hasMore={propsHasMore ?? (serviceHasMore[selectedServiceId] !== false)}
+                        hasMore={activeHasMore}
                         displayCount={displayRequests.length}
-                        totalCount={
-                          (serviceTotalCounts[selectedServiceId] && serviceTotalCounts[selectedServiceId] > 0)
-                            ? serviceTotalCounts[selectedServiceId]
-                            : (requestsStatsMap?.[selectedServiceId]?.total && requestsStatsMap[selectedServiceId].total > 0)
-                              ? requestsStatsMap[selectedServiceId].total
-                              : null
-                        }
+                        totalCount={activeTotalCount}
                         onLoadMore={() => handleLoadMoreServiceRequests(selectedServiceId)}
                         batchSize={50}
                       />

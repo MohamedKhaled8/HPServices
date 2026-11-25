@@ -4,8 +4,11 @@ import {
   mergeAndDeduplicateRequests,
   applyAtomicCounterDelta,
   isRequestStatusPending,
+  isNewRequestStatus,
   shouldShowLoadMoreButton,
-  formatPaginationBadge
+  formatPaginationBadge,
+  matchesStatusAndDateFilter,
+  sortRequestsByPriorityAndDate
 } from './requestsPaginationCore.ts';
 import type { ServiceRequest } from '../types/index.ts';
 
@@ -144,4 +147,91 @@ test('applyAtomicCounterDelta: keeps total and pending counts accurate for cards
   counter = applyAtomicCounterDelta(counter, 'delete', { oldStatus: 'completed' });
   assert.equal(counter.total, 100);
   assert.equal(counter.pending, 20);
+});
+
+test('server-side filter-first + sort: 10 new requests buried in 500 total records all load on page 1 without Load More', () => {
+  const baseMs = Date.parse('2026-11-25T12:00:00.000Z');
+  // 500 records: newest 30 are completed, 10 pending ("new") are buried at positions 30..450, rest completed/rejected
+  const pendingPositions = new Set([35, 48, 72, 110, 155, 210, 280, 340, 410, 490]);
+  const dbRecords: ServiceRequest[] = Array.from({ length: 500 }, (_, i) => ({
+    id: `req_${i + 1}`,
+    serviceId: '3',
+    status: pendingPositions.has(i) ? 'pending' : (i % 2 === 0 ? 'completed' : 'rejected'),
+    createdAt: new Date(baseMs - i * 60_000).toISOString()
+  } as any));
+
+  // Filter in DB BEFORE applying limit(50)
+  const dbFilteredNew = sortRequestsByPriorityAndDate(
+    dbRecords.filter((r) => matchesStatusAndDateFilter(r, 'new')),
+    'new'
+  );
+  const totalMatchingCount = dbFilteredNew.length;
+  const page1 = dbFilteredNew.slice(0, 50);
+
+  assert.equal(totalMatchingCount, 10);
+  assert.equal(page1.length, 10, 'All 10 new requests must load immediately on page 1');
+  assert.deepEqual(
+    page1.map((r) => r.id),
+    ['req_36', 'req_49', 'req_73', 'req_111', 'req_156', 'req_211', 'req_281', 'req_341', 'req_411', 'req_491']
+  );
+  assert.equal(formatPaginationBadge(page1.length, totalMatchingCount), 'المعروض 10 من أصل 10');
+  assert.equal(shouldShowLoadMoreButton(false, page1.length, totalMatchingCount), false);
+  // Even if a stale hasMore flag were true, loadedCount >= totalMatchingCount hides Load More
+  assert.equal(shouldShowLoadMoreButton(true, 10, 10), false);
+});
+
+test('per-filter pagination with >50 matching items: paginates 50 -> 100 -> 124 without duplicates', () => {
+  const baseMs = Date.parse('2026-11-25T12:00:00.000Z');
+  const dbRecords: ServiceRequest[] = Array.from({ length: 500 }, (_, i) => ({
+    id: `req_${i + 1}`,
+    serviceId: '4',
+    status: i < 124 ? 'pending' : 'completed',
+    createdAt: new Date(baseMs - i * 60_000).toISOString()
+  } as any));
+
+  const filtered = sortRequestsByPriorityAndDate(
+    dbRecords.filter((r) => matchesStatusAndDateFilter(r, 'new')),
+    'new'
+  );
+  const total = filtered.length;
+  assert.equal(total, 124);
+
+  const page1 = filtered.slice(0, 50);
+  assert.equal(page1.length, 50);
+  assert.equal(formatPaginationBadge(page1.length, total), 'المعروض 50 من أصل 124');
+  assert.equal(shouldShowLoadMoreButton(true, page1.length, total), true);
+
+  const page2 = mergeAndDeduplicateRequests(page1, filtered.slice(50, 100));
+  assert.equal(page2.length, 100);
+  assert.equal(formatPaginationBadge(page2.length, total), 'المعروض 100 من أصل 124');
+  assert.equal(shouldShowLoadMoreButton(true, page2.length, total), true);
+
+  const page3 = mergeAndDeduplicateRequests(page2, filtered.slice(100, 150));
+  assert.equal(page3.length, 124);
+  assert.equal(formatPaginationBadge(page3.length, total), 'المعروض 124 من أصل 124');
+  assert.equal(shouldShowLoadMoreButton(false, page3.length, total), false);
+});
+
+test('all-requests view prioritizes unhandled new requests at the top sorted createdAt DESC', () => {
+  const items: ServiceRequest[] = [
+    { id: 'c_newest', serviceId: '1', status: 'completed', createdAt: '2026-11-25T12:00:00.000Z' } as any,
+    { id: 'n_older', serviceId: '1', status: 'pending', createdAt: '2026-11-24T08:00:00.000Z' } as any,
+    { id: 's_mid', serviceId: '1', status: 'submitted', createdAt: '2026-11-25T11:00:00.000Z' } as any,
+    { id: 'n_newer', serviceId: '1', status: 'pending', createdAt: '2026-11-25T09:00:00.000Z' } as any
+  ];
+
+  assert.equal(isNewRequestStatus('pending'), true);
+  assert.equal(isNewRequestStatus('completed'), false);
+
+  const sortedAll = sortRequestsByPriorityAndDate(items, 'all');
+  assert.deepEqual(
+    sortedAll.map((r) => r.id),
+    ['n_newer', 'n_older', 'c_newest', 's_mid']
+  );
+
+  // Date-range filtering works accurately alongside status filtering
+  const dateFiltered = items.filter((r) =>
+    matchesStatusAndDateFilter(r, 'new', '2026-11-25', '2026-11-25')
+  );
+  assert.deepEqual(dateFiltered.map((r) => r.id), ['n_newer']);
 });

@@ -2109,11 +2109,15 @@ export const getAssignmentFoldersForTrack = async (track: TrackKey): Promise<Ass
   });
 };
 
-const commitBatchWithTimeout = async (batchInstance: WriteBatch, timeoutMs: number = 15000): Promise<void> => {
+const commitBatchWithTimeout = async (
+  batchInstance: WriteBatch,
+  timeoutMs: number = 15000,
+  errorMessage: string = 'انتهت مهلة استجابة السيرفر أثناء المسح (15 ثانية)'
+): Promise<void> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      reject(new Error('انتهت مهلة استجابة السيرفر أثناء المسح (15 ثانية)'));
+      reject(new Error(errorMessage));
     }, timeoutMs);
   });
   try {
@@ -2356,6 +2360,233 @@ export const delete130UnifiedFolder = async (
   }
 
   return { deletedFiles: fileIdsToDelete };
+};
+
+export interface RenameFolderFirestoreOptions {
+  scope: 'track' | 'unified130';
+  track?: TrackKey;
+  targetFolder: AssignmentFolderMeta;
+  newName: string;
+  descendantFolders: AssignmentFolderMeta[];
+  affectedFiles: Array<{ id: string; folderPath?: string; folderName?: string; folder?: string }>;
+}
+
+export const renameAssignmentFolderInFirestore = async (
+  options: RenameFolderFirestoreOptions
+): Promise<{ oldPath: string; newPath: string }> => {
+  const { scope, track, targetFolder, newName, descendantFolders, affectedFiles } = options;
+  const oldPath = (targetFolder.path || '').trim();
+  if (!oldPath) throw new Error('مسار المجلد القديم غير صالح');
+
+  const cleanNewName = (newName || '').trim();
+  if (!cleanNewName) throw new Error('اسم المجلد الجديد غير صالح');
+
+  const parentPath = (targetFolder.parentPath || '').trim();
+  const newPath = parentPath ? `${parentPath}/${cleanNewName}` : cleanNewName;
+  const oldPrefix = `${oldPath}/`;
+
+  const targetPathSegments = scope === 'track' && track
+    ? ['assignments', track]
+    : ['assignments', 'unified130'];
+
+  const foldersCollection = collection(db, targetPathSegments[0], targetPathSegments[1], 'folders');
+  const filesCollection = collection(db, targetPathSegments[0], targetPathSegments[1], 'files');
+
+  const BATCH_CHUNK_LIMIT = 450;
+  let batch = writeBatch(db);
+  let batchCount = 0;
+
+  const commitBatchIfNeeded = async () => {
+    if (batchCount >= BATCH_CHUNK_LIMIT) {
+      await commitBatchWithTimeout(batch, 15000, 'انتهت مهلة استجابة السيرفر أثناء إعادة التسمية (15 ثانية)');
+      batch = writeBatch(db);
+      batchCount = 0;
+    }
+  };
+
+  // 1. Target Folder Doc
+  const targetFolderRef = doc(foldersCollection, targetFolder.id);
+  batch.update(
+    targetFolderRef,
+    stripUndefined({
+      name: cleanNewName,
+      path: newPath,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  batchCount++;
+  await commitBatchIfNeeded();
+
+  // 2. Descendant Subfolders
+  for (const childFolder of descendantFolders) {
+    const childOldPath = (childFolder.path || '').trim();
+    if (!childOldPath.startsWith(oldPrefix)) continue;
+
+    const childNewPath = `${newPath}/${childOldPath.slice(oldPrefix.length)}`;
+    const childOldParent = (childFolder.parentPath || '').trim();
+    let childNewParent = childOldParent;
+    if (childOldParent === oldPath) {
+      childNewParent = newPath;
+    } else if (childOldParent.startsWith(oldPrefix)) {
+      childNewParent = `${newPath}/${childOldParent.slice(oldPrefix.length)}`;
+    }
+
+    const childDocRef = doc(foldersCollection, childFolder.id);
+    batch.update(
+      childDocRef,
+      stripUndefined({
+        path: childNewPath,
+        parentPath: childNewParent,
+        updatedAt: serverTimestamp(),
+      })
+    );
+    batchCount++;
+    await commitBatchIfNeeded();
+  }
+
+  // 3. Affected Files
+  for (const file of affectedFiles) {
+    const fp = (file.folderPath || '').trim();
+    const isDirectChild = fp === oldPath;
+    const isNestedChild = fp.startsWith(oldPrefix);
+
+    if (!isDirectChild && !isNestedChild) continue;
+
+    const fileDocRef = doc(filesCollection, file.id);
+    if (isDirectChild) {
+      batch.update(
+        fileDocRef,
+        stripUndefined({
+          folderPath: newPath,
+          folder: newPath,
+          folderName: cleanNewName,
+          updatedAt: serverTimestamp(),
+        })
+      );
+    } else {
+      const nestedNewPath = `${newPath}/${fp.slice(oldPrefix.length)}`;
+      batch.update(
+        fileDocRef,
+        stripUndefined({
+          folderPath: nestedNewPath,
+          folder: nestedNewPath,
+          updatedAt: serverTimestamp(),
+        })
+      );
+    }
+    batchCount++;
+    await commitBatchIfNeeded();
+  }
+
+  if (batchCount > 0) {
+    await commitBatchWithTimeout(batch, 15000, 'انتهت مهلة استجابة السيرفر أثناء إعادة التسمية (15 ثانية)');
+  }
+
+  return { oldPath, newPath };
+};
+
+export const syncStudentAssignedFilesOnFolderRename = async (
+  oldPath: string,
+  newPath: string,
+  newName: string
+): Promise<number> => {
+  const trimmedOld = (oldPath || '').trim();
+  const trimmedNew = (newPath || '').trim();
+  if (!trimmedOld || !trimmedNew) return 0;
+
+  const oldPrefix = `${trimmedOld}/`;
+  const studentsRef = collection(db, 'students');
+  const studentsSnap = await getDocs(studentsRef);
+
+  let updatedCount = 0;
+  const MAX_BATCH = 450;
+  let batch = writeBatch(db);
+  let batchCount = 0;
+
+  for (const studentDoc of studentsSnap.docs) {
+    const data = studentDoc.data() as Record<string, unknown>;
+    const rawAssignedFiles = data.assignedFiles;
+    const assignedFiles: Array<Record<string, unknown>> = Array.isArray(rawAssignedFiles)
+      ? (rawAssignedFiles as Array<Record<string, unknown>>)
+      : [];
+    const legacyAssignedFile = (data.assignedFile && typeof data.assignedFile === 'object')
+      ? (data.assignedFile as Record<string, unknown>)
+      : null;
+
+    let hasChanges = false;
+
+    const updatedAssignedFiles = assignedFiles.map((file) => {
+      const fp = String(file.folderPath || '').trim();
+      const isDirect = fp === trimmedOld;
+      const isNested = fp.startsWith(oldPrefix);
+
+      if (!isDirect && !isNested) return file;
+
+      hasChanges = true;
+      if (isDirect) {
+        return {
+          ...file,
+          folderPath: trimmedNew,
+          folder: trimmedNew,
+          folderName: newName,
+        };
+      }
+      const nextNestedPath = `${trimmedNew}/${fp.slice(oldPrefix.length)}`;
+      return {
+        ...file,
+        folderPath: nextNestedPath,
+        folder: nextNestedPath,
+      };
+    });
+
+    let updatedLegacyFile = legacyAssignedFile;
+    if (legacyAssignedFile) {
+      const fp = String(legacyAssignedFile.folderPath || '').trim();
+      if (fp === trimmedOld) {
+        hasChanges = true;
+        updatedLegacyFile = {
+          ...legacyAssignedFile,
+          folderPath: trimmedNew,
+          folder: trimmedNew,
+          folderName: newName,
+        };
+      } else if (fp.startsWith(oldPrefix)) {
+        hasChanges = true;
+        const nextNestedPath = `${trimmedNew}/${fp.slice(oldPrefix.length)}`;
+        updatedLegacyFile = {
+          ...legacyAssignedFile,
+          folderPath: nextNestedPath,
+          folder: nextNestedPath,
+        };
+      }
+    }
+
+    if (hasChanges) {
+      const updatePayload: Record<string, unknown> = {
+        assignedFiles: updatedAssignedFiles,
+        updatedAt: serverTimestamp(),
+      };
+      if (legacyAssignedFile) {
+        updatePayload.assignedFile = updatedLegacyFile;
+      }
+
+      batch.update(studentDoc.ref, stripUndefined(updatePayload));
+      updatedCount++;
+      batchCount++;
+
+      if (batchCount >= MAX_BATCH) {
+        await commitBatchWithTimeout(batch, 15000);
+        batch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+  }
+
+  if (batchCount > 0) {
+    await commitBatchWithTimeout(batch, 15000);
+  }
+
+  return updatedCount;
 };
 
 export const delete130UnifiedFiles = async (

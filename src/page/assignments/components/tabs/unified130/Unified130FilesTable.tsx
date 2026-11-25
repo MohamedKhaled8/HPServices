@@ -1,5 +1,5 @@
 import React from 'react';
-import { AssignmentFolderMeta } from '../../../../../services/firebaseService';
+import { TrackKey, AssignmentFolderMeta } from '../../../../../services/firebaseService';
 import { DeleteConfirmModalState } from '../../../types/assignments.types';
 import { Unified130FolderRow } from './Unified130FolderRow';
 import { Unified130FileRow } from './Unified130FileRow';
@@ -18,12 +18,15 @@ interface Unified130FilesTableProps {
   isDeleting130: boolean;
   folderDeleteLoading: {
     scope: 'track' | 'unified130';
+    track?: TrackKey;
     folderPath: string;
   } | null;
   onNavigateToFolder: (path: string) => void;
   onOpenFolder?: (path: string) => void;
   onDeleteFolder: (path: string) => void;
   onRevokeFolder?: (path: string) => void;
+  onRenameFolder?: (folder: AssignmentFolderMeta, newName: string) => Promise<boolean>;
+  renamingFolderPaths?: Set<string>;
   setDeleteConfirmModal: React.Dispatch<React.SetStateAction<DeleteConfirmModalState>>;
   allFolders?: AssignmentFolderMeta[];
   allUnifiedFiles?: any[];
@@ -45,6 +48,8 @@ export const Unified130FilesTable: React.FC<Unified130FilesTableProps> = ({
   onOpenFolder,
   onDeleteFolder,
   onRevokeFolder,
+  onRenameFolder,
+  renamingFolderPaths,
   setDeleteConfirmModal,
   allFolders,
   allUnifiedFiles,
@@ -131,6 +136,8 @@ export const Unified130FilesTable: React.FC<Unified130FilesTableProps> = ({
               onOpenFolder={onOpenFolder || onNavigateToFolder}
               onDeleteFolder={onDeleteFolder}
               onRevokeFolder={onRevokeFolder}
+              onRenameFolder={onRenameFolder}
+              renamingFolderPaths={renamingFolderPaths}
               aggregateCounts={agg}
             />
           );

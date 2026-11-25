@@ -27,6 +27,8 @@ interface TrackFilesTableProps {
   onOpenFolder?: (folderPath: string) => void;
   onDeleteFolder: (track: TrackKey, folderPath: string) => void;
   onRevokeFolder?: (track: TrackKey, folderPath: string) => void;
+  onRenameFolder?: (track: TrackKey, folder: AssignmentFolderMeta, newName: string) => Promise<boolean>;
+  renamingFolderPaths?: Set<string>;
   onDeleteFile: (track: TrackKey, fileId: string) => void;
   allFolders?: AssignmentFolderMeta[];
   allTrackFiles?: any[];
@@ -51,6 +53,8 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
   onOpenFolder,
   onDeleteFolder,
   onRevokeFolder,
+  onRenameFolder,
+  renamingFolderPaths,
   onDeleteFile,
   allFolders,
   allTrackFiles,
@@ -135,6 +139,8 @@ export const TrackFilesTable: React.FC<TrackFilesTableProps> = ({
               onOpenFolder={onOpenFolder || onNavigateToFolder}
               onDeleteFolder={onDeleteFolder}
               onRevokeFolder={onRevokeFolder}
+              onRenameFolder={onRenameFolder}
+              renamingFolderPaths={renamingFolderPaths}
               aggregateCounts={agg}
             />
           );

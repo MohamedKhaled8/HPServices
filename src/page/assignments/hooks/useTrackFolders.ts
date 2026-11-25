@@ -5,6 +5,8 @@ import {
   createAssignmentFolderForTrack,
   deleteAssignmentFolderForTrack,
   removeAssignedFilesFromAllStudents,
+  renameAssignmentFolderInFirestore,
+  syncStudentAssignedFilesOnFolderRename,
 } from '../../../services/firebaseService';
 import {
   mergeFoldersByPath,
@@ -15,12 +17,24 @@ import {
   getFilesInsideFolderPath,
 } from '../utils/folderUtils';
 import { getVisibleFoldersAtLevel } from '../utils/folderTreeUtils';
-import { writeCachedTrackFolders, removeCachedTrackFolders } from '../storage/assignmentsCache';
+import {
+  writeCachedTrackFolders,
+  removeCachedTrackFolders,
+  renameCachedTrackFolder,
+} from '../storage/assignmentsCache';
+import {
+  validateFolderName,
+  computeRenamedPath,
+  resolveRenameTargets,
+  cascadeFolderRenameState,
+} from '../utils/folderRenameExecutor';
 
 interface UseTrackFoldersOptions {
   trackFiles: Record<TrackKey, any[]>;
   setTrackFiles: React.Dispatch<React.SetStateAction<Record<TrackKey, any[]>>>;
   setSelectedFileIds: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
+  setSelectedFolderPaths?: React.Dispatch<React.SetStateAction<Record<TrackKey, Set<string>>>>;
+  selectedFolderPaths?: Record<TrackKey, Set<string>>;
   setFolderDeleteLoading: React.Dispatch<React.SetStateAction<{
     scope: 'track' | 'unified130';
     track?: TrackKey;
@@ -34,6 +48,8 @@ export const useTrackFolders = ({
   trackFiles,
   setTrackFiles,
   setSelectedFileIds,
+  setSelectedFolderPaths,
+  selectedFolderPaths,
   setFolderDeleteLoading,
   showSnackbarNotification,
   setDeletingFolderPaths,
@@ -50,6 +66,7 @@ export const useTrackFolders = ({
     track3: ''
   });
   const [newTrackFolderName, setNewTrackFolderName] = useState('');
+  const [renamingFolderPaths, setRenamingFolderPaths] = useState<Set<string>>(new Set());
 
   const getVisibleTrackFolders = (track: TrackKey) => {
     const current = trackCurrentPath[track] || '';
@@ -69,7 +86,6 @@ export const useTrackFolders = ({
       setNewTrackFolderName('');
       showSnackbarNotification('تم إنشاء المجلد بنجاح', 'success');
     } catch (error: unknown) {
-      // fallback local-only folder حتى لا يختفي عند إعادة فتح الصفحة
       const fallback: AssignmentFolderMeta = {
         id: `local_${Date.now()}`,
         name: folderName.replace(/[\\/:*?"<>|]/g, '_').trim(),
@@ -110,7 +126,6 @@ export const useTrackFolders = ({
         knownFiles
       );
 
-      // REAL COMMIT-FIRST: Remove from state & LocalStorage ONLY AFTER Firestore succeeds
       setTrackFolders((prev) => {
         const currentList = prev[track] || [];
         const updatedList = filterOutFolderAndDescendants(currentList, folderPath);
@@ -160,6 +175,88 @@ export const useTrackFolders = ({
     }
   };
 
+  const handleRenameTrackFolder = async (track: TrackKey, folder: AssignmentFolderMeta, newName: string): Promise<boolean> => {
+    const siblings = trackFolders[track] || [];
+    const validation = validateFolderName(newName, folder, siblings);
+    if (!validation.isValid) {
+      showSnackbarNotification(validation.error || 'اسم المجلد غير صالح', 'error');
+      return false;
+    }
+
+    const cleanName = validation.cleanName;
+    const oldPath = (folder.path || '').trim();
+    const newPath = computeRenamedPath(cleanName, folder.parentPath);
+
+    setRenamingFolderPaths((prev) => new Set(prev).add(oldPath));
+
+    try {
+      const currentTrackFiles = trackFiles[track] || [];
+      const { descendantFolders, affectedFiles } = resolveRenameTargets(folder, siblings, currentTrackFiles);
+
+      await renameAssignmentFolderInFirestore({
+        scope: 'track',
+        track,
+        targetFolder: folder,
+        newName: cleanName,
+        descendantFolders,
+        affectedFiles,
+      });
+
+      const {
+        updatedFolders,
+        updatedFiles,
+        updatedSelectedFolderPaths,
+        updatedCurrentPath,
+      } = cascadeFolderRenameState({
+        oldPath,
+        newPath,
+        newName: cleanName,
+        folders: siblings,
+        files: currentTrackFiles,
+        selectedFolderPaths: selectedFolderPaths ? (selectedFolderPaths[track] || new Set()) : undefined,
+        currentPath: trackCurrentPath[track] || '',
+      });
+
+      setTrackFolders((prev) => {
+        const next = { ...prev, [track]: updatedFolders };
+        writeCachedTrackFolders(next);
+        return next;
+      });
+      renameCachedTrackFolder(track, oldPath, newPath, cleanName);
+
+      setTrackFiles((prev) => ({ ...prev, [track]: updatedFiles }));
+
+      if (setSelectedFolderPaths && updatedSelectedFolderPaths) {
+        setSelectedFolderPaths((prev) => ({
+          ...prev,
+          [track]: updatedSelectedFolderPaths,
+        }));
+      }
+
+      if (updatedCurrentPath !== undefined) {
+        setTrackCurrentPath((prev) => ({
+          ...prev,
+          [track]: updatedCurrentPath,
+        }));
+      }
+
+      void syncStudentAssignedFilesOnFolderRename(oldPath, newPath, cleanName).catch(console.error);
+
+      showSnackbarNotification('تمت إعادة تسمية المجلد بنجاح', 'success');
+      return true;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'فشل إعادة تسمية المجلد في الخادم';
+      showSnackbarNotification(msg, 'error');
+      return false;
+    } finally {
+      setRenamingFolderPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(oldPath);
+        return next;
+      });
+    }
+  };
+
   return {
     activeTrackFolder,
     setActiveTrackFolder,
@@ -169,9 +266,10 @@ export const useTrackFolders = ({
     setTrackCurrentPath,
     newTrackFolderName,
     setNewTrackFolderName,
+    renamingFolderPaths,
     getVisibleTrackFolders,
     handleCreateTrackFolder,
     handleDeleteTrackFolder,
+    handleRenameTrackFolder,
   };
 };
-

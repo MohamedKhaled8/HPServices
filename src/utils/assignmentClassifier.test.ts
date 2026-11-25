@@ -19,8 +19,8 @@ test('normalizeSpecialization normalizes common variants correctly', () => {
   assert.equal(normalizeSpecialization('كيمياء'), 'علوم');
   assert.equal(normalizeSpecialization('فيزياء'), 'علوم');
   assert.equal(normalizeSpecialization('دراسات'), 'دراسات اجتماعية');
-  assert.equal(normalizeSpecialization('تاريخ'), 'دراسات اجتماعية');
-  assert.equal(normalizeSpecialization('جغرافيا'), 'دراسات اجتماعية');
+  assert.equal(normalizeSpecialization('تاريخ'), 'تاريخ وجغرافيا');
+  assert.equal(normalizeSpecialization('جغرافيا'), 'تاريخ وجغرافيا');
   assert.equal(normalizeSpecialization('حاسب آلي'), 'حاسب آلي وتكنولوجيا تعليم');
   assert.equal(normalizeSpecialization(null), 'عام / أخرى');
   assert.equal(normalizeSpecialization(''), 'عام / أخرى');

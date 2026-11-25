@@ -47,6 +47,8 @@ export const createTrackTabProps = (options: {
   handleDeleteSelected: options.deletionProps.handleDeleteSelected,
   handleDeleteSingleTrackFile: options.deletionProps.handleDeleteSingleTrackFile,
   handleDeleteTrackFolder: options.trackFoldersProps.handleDeleteTrackFolder,
+  handleRenameTrackFolder: options.trackFoldersProps.handleRenameTrackFolder,
+  renamingFolderPaths: options.trackFoldersProps.renamingFolderPaths,
   handleRevokeFolderFromStudents: options.deletionProps.handleRevokeFolderFromStudents,
   handleFileUpload: options.handleFileUpload,
   handleFolderUpload: options.handleFolderUploadForTrack,
@@ -92,6 +94,8 @@ export const createUnifiedTabProps = (options: {
   handleFolderUpload: options.handleFolderUploadFor130,
   handleCreateUnified130Folder: options.unifiedFoldersProps.handleCreateUnified130Folder,
   handleDeleteUnified130Folder: options.unifiedFoldersProps.handleDeleteUnified130Folder,
+  handleRenameUnified130Folder: options.unifiedFoldersProps.handleRenameUnified130Folder,
+  renamingFolderPaths: options.unifiedFoldersProps.renamingFolderPaths,
   handleRevoke130FolderFromStudents: options.deletionProps.handleRevoke130FolderFromStudents,
   handleOpenRecallModal: options.recallProps.handleOpenRecallModal,
 });

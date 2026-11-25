@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { normalizeTrackName } from '../../../utils/trackUtils';
 import { normalizeWorkflowStatus } from '../../../utils/adminRequestsUtils';
+import { getServiceNameHelper } from './requestsHelpers';
 import type { useSpreadsheetGrid } from '../../../hooks/useSpreadsheetGrid';
 import type {
   ServiceRequest,
@@ -73,6 +74,7 @@ export interface AdminRequestsTableProps {
   onEditRequest: (request: ServiceRequest) => void;
   onViewAssignedFiles: (studentName: string, files: AssignedFile[]) => void;
   getStatusBadge: (status: string | undefined) => React.ReactNode;
+  getServiceName?: (serviceId: string) => string;
   translateKey: (key: string) => string;
 }
 
@@ -125,8 +127,11 @@ export const AdminRequestsTable: React.FC<AdminRequestsTableProps> = ({
   onEditRequest,
   onViewAssignedFiles,
   getStatusBadge,
+  getServiceName,
   translateKey
 }) => {
+  const resolveServiceName = (sid: string): string =>
+    getServiceName ? getServiceName(sid) : getServiceNameHelper(sid);
   const [draggedColDisplayPos, setDraggedColDisplayPos] = useState<number | null>(null);
   const [dropTargetColDisplayPos, setDropTargetColDisplayPos] = useState<number | null>(null);
 
@@ -335,9 +340,14 @@ export const AdminRequestsTable: React.FC<AdminRequestsTableProps> = ({
               const rowBg = isSelected ? '#eff6ff' : (index % 2 === 0 ? '#ffffff' : '#f8fafc');
 
               // Define values list to match headers
-              const colNameVal = request.data?.full_name_arabic || request.data?.full_name || studentData?.fullNameArabic || 'غير متاح';
+              const studentNamesFallback = Array.isArray(request.data?.student_names)
+                ? request.data.student_names.filter(Boolean).join(', ')
+                : typeof request.data?.student_names === 'string'
+                  ? request.data.student_names.replace(/\n/g, ', ')
+                  : '';
+              const colNameVal = request.data?.full_name_arabic || request.data?.full_name || studentData?.fullNameArabic || studentNamesFallback || 'غير متاح';
               const colNationalIdVal = request.data?.national_id || studentData?.nationalID || '';
-              const colWhatsappVal = request.data?.whatsapp_number || request.data?.phone_whatsapp || studentData?.whatsappNumber || '';
+              const colWhatsappVal = request.data?.whatsapp_number || request.data?.phone_whatsapp || request.data?.leader_whatsapp || studentData?.whatsappNumber || '';
               const colEmailVal = request.data?.email || studentData?.email || '';
               const colAddressVal = request.data?.address || request.data?.address_details || request.data?.deliveryAddress || '';
               const colDiplomaTypeVal = `${request.data?.diploma_type || request.data?.diplomaType || ''} ${(request.data?.diploma_year || request.data?.diplomaYear) ? `(${request.data?.diploma_year || request.data?.diplomaYear})` : ''}`.trim();
@@ -457,7 +467,33 @@ export const AdminRequestsTable: React.FC<AdminRequestsTableProps> = ({
                 case '11': rowValues = [colNameVal, colWhatsappVal, colNationalIdVal, colAddressVal, colTotalPriceVal]; break;
                 case '12': rowValues = [colNameVal, request.data?.request_type || '-', request.data?.destination || '-', colTotalPriceVal]; break;
                 default:
-                  rowValues = [colNameVal, colNationalIdVal, colWhatsappVal, colEmailVal];
+                  rowValues = [
+                    ...(selectedServiceId === 'all'
+                      ? [
+                          <span
+                            key={`svc-badge-${request.id || index}`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              padding: '3px 10px',
+                              borderRadius: '999px',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1px solid #bfdbfe',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {resolveServiceName(String(request.serviceId || ''))}
+                          </span>
+                        ]
+                      : []),
+                    colNameVal,
+                    colNationalIdVal,
+                    colWhatsappVal,
+                    colEmailVal
+                  ];
                   if (hasAddress) rowValues.push(colAddressVal);
                   if (hasDiploma) rowValues.push(colDiplomaTypeVal);
                   if (hasTrack) rowValues.push(colTrackVal);

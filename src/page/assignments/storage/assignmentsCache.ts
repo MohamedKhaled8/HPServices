@@ -66,3 +66,58 @@ export const removeCachedUnified130Folders = (folderPaths: string[]) => {
   });
   writeCachedUnified130Folders(updated);
 };
+
+export const renameCachedTrackFolder = (
+  track: TrackKey,
+  oldPath: string,
+  newPath: string,
+  newName: string
+) => {
+  const current = readCachedTrackFolders();
+  const list = current[track] || [];
+  const oldPrefix = `${oldPath}/`;
+  const updated = list.map((f) => {
+    const p = f.path || '';
+    if (p === oldPath) {
+      return { ...f, name: newName, path: newPath };
+    }
+    if (p.startsWith(oldPrefix)) {
+      const childNewPath = `${newPath}/${p.slice(oldPrefix.length)}`;
+      const childParent = f.parentPath || '';
+      const childNewParent = childParent === oldPath
+        ? newPath
+        : (childParent.startsWith(oldPrefix) ? `${newPath}/${childParent.slice(oldPrefix.length)}` : childParent);
+      return { ...f, path: childNewPath, parentPath: childNewParent };
+    }
+    return f;
+  });
+  writeCachedTrackFolders({
+    ...current,
+    [track]: updated,
+  });
+};
+
+export const renameCachedUnified130Folder = (
+  oldPath: string,
+  newPath: string,
+  newName: string
+) => {
+  const current = readCachedUnified130Folders();
+  const oldPrefix = `${oldPath}/`;
+  const updated = current.map((f) => {
+    const p = f.path || '';
+    if (p === oldPath) {
+      return { ...f, name: newName, path: newPath };
+    }
+    if (p.startsWith(oldPrefix)) {
+      const childNewPath = `${newPath}/${p.slice(oldPrefix.length)}`;
+      const childParent = f.parentPath || '';
+      const childNewParent = childParent === oldPath
+        ? newPath
+        : (childParent.startsWith(oldPrefix) ? `${newPath}/${childParent.slice(oldPrefix.length)}` : childParent);
+      return { ...f, path: childNewPath, parentPath: childNewParent };
+    }
+    return f;
+  });
+  writeCachedUnified130Folders(updated);
+};

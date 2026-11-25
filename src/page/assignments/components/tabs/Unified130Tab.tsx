@@ -34,6 +34,8 @@ export interface Unified130TabProps {
   handleFolderUpload?: (files: File[]) => Promise<void>;
   handleCreateUnified130Folder: () => Promise<void>;
   handleDeleteUnified130Folder: (folderPath: string) => Promise<void>;
+  handleRenameUnified130Folder?: (folder: AssignmentFolderMeta, newName: string) => Promise<boolean>;
+  renamingFolderPaths?: Set<string>;
   handleRevoke130FolderFromStudents?: (folderPath: string) => void;
   handleOpenRecallModal: (track: TrackKey | 'unified130') => Promise<void>;
 }
@@ -63,6 +65,8 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
   handleFolderUpload,
   handleCreateUnified130Folder,
   handleDeleteUnified130Folder,
+  handleRenameUnified130Folder,
+  renamingFolderPaths,
   handleRevoke130FolderFromStudents,
   handleOpenRecallModal,
 }) => {
@@ -132,6 +136,8 @@ export const Unified130Tab: React.FC<Unified130TabProps> = ({
             onNavigateToFolder={setUnified130CurrentPath}
             onOpenFolder={setUnified130CurrentPath}
             onDeleteFolder={handleDeleteUnified130Folder}
+            onRenameFolder={handleRenameUnified130Folder}
+            renamingFolderPaths={renamingFolderPaths}
             onRevokeFolder={handleRevoke130FolderFromStudents}
             setDeleteConfirmModal={setDeleteConfirmModal}
             allFolders={unified130Folders}

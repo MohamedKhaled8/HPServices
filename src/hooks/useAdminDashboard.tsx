@@ -34,6 +34,7 @@ import { useAdminConfigs } from './useAdminConfigs';
 import { useAdminUsers } from './useAdminUsers';
 import { useRequestsStats } from './useRequestsStats';
 import { useHybridRequestsPagination } from './useHybridRequestsPagination';
+import { type RequestStatusFilter } from '../utils/requestsPaginationCore';
 import { executeAutoFixPlaceholderOrders } from '../services/adminAutoFixService';
 
 interface UseAdminDashboardOptions {
@@ -65,6 +66,9 @@ export function useAdminDashboard({ onBack }: UseAdminDashboardOptions = {}) {
   const [epCodes, setEpCodes] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [requestStatusFilter, setRequestStatusFilter] = useState<RequestStatusFilter>('all');
+  const [requestDateFrom, setRequestDateFrom] = useState<string>('');
+  const [requestDateTo, setRequestDateTo] = useState<string>('');
   const [serviceTotalCounts, setServiceTotalCounts] = useState<Record<string, number>>({});
   const [restoreToolsUnlocked, setRestoreToolsUnlocked] = useState(false);
 
@@ -224,20 +228,33 @@ export function useAdminDashboard({ onBack }: UseAdminDashboardOptions = {}) {
     }
   }, []);
 
-  // Hybrid live-head (top 25 onSnapshot) + one-time cursor pagination for older requests
+  // Hybrid live-head (top 50 onSnapshot) + one-time cursor pagination for filtered requests
   const targetServiceId = selectedServiceId || '1';
   const {
     combinedRequests: hybridRequests,
+    isLoadingInitial: isLoadingRequests,
     isLoadingMore: isLoadingMoreServiceRequests,
     hasMore: hasMoreServiceRequests,
+    totalMatchingCount: filteredTotalMatchingCount,
+    statusCounts: activeServiceStatusCounts,
     loadMore: handleLoadMoreServiceRequests,
     updateLocalRequest,
     deleteLocalRequest
   } = useHybridRequestsPagination({
     serviceId: isLoading ? null : targetServiceId,
-    pageSize: 25,
+    statusFilter: requestStatusFilter,
+    dateFrom: requestDateFrom,
+    dateTo: requestDateTo,
+    pageSize: 50,
+    olderPageSize: 50,
     onInitialBatchLoaded: handleInitialBatchLoaded
   });
+
+  const resetRequestFilters = useCallback(() => {
+    setRequestStatusFilter('all');
+    setRequestDateFrom('');
+    setRequestDateTo('');
+  }, []);
 
   useEffect(() => {
     setServiceRequests(hybridRequests);
@@ -494,6 +511,16 @@ export function useAdminDashboard({ onBack }: UseAdminDashboardOptions = {}) {
     copyEPColumn,
     isLoadingMoreServiceRequests,
     hasMoreServiceRequests,
+    isLoadingRequests,
+    filteredTotalMatchingCount,
+    activeServiceStatusCounts,
+    requestStatusFilter,
+    setRequestStatusFilter,
+    requestDateFrom,
+    setRequestDateFrom,
+    requestDateTo,
+    setRequestDateTo,
+    resetRequestFilters,
     handleLoadMoreServiceRequests,
     updateLocalRequest,
     deleteLocalRequest,
